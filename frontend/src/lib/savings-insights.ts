@@ -79,6 +79,7 @@ export function buildSavingsInsights(
   }
 
   if (
+    family === "AGILE" &&
     agileP != null &&
     importing &&
     agileP < 8 &&
@@ -94,7 +95,7 @@ export function buildSavingsInsights(
     });
   }
 
-  if (agileP != null && exporting && agileP > 30) {
+  if (family === "AGILE" && agileP != null && exporting && agileP > 30) {
     insights.push({
       id: "expensive-agile-market",
       severity: "neutral",

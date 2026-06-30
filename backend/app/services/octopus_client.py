@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
-from app.schemas.domain import DispatchResponse, DispatchWindow, OffPeakWindow
+from app.schemas.domain import DispatchResponse, DispatchWindow, OctopusRatePlan, OffPeakWindow
 
 OCTOPUS_BASE = "https://api.octopus.energy/v1"
 KRAKEN_GRAPHQL = "https://api.octopus.energy/v1/graphql/"
@@ -405,6 +405,73 @@ class OctopusClient:
             return rates
 
         return await self._get_cached("agile_rates", 300, fetch)
+
+    async def get_import_unit_rates(self, hours: int = 48) -> list[dict[str, Any]]:
+        """Half-hourly or standard unit rates for the user's own import tariff."""
+        if not self.configured():
+            return []
+        info = await self.get_tariff_info()
+        if not info.import_product_code or not info.import_tariff_code:
+            return []
+
+        async def fetch() -> list[dict[str, Any]]:
+            now = datetime.now(timezone.utc)
+            period_from = now.isoformat()
+            period_to = (now + timedelta(hours=hours)).isoformat()
+            url = (
+                f"/products/{info.import_product_code}/electricity-tariffs/"
+                f"{info.import_tariff_code}/standard-unit-rates/"
+            )
+            response = await self._client.get(
+                url,
+                params={"period_from": period_from, "period_to": period_to},
+            )
+            response.raise_for_status()
+            results = response.json().get("results", [])
+            rates = [
+                {
+                    "valid_from": r["valid_from"],
+                    "valid_to": r["valid_to"],
+                    "value_inc_vat": float(r["value_inc_vat"]),
+                }
+                for r in results
+            ]
+            rates.sort(key=lambda row: row["valid_from"])
+            return rates
+
+        cache_key = f"import_rates:{info.import_tariff_code}:{hours}"
+        return await self._get_cached(cache_key, 3600, fetch)
+
+    async def get_rate_plan(self) -> OctopusRatePlan:
+        from app.config import settings as app_settings
+        from app.services.octopus_rate_plan import derive_rate_plan
+
+        if not self.configured():
+            return OctopusRatePlan(configured=False)
+
+        info = await self.get_tariff_info()
+        rates = await self.get_import_unit_rates(hours=48)
+        offpeak_start = app_settings.iog_offpeak_start
+        offpeak_end = app_settings.iog_offpeak_end
+        planned = []
+        try:
+            dispatches = await self.get_dispatches()
+            offpeak_start = dispatches.off_peak_window.start
+            offpeak_end = dispatches.off_peak_window.end
+            planned = list(dispatches.planned)
+        except Exception:  # noqa: BLE001
+            pass
+
+        return derive_rate_plan(
+            rates,
+            tariff_family=info.tariff_family,
+            region=info.region,
+            import_display_name=info.import_display_name,
+            standing_charge_pence=info.standing_charge_pence,
+            offpeak_start=offpeak_start,
+            offpeak_end=offpeak_end,
+            planned=planned,
+        )
 
     async def get_unit_rates(self, hours: int = 24) -> list[dict[str, Any]]:
         """Agile half-hourly rates (market reference). Prefer get_tariff_info for your bill."""

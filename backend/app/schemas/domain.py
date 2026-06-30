@@ -493,6 +493,39 @@ class ChargeWindowStatus(BaseModel):
     grid_import_w: float = 0.0
     battery_soc_pct: float = 0.0
     message: str = ""
+    cheap_now: bool = False
+    offpeak_start: str = ""
+    offpeak_end: str = ""
+    next_cheap_start: Optional[str] = None
+    next_cheap_source: str = ""
+    state: str = "idle"
+    severity: str = "good"
+
+
+class RatePlanWindow(BaseModel):
+    start: str = Field(pattern=r"^\d{2}:\d{2}$")
+    end: str = Field(pattern=r"^\d{2}:\d{2}$")
+
+
+class PlannedCheapWindow(BaseModel):
+    start: str = ""
+    end: str = ""
+    source: str = ""
+
+
+class OctopusRatePlan(BaseModel):
+    configured: bool = False
+    tariff_family: str = ""
+    region: str = ""
+    import_display_name: str = ""
+    standing_charge_pence: Optional[float] = None
+    cheap_rate_pence: Optional[float] = None
+    peak_rate_pence: Optional[float] = None
+    cheap_windows: list[RatePlanWindow] = Field(default_factory=list)
+    peak_windows: list[RatePlanWindow] = Field(default_factory=list)
+    current_rate_pence: Optional[float] = None
+    current_is_cheap: bool = False
+    planned_cheap_windows: list[PlannedCheapWindow] = Field(default_factory=list)
 
 
 class SellOpportunity(BaseModel):

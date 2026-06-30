@@ -17,6 +17,7 @@ import {
   healthResponseSchema,
   metricSummarySchema,
   metricCompareSchema,
+  octopusRatePlanSchema,
   octopusTariffSchema,
   evStatusSchema,
   sellOpportunitySchema,
@@ -24,6 +25,7 @@ import {
   type ConnectivityStatus,
   type MetricCompare,
   type MetricSummary,
+  type OctopusRatePlan,
   type OctopusTariff,
   type SellOpportunity,
 } from "@/lib/schemas";
@@ -49,6 +51,7 @@ export default function DashboardPage() {
   const [octopusTariff, setOctopusTariff] = useState<OctopusTariff | null>(null);
   const [evCharging, setEvCharging] = useState(false);
   const [chargeWindow, setChargeWindow] = useState<ChargeWindowStatus | null>(null);
+  const [ratePlan, setRatePlan] = useState<OctopusRatePlan | null>(null);
   const [sellOpportunity, setSellOpportunity] = useState<SellOpportunity | null>(null);
 
   const refreshMeta = useCallback(async (range: CompareRange = compareRange) => {
@@ -104,6 +107,12 @@ export default function DashboardPage() {
         setChargeWindow(cw);
       } catch {
         setChargeWindow(null);
+      }
+      try {
+        const plan = octopusRatePlanSchema.parse(await apiClient.get("/octopus/rate-plan"));
+        setRatePlan(plan);
+      } catch {
+        setRatePlan(null);
       }
       try {
         const sell = sellOpportunitySchema.parse(
@@ -234,6 +243,7 @@ export default function DashboardPage() {
           agilePricePence={agilePricePence}
           evCharging={evCharging}
           chargeWindow={chargeWindow}
+          ratePlan={ratePlan}
           sellOpportunity={sellOpportunity}
           canControl={canWrite(user)}
           onRefresh={refresh}

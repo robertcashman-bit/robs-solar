@@ -71,27 +71,29 @@ class AlertService:
 
         if octopus_client.configured():
             try:
-                rates = await octopus_client.get_agile_rates(hours=1)
-                if rates:
-                    current = rates[0]["value_inc_vat"]
-                    if current < 0:
-                        rules.append(
-                            (
-                                "info",
-                                "negative_price",
-                                f"Agile market price negative ({current:.1f}p/kWh)",
-                                True,
+                info = await octopus_client.get_tariff_info()
+                if info.tariff_family == "AGILE":
+                    rates = await octopus_client.get_agile_rates(hours=1)
+                    if rates:
+                        current = rates[0]["value_inc_vat"]
+                        if current < 0:
+                            rules.append(
+                                (
+                                    "info",
+                                    "negative_price",
+                                    f"Agile market price negative ({current:.1f}p/kWh)",
+                                    True,
+                                )
                             )
-                        )
-                    elif current > 35:
-                        rules.append(
-                            (
-                                "warning",
-                                "price_spike",
-                                f"Agile market price spike ({current:.1f}p/kWh)",
-                                True,
+                        elif current > 35:
+                            rules.append(
+                                (
+                                    "warning",
+                                    "price_spike",
+                                    f"Agile market price spike ({current:.1f}p/kWh)",
+                                    True,
+                                )
                             )
-                        )
             except Exception as exc:
                 logger.debug("Octopus agile alert check skipped: %s", exc)
 

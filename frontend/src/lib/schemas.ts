@@ -395,7 +395,42 @@ export const chargeWindowStatusSchema = z.object({
   grid_import_w: z.number().optional().default(0),
   battery_soc_pct: z.number().optional().default(0),
   message: z.string().optional().default(""),
+  cheap_now: z.boolean().optional().default(false),
+  offpeak_start: z.string().optional().default(""),
+  offpeak_end: z.string().optional().default(""),
+  next_cheap_start: z.string().nullable().optional(),
+  next_cheap_source: z.string().optional().default(""),
+  state: z.enum(["cheap_import", "peak_import", "idle"]).optional().default("idle"),
+  severity: z.enum(["good", "info", "caution"]).optional().default("good"),
 });
+
+export const ratePlanWindowSchema = z.object({
+  start: z.string(),
+  end: z.string(),
+});
+
+export const plannedCheapWindowSchema = z.object({
+  start: z.string(),
+  end: z.string(),
+  source: z.string().optional().default(""),
+});
+
+export const octopusRatePlanSchema = z.object({
+  configured: z.boolean(),
+  tariff_family: z.string().optional().default(""),
+  region: z.string().optional().default(""),
+  import_display_name: z.string().optional().default(""),
+  standing_charge_pence: z.number().nullable().optional(),
+  cheap_rate_pence: z.number().nullable().optional(),
+  peak_rate_pence: z.number().nullable().optional(),
+  cheap_windows: z.array(ratePlanWindowSchema).default([]),
+  peak_windows: z.array(ratePlanWindowSchema).default([]),
+  current_rate_pence: z.number().nullable().optional(),
+  current_is_cheap: z.boolean().optional().default(false),
+  planned_cheap_windows: z.array(plannedCheapWindowSchema).default([]),
+});
+
+export type OctopusRatePlan = z.infer<typeof octopusRatePlanSchema>;
 
 export const sellOpportunitySchema = z.object({
   worth_selling: z.boolean(),

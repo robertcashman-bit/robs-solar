@@ -47,13 +47,20 @@ describe("buildSavingsInsights", () => {
     expect(insights.some((i) => i.id === "import-while-sunny")).toBe(true);
   });
 
-  it("suggests cheap agile market when wholesale is well below bill rate", () => {
-    const insights = buildSavingsInsights(
+  it("suggests cheap agile market only for Agile tariff users", () => {
+    const agileInsights = buildSavingsInsights(
+      { ...baseMetrics, grid_import_w: 500 },
+      summary,
+      { agilePricePence: 3, importRatePence: 22.4, tariffFamily: "AGILE" },
+    );
+    expect(agileInsights.some((i) => i.id === "cheap-agile-market")).toBe(true);
+
+    const iogInsights = buildSavingsInsights(
       { ...baseMetrics, grid_import_w: 500 },
       summary,
       { agilePricePence: 3, importRatePence: 22.4, tariffFamily: "IOG" },
     );
-    expect(insights.some((i) => i.id === "cheap-agile-market")).toBe(true);
+    expect(iogInsights.some((i) => i.id === "cheap-agile-market")).toBe(false);
   });
 
   it("shows IOG tariff context when on intelligent go", () => {

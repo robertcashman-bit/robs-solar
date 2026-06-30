@@ -12,6 +12,7 @@ from app.schemas.domain import (
     OctopusConfigStatus,
     OctopusDiscoverRequest,
     OctopusDiscoverResult,
+    OctopusRatePlan,
 )
 from app.services.audit_service import audit_service
 from app.services.octopus_client import octopus_client
@@ -62,6 +63,16 @@ async def octopus_prices(_: SessionData = Depends(require_viewer)) -> dict:
         # Back-compat for scheduler overlay (Agile half-hourly slots).
         **agile,
     }
+
+
+@router.get("/rate-plan", response_model=OctopusRatePlan)
+async def octopus_rate_plan(_: SessionData = Depends(require_viewer)) -> OctopusRatePlan:
+    if not octopus_client.configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Octopus API key not configured",
+        )
+    return await octopus_client.get_rate_plan()
 
 
 @router.get("/consumption")

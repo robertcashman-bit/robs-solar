@@ -6,6 +6,7 @@ import type {
   LiveMetrics,
   MetricCompare,
   MetricSummary,
+  OctopusRatePlan,
   OctopusTariff,
   SellOpportunity,
 } from "@/lib/schemas";
@@ -14,6 +15,7 @@ import { buildSavingsInsights } from "@/lib/savings-insights";
 import { ArrowDownIcon, ArrowUpIcon, BoltIcon, ChartIcon } from "@/components/shared/icons";
 
 import { CheapWindowBanner } from "./CheapWindowBanner";
+import { OctopusRatesCard } from "./OctopusRatesCard";
 import { SellOpportunityCard } from "./SellOpportunityCard";
 import { EnergyFlow } from "./EnergyFlow";
 import { FreshnessLabel } from "./FreshnessLabel";
@@ -41,6 +43,7 @@ type DashboardViewProps = {
   agilePricePence?: number | null;
   evCharging?: boolean;
   chargeWindow?: ChargeWindowStatus | null;
+  ratePlan?: OctopusRatePlan | null;
   sellOpportunity?: SellOpportunity | null;
   canControl?: boolean;
   onRefresh?: () => void | Promise<void>;
@@ -88,6 +91,7 @@ export function DashboardView({
   agilePricePence = null,
   evCharging = false,
   chargeWindow = null,
+  ratePlan = null,
   sellOpportunity = null,
   canControl = false,
   onRefresh,
@@ -146,6 +150,7 @@ export function DashboardView({
   return (
     <div className="space-y-6">
       <CheapWindowBanner status={chargeWindow} />
+      <OctopusRatesCard plan={ratePlan} />
       <SellOpportunityCard
         opportunity={sellOpportunity}
         canControl={canControl}

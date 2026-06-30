@@ -13,6 +13,13 @@ const base: ChargeWindowStatus = {
   grid_import_w: 0,
   battery_soc_pct: 0,
   message: "",
+  cheap_now: false,
+  offpeak_start: "23:30",
+  offpeak_end: "05:30",
+  next_cheap_start: null,
+  next_cheap_source: "",
+  state: "idle",
+  severity: "good",
 };
 
 describe("CheapWindowBanner", () => {
@@ -21,37 +28,79 @@ describe("CheapWindowBanner", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("renders nothing when not importing on a cheap window", () => {
-    const { container } = render(<CheapWindowBanner status={base} />);
-    expect(container).toBeEmptyDOMElement();
+  it("shows cheap rate now when cheap_now is true", () => {
+    render(
+      <CheapWindowBanner
+        status={{
+          ...base,
+          cheap_now: true,
+          source: "off-peak",
+          state: "idle",
+        }}
+      />,
+    );
+    expect(screen.getByText(/cheap rate now/i)).toBeInTheDocument();
   });
 
-  it("shows the intentional-import explainer when importing on a cheap window", () => {
-    const status: ChargeWindowStatus = {
-      ...base,
-      importing_on_cheap_window: true,
-      active: true,
-      source: "smart-charge",
-      window_start: "12:01",
-      window_end: "12:30",
-      grid_import_w: 389,
-      battery_soc_pct: 100,
-      message: "Importing from the grid on purpose. Normal discharge resumes at 12:30.",
-    };
-    render(<CheapWindowBanner status={status} />);
+  it("shows peak rate now and next window when not cheap", () => {
+    render(
+      <CheapWindowBanner
+        status={{
+          ...base,
+          cheap_now: false,
+          next_cheap_start: "2026-06-30T22:30:00Z",
+          next_cheap_source: "off-peak",
+        }}
+      />,
+    );
+    expect(screen.getByText(/peak rate now/i)).toBeInTheDocument();
+  });
+
+  it("shows intentional import explainer for cheap import", () => {
+    render(
+      <CheapWindowBanner
+        status={{
+          ...base,
+          importing_on_cheap_window: true,
+          cheap_now: true,
+          state: "cheap_import",
+          severity: "good",
+          message: "Importing 0.4 kW from the grid on cheap power.",
+        }}
+      />,
+    );
     expect(screen.getByText(/this is intentional/i)).toBeInTheDocument();
-    expect(screen.getByText(/on purpose/i)).toBeInTheDocument();
+  });
+
+  it("shows peak import explanation", () => {
+    render(
+      <CheapWindowBanner
+        status={{
+          ...base,
+          state: "peak_import",
+          severity: "info",
+          message: "Importing 0.8 kW at the peak day rate.",
+        }}
+      />,
+    );
+    expect(screen.getByText(/importing at peak rate/i)).toBeInTheDocument();
+    expect(screen.getByText(/peak day rate/i)).toBeInTheDocument();
   });
 
   it("shows a warning when grid-charging without a matching cheap window", () => {
-    const status: ChargeWindowStatus = {
-      ...base,
-      active: true,
-      source: "unexpected",
-      grid_import_w: 300,
-      message: "The inverter is importing while grid-charge is enabled, but no cheap window matches.",
-    };
-    render(<CheapWindowBanner status={status} />);
+    render(
+      <CheapWindowBanner
+        status={{
+          ...base,
+          active: true,
+          source: "unexpected",
+          state: "peak_import",
+          severity: "caution",
+          grid_import_w: 300,
+          message: "The inverter is importing while grid-charge is enabled, but no cheap window matches.",
+        }}
+      />,
+    );
     expect(screen.getByText(/unexpected grid import/i)).toBeInTheDocument();
   });
 });
