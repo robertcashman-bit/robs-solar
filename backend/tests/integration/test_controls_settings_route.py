@@ -44,6 +44,9 @@ async def test_settings_returns_parsed_tou_for_sunsynk(
     sn = "2210123456"
 
     monkeypatch.setattr(settings, "sunsynk_inverter_sn", sn)
+    monkeypatch.setattr(settings, "sunsynk_username", "test-user")
+    monkeypatch.setattr(settings, "sunsynk_password", "test-pass")
+    monkeypatch.setattr(settings, "sunsynk_plant_id", "537603")
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
