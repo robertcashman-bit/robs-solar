@@ -33,8 +33,10 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
     {
+      // Invoke the venv interpreter directly: CI runs /bin/sh (dash), which has
+      // no `source` builtin, so activating the venv fails with exit 127.
       command:
-        "cd ../backend && source .venv/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port 8000",
+        "cd ../backend && .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000",
       url: "http://127.0.0.1:8000/health",
       reuseExistingServer: !process.env.CI,
       env: backendEnv,
