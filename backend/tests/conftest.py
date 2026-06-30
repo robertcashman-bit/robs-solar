@@ -28,7 +28,7 @@ async def setup_db() -> AsyncGenerator[None, None]:
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def reset_safety_settings() -> AsyncGenerator[None, None]:
+async def reset_safety_settings(setup_db: None) -> AsyncGenerator[None, None]:
     from sqlalchemy import delete
 
     from app.db.models import AppSettingRow
