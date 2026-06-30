@@ -96,6 +96,13 @@ class Settings(BaseSettings):
     auto_schedule_interval_minutes: int = 15
     auto_schedule_soc_floor_pct: int = 20
 
+    # Sell-to-grid advisor. Worth selling when the export rate clears the
+    # threshold and the battery is above the reserve floor (so we don't sell
+    # energy we'd need at the expensive peak).
+    sell_export_threshold_gbp: float = 0.15
+    sell_min_soc_pct: int = 50
+    battery_capacity_kwh: float = 16.1
+
     # AI assistant (OpenAI). Key lives only on the backend; never sent to the UI.
     # The assistant is read-only by design: it proposes changes that an admin must
     # confirm. Applying a change reuses the audited /controls/* endpoints.

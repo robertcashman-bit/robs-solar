@@ -454,6 +454,7 @@ class NotificationCategoryToggle(BaseModel):
     export_price_high: bool = True
     soc_low_before_offpeak: bool = True
     inverter_fault: bool = True
+    sell_opportunity: bool = True
 
 
 class NotificationSettings(BaseModel):
@@ -480,6 +481,31 @@ class EvStatusResponse(BaseModel):
     in_dispatch_window: bool = False
     house_load_w: float = 0.0
     message: str = ""
+
+
+class ChargeWindowStatus(BaseModel):
+    importing_on_cheap_window: bool = False
+    active: bool = False
+    source: str = ""
+    window_start: str = ""
+    window_end: str = ""
+    grid_import_w: float = 0.0
+    battery_soc_pct: float = 0.0
+    message: str = ""
+
+
+class SellOpportunity(BaseModel):
+    worth_selling: bool = False
+    battery_soc_pct: float = 0.0
+    export_rate_pence: Optional[float] = None
+    import_rate_pence: Optional[float] = None
+    threshold_pence: float = 0.0
+    sellable_kwh: float = 0.0
+    estimated_value_gbp: float = 0.0
+    recommended_mode: str = "feed_in"
+    headline: str = ""
+    message: str = ""
+    configured: bool = False
 
 
 class RuleConditionType(str, Enum):

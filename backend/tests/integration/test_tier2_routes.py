@@ -86,3 +86,26 @@ async def test_ev_status_route(client: AsyncClient) -> None:
     response = await client.get("/metrics/ev/status")
     assert response.status_code == 200
     assert "car_charging_likely" in response.json()
+
+
+@pytest.mark.asyncio
+async def test_charge_window_route(client: AsyncClient) -> None:
+    await login(client, "viewer", "viewer-pass")
+    response = await client.get("/metrics/charge-window")
+    assert response.status_code == 200
+    body = response.json()
+    assert "importing_on_cheap_window" in body
+    assert "message" in body
+
+
+@pytest.mark.asyncio
+async def test_sell_opportunity_route(client: AsyncClient, monkeypatch) -> None:
+    from app.services import octopus_client as octopus_module
+
+    monkeypatch.setattr(octopus_module.octopus_client, "configured", lambda: False)
+    await login(client, "viewer", "viewer-pass")
+    response = await client.get("/metrics/sell-opportunity")
+    assert response.status_code == 200
+    body = response.json()
+    assert "worth_selling" in body
+    assert body["configured"] is False

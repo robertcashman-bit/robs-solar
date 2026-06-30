@@ -7,6 +7,7 @@ from app.auth.sessions import SessionData
 from app.db.session import get_db
 from app.schemas.domain import (
     AdapterError,
+    ChargeWindowStatus,
     ConnectivityStatus,
     EvStatusResponse,
     HistoryRange,
@@ -15,10 +16,13 @@ from app.schemas.domain import (
     MetricHistoryResponse,
     MetricSummaryResponse,
     ReconciliationResponse,
+    SellOpportunity,
 )
 from app.services.analytics_service import analytics_service
 from app.services.billing_reconciliation_service import billing_reconciliation_service
+from app.services.charge_window_service import charge_window_service
 from app.services.ev_load_detector import ev_load_detector
+from app.services.sell_advisor_service import sell_advisor_service
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -74,6 +78,18 @@ async def metrics_reconciliation(
     db: AsyncSession = Depends(get_db),
 ) -> ReconciliationResponse:
     return await billing_reconciliation_service.get_reconciliation(db, range)
+
+
+@router.get("/charge-window", response_model=ChargeWindowStatus)
+async def charge_window_status(_: SessionData = Depends(require_viewer)) -> ChargeWindowStatus:
+    adapter = get_adapter()
+    return await charge_window_service.get_status(adapter)
+
+
+@router.get("/sell-opportunity", response_model=SellOpportunity)
+async def sell_opportunity(_: SessionData = Depends(require_viewer)) -> SellOpportunity:
+    adapter = get_adapter()
+    return await sell_advisor_service.get_opportunity(adapter)
 
 
 @router.get("/ev/status", response_model=EvStatusResponse)

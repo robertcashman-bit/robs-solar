@@ -37,6 +37,7 @@ from app.services.analytics_service import analytics_service
 from app.services.auto_schedule_service import auto_schedule_service
 from app.services.octopus_client import octopus_client
 from app.services.safety_settings_service import safety_settings_service
+from app.services.sell_advisor_service import sell_advisor_service
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,11 @@ house load instead of importing from the grid.
 above its SOC floor is a problem worth flagging.
 - The auto-scheduler already computes ideal bands ("computed_bands" in context). \
 If the live bands match those, the schedule is optimal.
+- Selling to the grid: when the export rate is high (see "sell_opportunity" in \
+context) and the battery has headroom above its reserve, it can be worth \
+exporting. To start selling, propose set_operating_mode with mode "feed_in" \
+(selling). To stop, propose mode "self_use". Only recommend selling energy the \
+home will not need to cover the expensive evening peak.
 
 You will receive a JSON "context" describing the live system. Respond ONLY with \
 JSON matching the requested schema. Be concise and specific. Quote real numbers \
@@ -195,6 +201,19 @@ class AiAdvisorService:
                 }
         except Exception as exc:  # noqa: BLE001
             ctx["tariff_error"] = str(exc)
+
+        try:
+            opportunity = await sell_advisor_service.get_opportunity(adapter)
+            ctx["sell_opportunity"] = {
+                "worth_selling": opportunity.worth_selling,
+                "export_rate_pence": opportunity.export_rate_pence,
+                "threshold_pence": opportunity.threshold_pence,
+                "sellable_kwh": opportunity.sellable_kwh,
+                "estimated_value_gbp": opportunity.estimated_value_gbp,
+                "headline": opportunity.headline,
+            }
+        except Exception as exc:  # noqa: BLE001
+            ctx["sell_opportunity_error"] = str(exc)
 
         try:
             summary = await analytics_service.get_summary(db, HistoryRange.DAY)

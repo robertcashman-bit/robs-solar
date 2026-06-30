@@ -4,22 +4,28 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { DashboardView } from "@/components/dashboard/DashboardView";
+import { LiveClock } from "@/components/dashboard/LiveClock";
 import { AppShell } from "@/components/shared/AppShell";
 import { ErrorBanner, OfflineBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
+import { canWrite } from "@/lib/permissions";
 import {
+  chargeWindowStatusSchema,
   connectivitySchema,
   healthResponseSchema,
   metricSummarySchema,
   metricCompareSchema,
   octopusTariffSchema,
   evStatusSchema,
+  sellOpportunitySchema,
+  type ChargeWindowStatus,
   type ConnectivityStatus,
   type MetricCompare,
   type MetricSummary,
   type OctopusTariff,
+  type SellOpportunity,
 } from "@/lib/schemas";
 import { useLiveMetrics } from "@/lib/use-live-metrics";
 
@@ -40,6 +46,8 @@ export default function DashboardPage() {
   const [agilePricePence, setAgilePricePence] = useState<number | null>(null);
   const [octopusTariff, setOctopusTariff] = useState<OctopusTariff | null>(null);
   const [evCharging, setEvCharging] = useState(false);
+  const [chargeWindow, setChargeWindow] = useState<ChargeWindowStatus | null>(null);
+  const [sellOpportunity, setSellOpportunity] = useState<SellOpportunity | null>(null);
 
   const refreshMeta = useCallback(async () => {
     setError(null);
@@ -88,6 +96,20 @@ export default function DashboardPage() {
         setEvCharging(ev.car_charging_likely);
       } catch {
         setEvCharging(false);
+      }
+      try {
+        const cw = chargeWindowStatusSchema.parse(await apiClient.get("/metrics/charge-window"));
+        setChargeWindow(cw);
+      } catch {
+        setChargeWindow(null);
+      }
+      try {
+        const sell = sellOpportunitySchema.parse(
+          await apiClient.get("/metrics/sell-opportunity"),
+        );
+        setSellOpportunity(sell);
+      } catch {
+        setSellOpportunity(null);
       }
     } catch (fetchError) {
       if (fetchError instanceof ApiError && fetchError.status >= 500) {
@@ -163,6 +185,7 @@ export default function DashboardPage() {
           }
           actions={
             <>
+              <LiveClock />
               <button type="button" onClick={() => void refresh()} className="solar-btn-ghost">
                 Refresh now
               </button>
@@ -193,6 +216,10 @@ export default function DashboardPage() {
           octopusTariff={octopusTariff}
           agilePricePence={agilePricePence}
           evCharging={evCharging}
+          chargeWindow={chargeWindow}
+          sellOpportunity={sellOpportunity}
+          canControl={canWrite(user)}
+          onRefresh={refresh}
         />
       </div>
     </AppShell>

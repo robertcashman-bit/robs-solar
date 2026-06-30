@@ -1,11 +1,22 @@
 import { useMemo } from "react";
 
-import type { ConnectivityStatus, LiveMetrics, MetricCompare, MetricSummary, OctopusTariff } from "@/lib/schemas";
+import type {
+  ChargeWindowStatus,
+  ConnectivityStatus,
+  LiveMetrics,
+  MetricCompare,
+  MetricSummary,
+  OctopusTariff,
+  SellOpportunity,
+} from "@/lib/schemas";
 import { buildSavingsInsights } from "@/lib/savings-insights";
 
 import { ArrowDownIcon, ArrowUpIcon, BoltIcon, ChartIcon } from "@/components/shared/icons";
 
+import { CheapWindowBanner } from "./CheapWindowBanner";
+import { SellOpportunityCard } from "./SellOpportunityCard";
 import { EnergyFlow } from "./EnergyFlow";
+import { FreshnessLabel } from "./FreshnessLabel";
 import { LiveDetailCards } from "./LiveDetailCards";
 import { MetricCard, MetricCardSkeleton } from "./MetricCard";
 import { QuickActionsStrip } from "./QuickActionsStrip";
@@ -25,6 +36,10 @@ type DashboardViewProps = {
   octopusTariff?: OctopusTariff | null;
   agilePricePence?: number | null;
   evCharging?: boolean;
+  chargeWindow?: ChargeWindowStatus | null;
+  sellOpportunity?: SellOpportunity | null;
+  canControl?: boolean;
+  onRefresh?: () => void | Promise<void>;
 };
 
 function StatusPill({
@@ -66,6 +81,10 @@ export function DashboardView({
   octopusTariff = null,
   agilePricePence = null,
   evCharging = false,
+  chargeWindow = null,
+  sellOpportunity = null,
+  canControl = false,
+  onRefresh,
 }: DashboardViewProps) {
   const insights = useMemo(
     () =>
@@ -120,6 +139,12 @@ export function DashboardView({
 
   return (
     <div className="space-y-6">
+      <CheapWindowBanner status={chargeWindow} />
+      <SellOpportunityCard
+        opportunity={sellOpportunity}
+        canControl={canControl}
+        onRefresh={onRefresh}
+      />
       <div className="flex flex-wrap items-center gap-2">
         <StatusPill dotColor={isSimulated ? "bg-sky-400" : "bg-violet-400"} pulse={!isSimulated}>
           {isSimulated ? "Simulated data" : "Live data"}
@@ -163,7 +188,10 @@ export function DashboardView({
 
       <section aria-label="Live dashboard" className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
-          <h3 className="solar-section-title">Today</h3>
+          <div className="flex items-baseline gap-3">
+            <h3 className="solar-section-title">Today</h3>
+            <FreshnessLabel timestamp={metrics.timestamp} />
+          </div>
           <p className="text-sm text-[var(--muted)]">
             Inverter:{" "}
             <span className="font-medium capitalize text-[var(--foreground)]">

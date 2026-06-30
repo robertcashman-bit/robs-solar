@@ -107,6 +107,30 @@ class AlertService:
                             True,
                         )
                     )
+                # Sell-to-grid opportunity: high export price AND enough battery
+                # headroom above the reserve floor to make exporting worthwhile.
+                if (
+                    export_rate is not None
+                    and export_rate >= settings.sell_export_threshold_gbp
+                    and soc > settings.sell_min_soc_pct
+                ):
+                    sellable = max(
+                        0.0,
+                        (soc - settings.sell_min_soc_pct) / 100.0 * settings.battery_capacity_kwh,
+                    )
+                    value = sellable * export_rate
+                    rules.append(
+                        (
+                            "info",
+                            "sell_opportunity",
+                            (
+                                f"Worth selling to grid: {export_rate * 100:.1f}p/kWh, "
+                                f"~{sellable:.1f} kWh sellable (≈£{value:.2f}). "
+                                "Switch to Feed-in mode to export."
+                            ),
+                            True,
+                        )
+                    )
             except Exception as exc:
                 logger.debug("Octopus export rate alert skipped: %s", exc)
 

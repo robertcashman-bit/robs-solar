@@ -385,6 +385,31 @@ export const notificationSettingsSchema = notificationSettingsStatusSchema.exten
   smtp_password: z.string().optional(),
 });
 
+export const chargeWindowStatusSchema = z.object({
+  importing_on_cheap_window: z.boolean(),
+  active: z.boolean(),
+  source: z.string().optional().default(""),
+  window_start: z.string().optional().default(""),
+  window_end: z.string().optional().default(""),
+  grid_import_w: z.number().optional().default(0),
+  battery_soc_pct: z.number().optional().default(0),
+  message: z.string().optional().default(""),
+});
+
+export const sellOpportunitySchema = z.object({
+  worth_selling: z.boolean(),
+  battery_soc_pct: z.number().optional().default(0),
+  export_rate_pence: z.number().nullable().optional(),
+  import_rate_pence: z.number().nullable().optional(),
+  threshold_pence: z.number().optional().default(0),
+  sellable_kwh: z.number().optional().default(0),
+  estimated_value_gbp: z.number().optional().default(0),
+  recommended_mode: z.string().optional().default("feed_in"),
+  headline: z.string().optional().default(""),
+  message: z.string().optional().default(""),
+  configured: z.boolean().optional().default(false),
+});
+
 export const evStatusSchema = z.object({
   car_charging_likely: z.boolean(),
   in_dispatch_window: z.boolean(),
@@ -450,6 +475,8 @@ export const aiChatResponseSchema = z.object({
 export type Reconciliation = z.infer<typeof reconciliationSchema>;
 export type NotificationSettingsStatus = z.infer<typeof notificationSettingsStatusSchema>;
 export type EvStatus = z.infer<typeof evStatusSchema>;
+export type ChargeWindowStatus = z.infer<typeof chargeWindowStatusSchema>;
+export type SellOpportunity = z.infer<typeof sellOpportunitySchema>;
 export type AutomationRule = z.infer<typeof automationRuleSchema>;
 export type SafetySettings = z.infer<typeof safetySettingsSchema>;
 export type AiProposedAction = z.infer<typeof aiProposedActionSchema>;
