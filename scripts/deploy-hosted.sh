@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "==> Deploying frontend to Vercel (production)…"
-cd frontend
+cd "$ROOT"
 if [[ -z "${BACKEND_URL:-}" ]]; then
   echo "WARNING: BACKEND_URL is not set. Set it to your Render API URL, e.g."
   echo "  export BACKEND_URL=https://robs-solar-api.onrender.com"
@@ -23,6 +23,9 @@ fi
 $VC deploy --prod --yes \
   ${BACKEND_URL:+--env "BACKEND_URL=$BACKEND_URL"} \
   ${VERCEL_TOKEN:+--token "$VERCEL_TOKEN"}
+
+echo ""
+echo "Tip: link the project once from repo root with: vercel link"
 
 echo ""
 echo "==> Backend (Render)"

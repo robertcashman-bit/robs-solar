@@ -8,7 +8,7 @@ services:
     region: frankfurt
     branch: main
     rootDir: backend
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./deploy/Dockerfile
     healthCheckPath: /health
     autoDeploy: true
     disk:
