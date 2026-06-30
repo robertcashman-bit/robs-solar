@@ -68,6 +68,19 @@ vi.mock("@/lib/api-client", () => ({
           computed_bands: [],
         };
       }
+      if (path === "/metrics/peak-import-guard") {
+        return {
+          enabled: true,
+          armed: false,
+          last_action_message: "",
+          last_audit_ids: [],
+          consecutive_samples: 0,
+          cooldown_remaining_seconds: 0,
+        };
+      }
+      if (path === "/metrics/ev/status") {
+        return { car_charging_likely: false, in_dispatch_window: false };
+      }
       if (path === "/controls/settings") return settingsResponse;
       return {};
     }),
@@ -96,7 +109,7 @@ describe("SchedulerPage gating", () => {
       expect(screen.queryByRole("heading", { name: "Edit schedule" })).not.toBeInTheDocument(),
     );
     expect(
-      screen.getByRole("heading", { name: "Unlock inverter control" }),
+      await screen.findByRole("heading", { name: "Unlock inverter control" }),
     ).toBeInTheDocument();
   });
 

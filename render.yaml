@@ -34,6 +34,12 @@ services:
         value: "60"
       - key: AUTO_SCHEDULE_ENABLED
         value: "false"
+      - key: TARIFF_TIMEZONE
+        value: Europe/London
+      - key: PEAK_IMPORT_GUARD_ENABLED
+        value: "true"
+      - key: SUNSYNK_ENABLE_UNVERIFIED_WRITES
+        value: "false"
       - key: AI_ENABLED
         value: "true"
       # Set these in the Render dashboard (or via scripts/push-render-secrets.sh):

@@ -20,13 +20,28 @@ vi.mock("@/lib/api-client", () => ({
     }
   },
   apiClient: {
-    get: vi.fn(async () => ({
-      enabled: false,
-      soc_floor_pct: 20,
-      last_run_message: "",
-      next_cheap_windows: [],
-      computed_bands: [],
-    })),
+    get: vi.fn(async (path: string) => {
+      if (path === "/metrics/ev/status") {
+        return { car_charging_likely: false, in_dispatch_window: false };
+      }
+      if (path === "/metrics/peak-import-guard") {
+        return {
+          enabled: true,
+          armed: false,
+          last_action_message: "",
+          last_audit_ids: [],
+          consecutive_samples: 0,
+          cooldown_remaining_seconds: 0,
+        };
+      }
+      return {
+        enabled: false,
+        soc_floor_pct: 20,
+        last_run_message: "",
+        next_cheap_windows: [],
+        computed_bands: [],
+      };
+    }),
     post: vi.fn(async () => ({
       enabled: true,
       soc_floor_pct: 20,
