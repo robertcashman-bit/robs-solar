@@ -36,7 +36,9 @@ class EvLoadDetector:
             planned,
             now=now,
         )
-        local = now.astimezone()
+        from app.services.tariff_clock import to_tariff
+
+        local = to_tariff(now)
         minute = local.hour * 60 + local.minute
         return is_charge_minute(minute, charge)
 

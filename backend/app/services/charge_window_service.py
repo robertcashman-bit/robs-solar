@@ -13,6 +13,7 @@ from app.services.iog_schedule import (
     time_to_minutes,
 )
 from app.services.octopus_client import octopus_client
+from app.services.tariff_clock import to_tariff
 
 _IMPORT_THRESHOLD_W = 50.0
 _DISCHARGE_THRESHOLD_W = 100.0
@@ -20,7 +21,7 @@ _FULL_BATTERY_SOC_PCT = 98.0
 
 
 def _local_minute(now: datetime) -> int:
-    local = now.astimezone()
+    local = to_tariff(now)
     return local.hour * 60 + local.minute
 
 
@@ -36,7 +37,7 @@ def _cheap_source(
     offpeak_intervals = charge_intervals_from_windows(offpeak_start, offpeak_end, [])
     if is_charge_minute(minute, offpeak_intervals):
         return "off-peak"
-    local_now = now.astimezone()
+    local_now = to_tariff(now)
     for window in planned:
         if window.start <= local_now < window.end:
             return "smart-charge"
@@ -64,7 +65,7 @@ def next_cheap_window_start(
     if is_charge_minute(minute, intervals):
         return None, ""
 
-    local = now.astimezone()
+    local = to_tariff(now)
     candidates: list[tuple[datetime, str]] = []
 
     start_min = time_to_minutes(offpeak_start)
@@ -101,7 +102,7 @@ def _peak_import_message(
     import_kw = grid_import_w / 1000.0
     next_hint = ""
     if next_cheap_start is not None:
-        local = next_cheap_start.astimezone()
+        local = to_tariff(next_cheap_start)
         label = "off-peak" if next_cheap_source == "off-peak" else "smart-charge"
         next_hint = (
             f" Next cheap {label} window from "
@@ -203,9 +204,9 @@ def evaluate_charge_window(
         end_label = offpeak_end if cheap_source == "off-peak" else (
             next(
                 (
-                    w.end.astimezone().strftime("%H:%M")
+                    to_tariff(w.end).strftime("%H:%M")
                     for w in planned
-                    if w.start <= now.astimezone() < w.end
+                    if w.start <= now < w.end
                 ),
                 None,
             )

@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.base import InverterAdapter
+from app.adapters.sunsynk_tou import work_mode_from_sunsynk
 from app.config import settings
 from app.db.models import AppSettingRow
 from app.schemas.domain import (
@@ -22,6 +23,7 @@ from app.schemas.domain import (
     PeakImportGuardConfigRequest,
     PeakImportGuardStatus,
     UserRole,
+    work_mode_to_inverter_mode,
 )
 from app.services.auto_schedule_service import auto_schedule_service
 from app.services.charge_window_service import evaluate_charge_window
@@ -213,7 +215,27 @@ class PeakImportGuardService:
         if settings_payload is None or not settings_payload.write_allowed:
             return
 
-        await self._remediate(db, adapter, metrics, auto_config)
+        await self._remediate(db, adapter, metrics, auto_config, settings_payload)
+
+    @staticmethod
+    def _current_mode(
+        metrics: LiveMetrics,
+        settings_payload: Any | None,
+    ) -> InverterMode:
+        """Resolve the real operating mode.
+
+        Prefer the inverter settings document's sysWorkMode (authoritative) and
+        fall back to the live-metrics mode. Older flow parsing hardcoded self-use,
+        so relying on metrics alone could miss a "Selling first" inverter.
+        """
+        work_mode = getattr(settings_payload, "system_work_mode", None)
+        if work_mode is not None:
+            return work_mode_to_inverter_mode(work_mode)
+        raw = getattr(settings_payload, "sys_work_mode", None)
+        mapped = work_mode_from_sunsynk(raw) if raw not in (None, "") else None
+        if mapped is not None:
+            return work_mode_to_inverter_mode(mapped)
+        return metrics.inverter_mode
 
     async def _remediate(
         self,
@@ -221,6 +243,7 @@ class PeakImportGuardService:
         adapter: InverterAdapter,
         metrics: LiveMetrics,
         auto_config: dict[str, Any],
+        settings_payload: Any | None = None,
     ) -> None:
         actions: list[str] = []
         audit_ids: list[int] = []
@@ -237,7 +260,7 @@ class PeakImportGuardService:
             )
             actions.append("enabled auto-align")
 
-        if metrics.inverter_mode == InverterMode.FEED_IN:
+        if self._current_mode(metrics, settings_payload) == InverterMode.FEED_IN:
             result = await control_service.set_operating_mode(
                 db,
                 adapter,

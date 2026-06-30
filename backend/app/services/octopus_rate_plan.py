@@ -12,6 +12,7 @@ from app.schemas.domain import (
     RatePlanWindow,
 )
 from app.services.iog_schedule import minutes_to_time, time_to_minutes
+from app.services.tariff_clock import to_tariff
 
 
 def _rate_at(now: datetime, rates: list[dict[str, Any]]) -> float | None:
@@ -57,7 +58,9 @@ def _windows_from_half_hourly_slots(
     peak_minutes: set[int] = set()
     for row in rates:
         value = float(row["value_inc_vat"])
-        start = datetime.fromisoformat(row["valid_from"].replace("Z", "+00:00")).astimezone()
+        start = to_tariff(
+            datetime.fromisoformat(row["valid_from"].replace("Z", "+00:00"))
+        )
         minute = start.hour * 60 + start.minute
         if _is_cheap_rate(value, cheap_p):
             cheap_minutes.add(minute)
@@ -128,7 +131,8 @@ def derive_rate_plan(
         cheap_windows = []
         peak_windows = [RatePlanWindow(start="00:00", end="23:30")]
 
-    minute = now.astimezone().hour * 60 + now.astimezone().minute
+    now_local = to_tariff(now)
+    minute = now_local.hour * 60 + now_local.minute
     if cheap_windows:
         current_is_cheap = _minute_in_windows(minute, cheap_windows)
         if not current_is_cheap:

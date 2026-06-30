@@ -27,6 +27,7 @@ from app.adapters.sunsynk_tou import (
     diagnose_battery_hold,
     parse_tou_bands,
     permissions_allow_write,
+    work_mode_from_sunsynk,
     work_mode_label,
 )
 from app.config import settings
@@ -46,6 +47,7 @@ from app.schemas.domain import (
     ScheduleRequest,
     TouBandsRequest,
     UnsupportedWriteError,
+    work_mode_to_inverter_mode,
 )
 
 _PLANTS_PATH = "/api/v1/plants"
@@ -231,6 +233,49 @@ class SunsynkConnectAdapter(InverterAdapter):
             ],
         )
 
+    @staticmethod
+    def _flag(data: dict[str, Any], *keys: str) -> Optional[bool]:
+        """Read a Sunsynk flow direction flag if present (else None)."""
+        for key in keys:
+            if key in data and data[key] is not None:
+                raw = data[key]
+                if isinstance(raw, bool):
+                    return raw
+                return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+        return None
+
+    def _signed_battery_power(self, data: dict[str, Any], magnitude: float) -> float:
+        """Battery power using the app convention: positive = discharging.
+
+        Sunsynk firmware varies: some report a signed ``battPower``; others report
+        an unsigned magnitude plus direction booleans (``toBat`` = charging,
+        ``batteryTo`` = discharging). Prefer the explicit flags when present so a
+        charging battery is never misread as discharging (which would defeat the
+        peak-import and discharge logic). Fall back to the raw signed value.
+        """
+        charging = self._flag(data, "toBat", "toBattery", "gridToBat")
+        discharging = self._flag(data, "batteryTo", "battTo", "batteryOut", "batToLoad")
+        if charging is True and discharging is not True:
+            return -abs(magnitude)
+        if discharging is True and charging is not True:
+            return abs(magnitude)
+        return magnitude
+
+    def _signed_grid(self, data: dict[str, Any], grid: float) -> tuple[float, float]:
+        """Return (import_w, export_w) using direction flags when present.
+
+        Convention: positive ``gridOrMeterPower`` = importing. Flags ``gridTo``
+        (importing) / ``toGrid`` (exporting) override the sign when the firmware
+        reports an unsigned magnitude.
+        """
+        importing = self._flag(data, "gridTo", "gridToLoad", "gridToBat")
+        exporting = self._flag(data, "toGrid", "pvToGrid")
+        if importing is True and exporting is not True:
+            return abs(grid), 0.0
+        if exporting is True and importing is not True:
+            return 0.0, abs(grid)
+        return (grid if grid > 0 else 0.0, -grid if grid < 0 else 0.0)
+
     def _parse_flow(self, payload: dict[str, Any]) -> LiveMetrics:
         data = payload.get("data") or {}
 
@@ -242,6 +287,8 @@ class SunsynkConnectAdapter(InverterAdapter):
                 raise AdapterError(f"Malformed Sunsynk flow field '{key}'") from exc
 
         grid = num("gridOrMeterPower")
+        grid_import_w, grid_export_w = self._signed_grid(data, grid)
+        battery_power_w = self._signed_battery_power(data, num("battPower"))
         fault_raw = data.get("fault") or data.get("faultCode") or data.get("alarm")
         has_fault = bool(fault_raw) and str(fault_raw) not in ("0", "none", "None", "")
         soh_raw = data.get("soh") or data.get("batterySoh") or data.get("battSoh")
@@ -251,16 +298,21 @@ class SunsynkConnectAdapter(InverterAdapter):
                 soh = float(soh_raw)
             except (TypeError, ValueError):
                 soh = None
+        work_mode_raw = data.get("sysWorkMode")
+        work_mode = work_mode_from_sunsynk(work_mode_raw)
         return LiveMetrics(
             pv_power_w=max(0.0, num("pvPower")),
             battery_soc_pct=min(100.0, max(0.0, num("soc"))),
-            battery_power_w=num("battPower"),
+            battery_power_w=battery_power_w,
             house_load_w=max(0.0, num("loadOrEpsPower")),
-            grid_import_w=grid if grid > 0 else 0.0,
-            grid_export_w=-grid if grid < 0 else 0.0,
-            inverter_mode=InverterMode.SELF_USE,
+            grid_import_w=grid_import_w,
+            grid_export_w=grid_export_w,
+            inverter_mode=work_mode_to_inverter_mode(work_mode)
+            if work_mode is not None
+            else InverterMode.SELF_USE,
             inverter_status=InverterStatus.FAULT if has_fault else InverterStatus.ONLINE,
             battery_soh_pct=soh,
+            system_work_mode=work_mode,
             # The /flow endpoint carries no daily energy totals; they are filled in
             # by get_live_metrics() from the daily series. Start at zero.
             daily_pv_kwh=0.0,
@@ -321,7 +373,9 @@ class SunsynkConnectAdapter(InverterAdapter):
         }
 
     async def _daily_totals(self, plant_id: str) -> dict[str, float]:
-        local_date = datetime.now().strftime("%Y-%m-%d")
+        from app.services.tariff_clock import tariff_now
+
+        local_date = tariff_now().strftime("%Y-%m-%d")
         now = time.monotonic()
         if self._daily_cache is not None:
             expiry, cached_date, totals = self._daily_cache

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.schemas.domain import DispatchWindow, TouBandWrite
+from app.services.tariff_clock import to_tariff
 
 
 def time_to_minutes(value: str) -> int:
@@ -61,8 +62,8 @@ def charge_intervals_from_windows(
     for window in planned:
         if window.end <= now:
             continue
-        local_start = window.start.astimezone().strftime("%H:%M")
-        local_end = window.end.astimezone().strftime("%H:%M")
+        local_start = to_tariff(window.start).strftime("%H:%M")
+        local_end = to_tariff(window.end).strftime("%H:%M")
         intervals.extend(
             expand_interval(time_to_minutes(local_start), time_to_minutes(local_end))
         )
@@ -142,16 +143,24 @@ def segments_to_bands(
     segments: list[ScheduleSegment],
     *,
     soc_floor_pct: int,
+    overnight_target_pct: int = 100,
     charge_power_w: int = 8000,
     discharge_power_w: int = 8000,
 ) -> list[TouBandWrite]:
+    """Turn charge/discharge segments into Sunsynk TOU bands.
+
+    Charge segments (cheap window): grid charge ON, cap = overnight target so the
+    battery fills up. Discharge segments (daytime): grid charge OFF and cap = the
+    daytime floor so the inverter discharges stored energy down to the reserve
+    instead of holding the battery full and importing from the grid.
+    """
     bands: list[TouBandWrite] = []
     for slot, segment in enumerate(segments, start=1):
         bands.append(
             TouBandWrite(
                 slot=slot,
                 start=minutes_to_time(segment.start_minute),
-                target_soc_pct=100 if segment.charge else soc_floor_pct,
+                target_soc_pct=overnight_target_pct if segment.charge else soc_floor_pct,
                 grid_charge_enabled=segment.charge,
                 power_w=charge_power_w if segment.charge else discharge_power_w,
             )
@@ -165,12 +174,17 @@ def compute_iog_bands(
     offpeak_end: str,
     planned: list[DispatchWindow],
     soc_floor_pct: int,
+    overnight_target_pct: int = 100,
     now: datetime | None = None,
 ) -> list[TouBandWrite]:
     charge = charge_intervals_from_windows(offpeak_start, offpeak_end, planned, now=now)
     segments = segments_from_charge_intervals(charge)
     collapsed = collapse_to_six(segments)
-    return segments_to_bands(collapsed, soc_floor_pct=soc_floor_pct)
+    return segments_to_bands(
+        collapsed,
+        soc_floor_pct=soc_floor_pct,
+        overnight_target_pct=overnight_target_pct,
+    )
 
 
 def bands_equivalent(

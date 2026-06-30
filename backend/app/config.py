@@ -91,10 +91,24 @@ class Settings(BaseSettings):
     iog_offpeak_start: str = "23:30"
     iog_offpeak_end: str = "05:30"
 
+    # Tariff timezone. All cheap/peak window and TOU band times are interpreted in
+    # this zone, NOT the server's local zone, so a backend running in UTC (Render,
+    # Vercel, containers) still aligns the schedule to the user's wall clock and
+    # follows daylight-saving transitions.
+    tariff_timezone: str = "Europe/London"
+
     # Battery auto-align to IOG cheap windows (opt-in; default off)
     auto_schedule_enabled: bool = False
     auto_schedule_interval_minutes: int = 15
+    # Daytime battery discharge floor (reserve SOC). The battery is allowed to
+    # discharge down to this SOC during the day; it must stay well below a full
+    # battery so stored energy actually covers the house load instead of importing.
     auto_schedule_soc_floor_pct: int = 20
+    # Target SOC to reach during the overnight cheap-rate charge window.
+    auto_schedule_overnight_target_pct: int = 100
+    # Highest daytime floor we will accept. A floor at/above this would keep the
+    # battery effectively full all day (the "stuck at 95%" failure mode).
+    max_daytime_floor_pct: int = 90
 
     # Peak import guard — auto-correct grid import at peak rate when battery is high SOC.
     peak_import_guard_enabled: bool = True

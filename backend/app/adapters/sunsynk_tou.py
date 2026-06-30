@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from app.schemas.domain import TouBand
+from app.schemas.domain import SystemWorkMode, TouBand
 
 
 def _field(data: dict[str, Any], *keys: str) -> Any:
@@ -68,7 +68,14 @@ def parse_tou_bands(data: dict[str, Any]) -> list[TouBand]:
 def active_band_index(bands: list[TouBand], now: datetime | None = None) -> int | None:
     if not bands:
         return None
-    current = now or datetime.now()
+    if now is None:
+        from app.services.tariff_clock import tariff_now
+
+        current = tariff_now()
+    else:
+        from app.services.tariff_clock import to_tariff
+
+        current = to_tariff(now)
     minutes = current.hour * 60 + current.minute
     for band in bands:
         start_m = _minutes(band.start)
@@ -108,6 +115,23 @@ def work_mode_label(sys_work_mode: str | None) -> str:
     if sys_work_mode is None:
         return "Unknown"
     return mapping.get(str(sys_work_mode), f"Mode {sys_work_mode}")
+
+
+def work_mode_from_sunsynk(sys_work_mode: Any) -> SystemWorkMode | None:
+    """Map the Sunsynk ``sysWorkMode`` register to a SystemWorkMode.
+
+    Mirrors the write mapping in SunsynkConnectAdapter.set_operating_mode:
+    "0" Limited to home -> bypass/backup, "1" Limited to home + battery ->
+    battery first (self-use), "2" Selling first -> selling (feed-in).
+    """
+    if sys_work_mode is None or str(sys_work_mode).strip() == "":
+        return None
+    mapping = {
+        "0": SystemWorkMode.BYPASS,
+        "1": SystemWorkMode.BATTERY_FIRST,
+        "2": SystemWorkMode.SELLING,
+    }
+    return mapping.get(str(sys_work_mode).strip())
 
 
 def permissions_allow_write(permissions: list[str]) -> bool:

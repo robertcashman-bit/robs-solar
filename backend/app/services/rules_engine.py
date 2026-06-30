@@ -89,7 +89,9 @@ class RulesEngine:
         if rule.condition == RuleConditionType.DISPATCH_ACTIVE:
             return ev_load_detector.status(metrics).in_dispatch_window
         if rule.condition == RuleConditionType.HOUR_BETWEEN:
-            hour = datetime.now(timezone.utc).astimezone().hour
+            from app.services.tariff_clock import tariff_now
+
+            hour = tariff_now().hour
             start = int(rule.condition_value)
             end = int(rule.condition_value_end or 24)
             if start <= end:

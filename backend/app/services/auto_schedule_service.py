@@ -95,6 +95,11 @@ class AutoScheduleService:
     async def compute_bands(self, db: AsyncSession) -> list[TouBandWrite]:
         config = await self._load_config(db)
         soc_floor = int(config.get("soc_floor_pct", settings.auto_schedule_soc_floor_pct))
+        overnight_target = int(
+            config.get(
+                "overnight_target_pct", settings.auto_schedule_overnight_target_pct
+            )
+        )
         dispatches = await octopus_client.get_dispatches()
         self._next_cheap_windows = list(dispatches.planned)
         bands = compute_iog_bands(
@@ -102,6 +107,7 @@ class AutoScheduleService:
             offpeak_end=dispatches.off_peak_window.end,
             planned=dispatches.planned,
             soc_floor_pct=soc_floor,
+            overnight_target_pct=overnight_target,
         )
         self._computed_bands = bands
         return bands
@@ -115,10 +121,12 @@ class AutoScheduleService:
         config = await self._load_config(db)
         if not config.get("enabled", False):
             self._last_run_message = "Auto-align disabled"
+            logger.info("Auto-align skipped: disabled in config")
             return await self.get_status(db)
 
         if ev_load_detector.car_charging_likely:
             self._last_run_message = "EV charging likely — skipping auto-align"
+            logger.info("Auto-align skipped: EV charging likely")
             return await self.get_status(db)
 
         if (
@@ -126,11 +134,23 @@ class AutoScheduleService:
             or not safety_settings_service.effective_enable_live_writes()
         ):
             self._last_run_message = "Writes disabled (read-only or live writes off)"
+            # This is the most common reason a correct schedule is never applied,
+            # so log it at WARNING rather than letting it fail silently.
+            logger.warning(
+                "Auto-align computed a schedule but did not write it: live writes are "
+                "disabled (read_only=%s, enable_live_writes=%s).",
+                safety_settings_service.effective_read_only(),
+                safety_settings_service.effective_enable_live_writes(),
+            )
             return await self.get_status(db)
 
         settings_payload = await adapter.get_inverter_settings()
         if settings_payload is None or not settings_payload.write_allowed:
             self._last_run_message = "Inverter settings unavailable or write not allowed"
+            logger.warning(
+                "Auto-align could not write: inverter settings unavailable or account "
+                "lacks write permission."
+            )
             return await self.get_status(db)
 
         desired = await self.compute_bands(db)
@@ -146,8 +166,17 @@ class AutoScheduleService:
         ]
         if bands_equivalent(desired, current):
             self._last_run_message = "Schedule already aligned — no write needed"
+            logger.info("Auto-align: schedule already aligned, no write needed")
             return await self.get_status(db)
 
+        logger.info(
+            "Auto-align writing TOU bands: %s",
+            ", ".join(
+                f"slot{b.slot}@{b.start} cap{b.target_soc_pct} "
+                f"grid{'On' if b.grid_charge_enabled else 'Off'}"
+                for b in desired
+            ),
+        )
         result = await control_service.set_tou_bands(
             db,
             adapter,
@@ -158,8 +187,14 @@ class AutoScheduleService:
         if result.success:
             self._last_write_audit_id = result.audit_id
             self._last_run_message = f"Schedule updated (audit #{result.audit_id})"
+            logger.info(
+                "Auto-align wrote schedule (audit #%s, verified=%s)",
+                result.audit_id,
+                getattr(result, "verified", None),
+            )
         else:
             self._last_run_message = result.message
+            logger.error("Auto-align write failed: %s", result.message)
         return await self.get_status(db)
 
 

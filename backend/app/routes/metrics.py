@@ -7,6 +7,7 @@ from app.auth.sessions import SessionData
 from app.db.session import get_db
 from app.schemas.domain import (
     AdapterError,
+    BatteryPlanStatus,
     ChargeWindowStatus,
     ConnectivityStatus,
     EvStatusResponse,
@@ -20,6 +21,7 @@ from app.schemas.domain import (
     SellOpportunity,
 )
 from app.services.analytics_service import analytics_service
+from app.services.battery_plan_service import battery_plan_service
 from app.services.billing_reconciliation_service import billing_reconciliation_service
 from app.services.charge_window_service import charge_window_service
 from app.services.ev_load_detector import ev_load_detector
@@ -96,6 +98,16 @@ async def peak_import_guard_status(
 ) -> PeakImportGuardStatus:
     _ = session
     return await peak_import_guard_service.get_status(db)
+
+
+@router.get("/battery-plan", response_model=BatteryPlanStatus)
+async def battery_plan(
+    session: SessionData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> BatteryPlanStatus:
+    _ = session
+    adapter = get_adapter()
+    return await battery_plan_service.get_plan(db, adapter)
 
 
 @router.get("/sell-opportunity", response_model=SellOpportunity)

@@ -54,8 +54,10 @@ class AlertService:
         except AdapterError:
             rules.append(("critical", "offline", "Adapter unreachable", True))
 
+        from app.services.tariff_clock import tariff_now
+
         offpeak_start = time_to_minutes(settings.iog_offpeak_start)
-        now_local = datetime.now().astimezone()
+        now_local = tariff_now()
         now_minute = now_local.hour * 60 + now_local.minute
         minutes_to_offpeak = (offpeak_start - now_minute) % (24 * 60)
         if soc < settings.auto_schedule_soc_floor_pct and 0 < minutes_to_offpeak <= 120:

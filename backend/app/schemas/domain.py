@@ -409,6 +409,18 @@ class AutoScheduleConfigRequest(BaseModel):
     enabled: bool
     soc_floor_pct: Optional[int] = Field(default=None, ge=0, le=100)
 
+    @field_validator("soc_floor_pct")
+    @classmethod
+    def _reject_high_floor(cls, value: Optional[int]) -> Optional[int]:
+        # A daytime reserve at/above 95% keeps the battery effectively full all
+        # day and forces grid import — the exact failure we are guarding against.
+        if value is not None and value >= 95:
+            raise ValueError(
+                "Daytime reserve SOC must be below 95% so the battery can discharge "
+                "during the day (e.g. 20%)."
+            )
+        return value
+
 
 class AutoScheduleStatus(BaseModel):
     enabled: bool
@@ -418,6 +430,54 @@ class AutoScheduleStatus(BaseModel):
     last_write_audit_id: Optional[int] = None
     next_cheap_windows: list[DispatchWindow] = Field(default_factory=list)
     computed_bands: list[TouBandWrite] = Field(default_factory=list)
+
+
+class ScheduleIssueModel(BaseModel):
+    level: str
+    code: str
+    message: str
+
+
+class BatteryPlanStatus(BaseModel):
+    """Full battery charge/discharge decision picture for diagnostics."""
+
+    timestamp: datetime
+    tariff_timezone: str
+    tariff_local_time: str
+    tariff_period: str  # "cheap" | "peak"
+
+    pv_power_w: float
+    house_load_w: float
+    grid_import_w: float
+    grid_export_w: float
+    battery_soc_pct: float
+    battery_power_w: Optional[float] = None
+    battery_flow: str  # "charging" | "discharging" | "idle"
+    grid_flow: str  # "importing" | "exporting" | "idle"
+
+    inverter_mode: str = ""
+    sys_work_mode_label: str = ""
+
+    daytime_floor_pct: int
+    overnight_target_pct: int
+    daytime_discharge_enabled: bool
+
+    active_band_start: str = ""
+    active_band_cap_pct: Optional[int] = None
+    active_band_grid_charge: bool = False
+
+    auto_align_enabled: bool
+    writes_enabled: bool
+    write_allowed: bool
+
+    discharge_blocked_reason: str = ""
+    last_command: str = ""
+    last_command_at: Optional[datetime] = None
+    last_write_audit_id: Optional[int] = None
+    next_cheap_start: Optional[str] = None
+
+    issues: list[ScheduleIssueModel] = Field(default_factory=list)
+    summary: str = ""
 
 
 class PeakImportGuardConfigRequest(BaseModel):
