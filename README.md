@@ -235,6 +235,24 @@ robs-solar/
   scripts/verify.sh       # Full CI-style verification
 ```
 
+## Hosted deployment (Vercel + Render)
+
+The browser app runs on **Vercel**; the FastAPI API runs on **Render** (always-on Docker + persistent SQLite disk). The frontend proxies `/backend/*` to the hosted API via `BACKEND_URL`, so login cookies stay same-origin.
+
+```bash
+# 1. Backend — one-time Render blueprint (connect GitHub repo)
+open "https://dashboard.render.com/blueprint/new?repo=https://github.com/robertcashman-bit/robs-solar"
+
+# 2. After Render gives you a URL (e.g. https://robs-solar-api.onrender.com):
+export BACKEND_URL=https://robs-solar-api.onrender.com
+bash scripts/push-render-secrets.sh   # needs RENDER_API_KEY + RENDER_SERVICE_ID
+
+# 3. Frontend — Vercel production deploy
+bash scripts/deploy-hosted.sh
+```
+
+Set `APP_ENV=production` on Render (in `render.yaml`). Change default passwords before going public.
+
 ## License
 
 Private — for Rob's home solar setup.

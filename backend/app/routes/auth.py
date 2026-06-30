@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.auth.dependencies import authenticate_user, get_current_session, to_user_info
 from app.auth.sessions import SESSION_COOKIE, SessionData, session_manager
+from app.config import settings
 from app.schemas.domain import LoginRequest, LoginResponse, SessionResponse, UserInfo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -17,8 +18,8 @@ async def login(request: LoginRequest, response: Response) -> LoginResponse:
         key=SESSION_COOKIE,
         value=token,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
         max_age=60 * 60 * 12,
         path="/",
     )
@@ -33,7 +34,12 @@ async def logout(
     response: Response,
     session: SessionData = Depends(get_current_session),
 ) -> dict[str, str]:
-    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(
+        SESSION_COOKIE,
+        path="/",
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+    )
     return {"status": "logged_out", "username": session.username}
 
 

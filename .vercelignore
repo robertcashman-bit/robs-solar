@@ -1,0 +1,6 @@
+backend/
+scripts/
+.github/
+*.db
+.env
+.env.*

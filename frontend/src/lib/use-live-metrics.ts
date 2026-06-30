@@ -5,10 +5,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 import { liveMetricsSchema, type LiveMetrics } from "@/lib/schemas";
 
-const WS_URL =
-  typeof window !== "undefined"
-    ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.hostname}:8000/ws/live`
-    : "";
+function liveWebSocketUrl(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend";
+  if (apiBase.startsWith("http")) {
+    const url = new URL(apiBase);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/ws/live`;
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}${apiBase.replace(/\/$/, "")}/ws/live`;
+}
+
+const WS_URL = liveWebSocketUrl();
 
 type UseLiveMetricsOptions = {
   enabled?: boolean;
