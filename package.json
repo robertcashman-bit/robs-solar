@@ -1,0 +1,21 @@
+{
+  "name": "robs-solar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rob's Solar — secure browser app for Sunsynk inverter monitoring and control",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "verify": "bash scripts/verify.sh",
+    "setup": "bash scripts/setup.sh",
+    "postinstall": "bash scripts/ensure-lightningcss.sh || true",
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "cd backend && .venv/bin/pytest -q",
+    "test:frontend": "cd frontend && npm run test",
+    "test:e2e": "cd frontend && npm run test:e2e",
+    "lint": "cd backend && .venv/bin/ruff check . && cd ../frontend && npm run lint",
+    "typecheck": "cd frontend && npm run typecheck"
+  }
+}

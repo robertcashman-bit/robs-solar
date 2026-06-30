@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robs-solar-backend"
+version = "0.1.0"
+description = "Rob's Solar — FastAPI control bridge for Sunsynk inverters"
+requires-python = ">=3.9"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.32,<1",
+  "pydantic>=2.10,<3",
+  "pydantic-settings>=2.6,<3",
+  "sqlalchemy>=2.0,<3",
+  "greenlet>=3.0,<4",
+  "aiosqlite>=0.20,<1",
+  "httpx>=0.28,<1",
+  "bcrypt>=4.0,<5",
+  "cryptography>=43,<45",
+  "itsdangerous>=2.2,<3",
+  "python-multipart>=0.0.12,<1",
+  "pymodbus>=3.7,<4",
+  "apscheduler>=3.10,<4",
+  "openai>=1.50,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.24,<1",
+  "ruff>=0.8,<1",
+  "bandit>=1.8,<2",
+  "pip-audit>=2.7,<3",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

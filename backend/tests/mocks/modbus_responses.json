@@ -1,0 +1,14 @@
+{
+  "metrics/live": {
+    "pv_power_w": 3500,
+    "battery_soc_pct": 72,
+    "house_load_w": 2100,
+    "grid_import_w": 0,
+    "grid_export_w": 1400,
+    "inverter_mode": "self_use",
+    "inverter_status": "online",
+    "daily_pv_kwh": 14.2,
+    "daily_import_kwh": 1.5,
+    "daily_export_kwh": 6.1
+  }
+}

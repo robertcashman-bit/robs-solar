@@ -1,0 +1,108 @@
+{
+  "public_key": {
+    "success": true,
+    "data": "MOCK_PUBLIC_KEY"
+  },
+  "token": {
+    "success": true,
+    "data": {
+      "access_token": "tok-123",
+      "expires_in": 3600
+    }
+  },
+  "plants": {
+    "success": true,
+    "data": {
+      "infos": [
+        {
+          "id": 537603,
+          "name": "Greenacre",
+          "sn": "2210123456"
+        }
+      ]
+    }
+  },
+  "inverters": {
+    "success": true,
+    "data": {
+      "infos": [
+        {
+          "id": 284283,
+          "sn": "2210123456",
+          "alias": "Inverter 1",
+          "status": 1
+        }
+      ]
+    }
+  },
+  "plant_detail": {
+    "success": true,
+    "data": {
+      "id": 537603,
+      "name": "Greenacre",
+      "plantPermission": ["smart.rule.view", "smart.light.view"],
+      "master": { "id": 1, "nickname": "George" },
+      "inverters": [
+        {
+          "sn": "2210123456",
+          "alias": "Inverter 1"
+        }
+      ]
+    }
+  },
+  "settings_read": {
+    "success": true,
+    "data": {
+      "sn": "2210123456",
+      "sellTime1": "00:00",
+      "sellTime2": "06:20",
+      "sellTime3": "11:00",
+      "sellTime4": "23:55",
+      "sellTime5": "23:55",
+      "sellTime6": "23:55",
+      "cap1": "100",
+      "cap2": "19",
+      "cap3": "20",
+      "cap4": "20",
+      "cap5": "20",
+      "cap6": "20",
+      "time1on": "true",
+      "time2on": "true",
+      "time3on": "true",
+      "time4on": "true",
+      "time5on": "true",
+      "time6on": "true",
+      "sellTime1Pac": "8000",
+      "sellTime2Pac": "9000",
+      "sysWorkMode": "2",
+      "energyMode": "1",
+      "solarSell": "1",
+      "limit": "2",
+      "dischargeCurrent": "205"
+    }
+  },
+  "settings_write": {
+    "success": true,
+    "data": {}
+  },
+  "flow": {
+    "success": true,
+    "data": {
+      "pvPower": 4200,
+      "soc": 68,
+      "loadOrEpsPower": 1800,
+      "gridOrMeterPower": -2400,
+      "battPower": 600,
+      "etodayPv": 14.2,
+      "etodayFrom": 1.5,
+      "etodayTo": 6.1,
+      "exportLimit": 3000
+    }
+  },
+  "export_limit_write": {
+    "success": true,
+    "data": {
+      "exportLimit": 2500
+    }
+  }
+}

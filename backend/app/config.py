@@ -1,0 +1,112 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    app_env: str = "development"
+    secret_key: str = "change-me"
+    database_url: str = "sqlite+aiosqlite:///./data/robs_solar.db"
+    read_only: bool = True
+    adapter_mode: str = "simulator"
+    cors_origins: str = "http://127.0.0.1:3000"
+    admin_username: str = "admin"
+    admin_password: str = "change-me-admin"
+    viewer_username: str = "viewer"
+    viewer_password: str = "change-me-viewer"
+    rate_limit_writes_per_minute: int = 10
+    default_poll_interval_seconds: int = 5
+
+    ha_base_url: str = ""
+    ha_token: str = ""
+    ha_entity_pv_power: str = ""
+    ha_entity_battery_soc: str = ""
+    ha_entity_house_load: str = ""
+    ha_entity_grid_import: str = ""
+    ha_entity_grid_export: str = ""
+    ha_entity_inverter_mode: str = ""
+    ha_entity_inverter_status: str = ""
+    ha_entity_export_limit: str = ""
+    ha_service_export_limit: str = ""
+
+    modbus_bridge_url: str = ""
+    modbus_bridge_token: str = ""
+
+    # Direct Modbus TCP (RS485-WiFi dongle)
+    modbus_host: str = ""
+    modbus_port: int = 502
+    modbus_slave_id: int = 1
+    modbus_max_retries: int = 2
+    poll_interval_live_seconds: int = 10
+    poll_interval_energy_seconds: int = 60
+
+    # Octopus Energy (API key only — never store account password)
+    octopus_api_key: str = ""
+    octopus_account_number: str = ""
+    octopus_mpan: str = ""
+    octopus_meter_serial: str = ""
+    octopus_tariff: str = "AGILE"
+    octopus_region: str = "C"
+
+    # Solar forecast (Open-Meteo)
+    forecast_latitude: float = 51.5074
+    forecast_longitude: float = -0.1278
+    panel_count_ew: int = 16
+    panel_count_w: int = 6
+    panel_wattage: int = 480
+
+    # Global write feature flag. Even when read_only is false, live (non-simulator)
+    # adapters will refuse to write unless this is explicitly enabled.
+    enable_live_writes: bool = False
+
+    # Sunsynk Connect / Connect Pro cloud adapter (primary live integration path).
+    # NOTE: the Sunsynk cloud HTTP API is community-inferred and UNVERIFIED.
+    # Primary Sunsynk Connect API host (matches www.sunsynk.net web app).
+    sunsynk_base_url: str = "https://api.sunsynk.net"
+    sunsynk_username: str = ""
+    sunsynk_password: str = ""
+    sunsynk_plant_id: str = ""
+    sunsynk_inverter_sn: str = ""
+    sunsynk_enable_unverified_writes: bool = False
+    sunsynk_timeout_seconds: float = 10.0
+    sunsynk_max_retries: int = 2
+
+    # Metric sampling (read-only background task)
+    metrics_sampler_enabled: bool = True
+    metrics_sample_interval_seconds: int = 60
+    metrics_retention_days: int = 90
+
+    # Default tariff (GBP per kWh); overridable via PUT /tariff
+    tariff_import_rate: float = 0.28
+    tariff_export_rate: float = 0.15
+    tariff_currency: str = "GBP"
+
+    # Optional alert notifications (webhook only — no SMTP in MVP)
+    alert_webhook_url: str = ""
+
+    # IOG off-peak unit rate (GBP/kWh) for reconciliation billing split
+    iog_offpeak_rate_gbp: float = 0.07
+
+    # Intelligent Octopus Go off-peak window (local time, HH:MM)
+    iog_offpeak_start: str = "23:30"
+    iog_offpeak_end: str = "05:30"
+
+    # Battery auto-align to IOG cheap windows (opt-in; default off)
+    auto_schedule_enabled: bool = False
+    auto_schedule_interval_minutes: int = 15
+    auto_schedule_soc_floor_pct: int = 20
+
+    # AI assistant (OpenAI). Key lives only on the backend; never sent to the UI.
+    # The assistant is read-only by design: it proposes changes that an admin must
+    # confirm. Applying a change reuses the audited /controls/* endpoints.
+    openai_api_key: str = ""
+    ai_model: str = "gpt-4o-mini"
+    ai_enabled: bool = False
+    ai_timeout_seconds: float = 30.0
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+
+settings = Settings()

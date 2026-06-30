@@ -1,0 +1,5 @@
+{
+  "sensor.sunsynk_pv_power": {"state": "4200"},
+  "sensor.sunsynk_battery_soc": {"state": "68"},
+  "sensor.sunsynk_house_load": {"state": "1800"}
+}

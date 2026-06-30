@@ -1,0 +1,494 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Rob's Solar — Design System
+   Layered surfaces, elevation, aurora backdrop, motion tokens.
+   ============================================================ */
+
+:root {
+  /* Base palette */
+  --background: #f4f1ea;
+  --foreground: #15161a;
+
+  /* Layered surfaces (low -> high elevation) */
+  --surface: rgba(255, 255, 255, 0.7);
+  --surface-elevated: rgba(255, 255, 255, 0.86);
+  --surface-solid: #ffffff;
+  --surface-sunken: rgba(20, 22, 28, 0.035);
+
+  --border: rgba(17, 20, 28, 0.09);
+  --border-strong: rgba(17, 20, 28, 0.16);
+  --muted: #6b7280;
+  --muted-strong: #4b5563;
+
+  /* Brand + metric accents */
+  --solar: #f59e0b;
+  --solar-dark: #d97706;
+  --accent-pv: #f59e0b;
+  --accent-battery: #10b981;
+  --accent-load: #0ea5e9;
+  --accent-import: #f43f5e;
+  --accent-export: #8b5cf6;
+  --accent-inverter: #6366f1;
+
+  /* Elevation system */
+  --shadow-sm: 0 1px 2px rgba(17, 20, 28, 0.05), 0 1px 3px rgba(17, 20, 28, 0.04);
+  --shadow-md: 0 4px 12px rgba(17, 20, 28, 0.07), 0 2px 4px rgba(17, 20, 28, 0.05);
+  --shadow-lg: 0 16px 40px -12px rgba(17, 20, 28, 0.18), 0 6px 14px -8px rgba(17, 20, 28, 0.1);
+  --shadow-glow: 0 0 0 1px rgba(245, 158, 11, 0.12), 0 8px 30px -8px rgba(245, 158, 11, 0.28);
+
+  /* Radius scale */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+
+  /* Aurora backdrop — intentional, restrained */
+  --gradient-bg: radial-gradient(60% 42% at 18% -8%, rgba(245, 158, 11, 0.14), transparent 60%),
+    radial-gradient(48% 40% at 92% 0%, rgba(139, 92, 246, 0.1), transparent 60%),
+    radial-gradient(70% 60% at 50% 120%, rgba(16, 185, 129, 0.08), transparent 60%),
+    linear-gradient(180deg, #f7f4ee 0%, #efe9e0 100%);
+}
+
+:root[data-theme="dark"] {
+  --background: #0a0c11;
+  --foreground: #f4f5f7;
+  --surface: rgba(26, 30, 40, 0.6);
+  --surface-elevated: rgba(30, 35, 47, 0.82);
+  --surface-solid: #161a22;
+  --surface-sunken: rgba(255, 255, 255, 0.03);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --muted: #9aa3b2;
+  --muted-strong: #c3cad6;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 22px 50px -16px rgba(0, 0, 0, 0.7), 0 8px 18px -10px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 0 1px rgba(245, 158, 11, 0.18), 0 10px 36px -10px rgba(245, 158, 11, 0.3);
+  --gradient-bg: radial-gradient(60% 42% at 18% -8%, rgba(245, 158, 11, 0.12), transparent 60%),
+    radial-gradient(48% 40% at 92% 0%, rgba(139, 92, 246, 0.12), transparent 60%),
+    radial-gradient(70% 60% at 50% 120%, rgba(16, 185, 129, 0.08), transparent 60%),
+    linear-gradient(180deg, #0a0c11 0%, #0e1118 100%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background: #0a0c11;
+    --foreground: #f4f5f7;
+
+    --surface: rgba(26, 30, 40, 0.6);
+    --surface-elevated: rgba(30, 35, 47, 0.82);
+    --surface-solid: #161a22;
+    --surface-sunken: rgba(255, 255, 255, 0.03);
+
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --muted: #9aa3b2;
+    --muted-strong: #c3cad6;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 22px 50px -16px rgba(0, 0, 0, 0.7), 0 8px 18px -10px rgba(0, 0, 0, 0.5);
+    --shadow-glow: 0 0 0 1px rgba(245, 158, 11, 0.18), 0 10px 36px -10px rgba(245, 158, 11, 0.3);
+
+    --gradient-bg: radial-gradient(60% 42% at 18% -8%, rgba(245, 158, 11, 0.12), transparent 60%),
+      radial-gradient(48% 40% at 92% 0%, rgba(139, 92, 246, 0.12), transparent 60%),
+      radial-gradient(70% 60% at 50% 120%, rgba(16, 185, 129, 0.08), transparent 60%),
+      linear-gradient(180deg, #0a0c11 0%, #0e1118 100%);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* ----------------------------- Motion ----------------------------- */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+  70%,
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes aurora-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(4%, -3%, 0) scale(1.08);
+  }
+  66% {
+    transform: translate3d(-3%, 2%, 0) scale(0.96);
+  }
+}
+
+@keyframes hub-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.06);
+  }
+}
+
+/* ----------------------------- Base ----------------------------- */
+body {
+  background: var(--gradient-bg);
+  background-attachment: fixed;
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+::selection {
+  background: rgba(245, 158, 11, 0.25);
+}
+
+/* --------------------- Ambient background --------------------- */
+.app-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.app-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 0%, transparent 78%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 0%, transparent 78%);
+  opacity: 0.5;
+}
+
+.app-bg-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  opacity: 0.5;
+  will-change: transform;
+}
+
+.app-bg-orb-1 {
+  top: -12%;
+  left: -8%;
+  width: 42vw;
+  height: 42vw;
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.4), transparent 68%);
+  animation: aurora-drift 26s ease-in-out infinite;
+}
+
+.app-bg-orb-2 {
+  top: -10%;
+  right: -10%;
+  width: 38vw;
+  height: 38vw;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.32), transparent 68%);
+  animation: aurora-drift 32s ease-in-out infinite reverse;
+}
+
+.app-bg-orb-3 {
+  bottom: -18%;
+  left: 30%;
+  width: 46vw;
+  height: 46vw;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.26), transparent 70%);
+  animation: aurora-drift 38s ease-in-out infinite;
+}
+
+:focus-visible {
+  outline: 2px solid var(--solar);
+  outline-offset: 2px;
+}
+
+/* --------------------------- Utilities --------------------------- */
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-dialog-in {
+  animation: dialog-in 0.2s ease-out both;
+}
+
+.text-gradient-solar {
+  background: linear-gradient(135deg, var(--solar) 0%, var(--solar-dark) 60%, #b45309 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.card-hover {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--border-strong);
+}
+
+/* Reusable surface primitive */
+.solar-card {
+  position: relative;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: var(--shadow-md);
+  padding: 1.5rem;
+}
+
+.solar-card-flush {
+  position: relative;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: var(--shadow-md);
+}
+
+/* Subtle inset panel for nested content */
+.solar-panel {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.solar-section-title {
+  font-size: 1.0625rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.solar-eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* --------------------------- Inputs --------------------------- */
+.solar-input {
+  margin-top: 0.25rem;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.solar-input:focus {
+  outline: none;
+  border-color: var(--solar);
+  background: var(--surface-elevated);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+}
+.solar-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* --------------------------- Buttons --------------------------- */
+.solar-btn-primary {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--solar) 0%, var(--solar-dark) 100%);
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: white;
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: box-shadow 0.18s, transform 0.18s, filter 0.18s;
+}
+.solar-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glow), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  filter: saturate(115%);
+}
+.solar-btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+.solar-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.solar-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.solar-btn-ghost:hover {
+  background: var(--surface-elevated);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.solar-btn-ghost:active {
+  transform: translateY(0);
+}
+
+/* --------------------------- Status --------------------------- */
+.solar-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 9999px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-sm);
+}
+
+.solar-status-dot {
+  position: relative;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+/* Live pulsing dot wrapper */
+.solar-dot-live::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: inherit;
+  animation: pulse-ring 1.8s cubic-bezier(0.66, 0, 0, 1) infinite;
+}
+
+/* --------------------------- Skeleton --------------------------- */
+.solar-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-sunken);
+}
+.solar-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--foreground) 8%, transparent),
+    transparent
+  );
+  animation: shimmer 1.6s infinite;
+}
+
+/* --------------------------- Energy flow --------------------------- */
+@keyframes energy-flow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.energy-flow-line {
+  stroke-dasharray: 7 7;
+  animation: energy-flow 0.9s linear infinite;
+}
+
+.energy-flow-reverse {
+  animation-direction: reverse;
+}
+
+.hero-kpi {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.hero-kpi:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Collapsible details marker */
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
