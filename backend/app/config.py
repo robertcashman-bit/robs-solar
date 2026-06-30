@@ -96,6 +96,12 @@ class Settings(BaseSettings):
     auto_schedule_interval_minutes: int = 15
     auto_schedule_soc_floor_pct: int = 20
 
+    # Peak import guard — auto-correct grid import at peak rate when battery is high SOC.
+    peak_import_guard_enabled: bool = True
+    peak_import_guard_threshold_w: float = 100.0
+    peak_import_guard_cooldown_minutes: int = 30
+    peak_import_guard_sustained_samples: int = 2
+
     # Sell-to-grid advisor. Worth selling when the export rate clears the
     # threshold and the battery is above the reserve floor (so we don't sell
     # energy we'd need at the expensive peak).

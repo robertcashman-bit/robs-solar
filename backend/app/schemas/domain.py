@@ -420,6 +420,20 @@ class AutoScheduleStatus(BaseModel):
     computed_bands: list[TouBandWrite] = Field(default_factory=list)
 
 
+class PeakImportGuardConfigRequest(BaseModel):
+    enabled: bool
+
+
+class PeakImportGuardStatus(BaseModel):
+    enabled: bool
+    armed: bool = False
+    last_action_at: Optional[datetime] = None
+    last_action_message: str = ""
+    last_audit_ids: list[int] = Field(default_factory=list)
+    consecutive_samples: int = 0
+    cooldown_remaining_seconds: int = 0
+
+
 class ReconciliationInterval(BaseModel):
     start: datetime
     end: datetime

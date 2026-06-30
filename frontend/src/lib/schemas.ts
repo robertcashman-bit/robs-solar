@@ -333,6 +333,18 @@ export const autoScheduleStatusSchema = z.object({
 
 export type AutoScheduleStatus = z.infer<typeof autoScheduleStatusSchema>;
 
+export const peakImportGuardStatusSchema = z.object({
+  enabled: z.boolean(),
+  armed: z.boolean(),
+  last_action_at: z.string().nullable().optional(),
+  last_action_message: z.string(),
+  last_audit_ids: z.array(z.number()),
+  consecutive_samples: z.number(),
+  cooldown_remaining_seconds: z.number(),
+});
+
+export type PeakImportGuardStatus = z.infer<typeof peakImportGuardStatusSchema>;
+
 export const reconciliationIntervalSchema = z.object({
   start: z.string(),
   end: z.string(),

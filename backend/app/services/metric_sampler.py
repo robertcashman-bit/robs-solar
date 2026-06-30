@@ -67,6 +67,7 @@ async def sample_once() -> None:
             from app.services.alert_service import alert_service
             from app.services.ev_load_detector import ev_load_detector
             from app.services.octopus_client import octopus_client
+            from app.services.peak_import_guard_service import peak_import_guard_service
             from app.services.rules_engine import rules_engine
 
             await alert_service.evaluate(db, metrics)
@@ -76,6 +77,7 @@ async def sample_once() -> None:
             except Exception:
                 ev_load_detector.update(metrics)
             await rules_engine.evaluate(db, metrics)
+            await peak_import_guard_service.evaluate(db, metrics, adapter)
     except (AdapterError, Exception) as exc:
         logger.warning("Metric sample failed: %s", exc)
 

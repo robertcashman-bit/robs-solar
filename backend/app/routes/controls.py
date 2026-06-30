@@ -18,12 +18,15 @@ from app.schemas.domain import (
     ForceBatteryRequest,
     InverterSettingsResponse,
     OperatingModeRequest,
+    PeakImportGuardConfigRequest,
+    PeakImportGuardStatus,
     ScheduleRequest,
     TouBandsRequest,
 )
 from app.services.audit_service import audit_service
 from app.services.auto_schedule_service import auto_schedule_service
 from app.services.control_service import control_service
+from app.services.peak_import_guard_service import peak_import_guard_service
 from app.services.rules_engine import rules_engine
 from app.services.safety_settings_service import safety_settings_service
 
@@ -223,6 +226,38 @@ async def set_auto_schedule(
         adapter = get_adapter()
         return await auto_schedule_service.run_once(db, adapter)
     return await auto_schedule_service.get_status(db)
+
+
+@router.get("/peak-import-guard", response_model=PeakImportGuardStatus)
+async def get_peak_import_guard_status(
+    session: SessionData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> PeakImportGuardStatus:
+    _ = session
+    return await peak_import_guard_service.get_status(db)
+
+
+@router.post("/peak-import-guard", response_model=PeakImportGuardStatus)
+async def set_peak_import_guard(
+    body: PeakImportGuardConfigRequest,
+    request: Request,
+    session: SessionData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> PeakImportGuardStatus:
+    validate_csrf(request, session)
+    await enforce_write_rate_limit(request)
+    status = await peak_import_guard_service.set_config(db, body)
+    await audit_service.record(
+        db,
+        username=session.username,
+        role=session.role,
+        action="set_peak_import_guard",
+        request_payload=body.model_dump(),
+        validation_result="valid",
+        adapter_response=None,
+        outcome=AuditOutcome.SUCCESS,
+    )
+    return status
 
 
 @router.get("/rules", response_model=AutomationRulesResponse)

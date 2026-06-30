@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.factory import get_adapter
-from app.auth.dependencies import require_viewer
+from app.auth.dependencies import require_admin, require_viewer
 from app.auth.sessions import SessionData
 from app.db.session import get_db
 from app.schemas.domain import (
@@ -15,6 +15,7 @@ from app.schemas.domain import (
     MetricCompareResponse,
     MetricHistoryResponse,
     MetricSummaryResponse,
+    PeakImportGuardStatus,
     ReconciliationResponse,
     SellOpportunity,
 )
@@ -22,6 +23,7 @@ from app.services.analytics_service import analytics_service
 from app.services.billing_reconciliation_service import billing_reconciliation_service
 from app.services.charge_window_service import charge_window_service
 from app.services.ev_load_detector import ev_load_detector
+from app.services.peak_import_guard_service import peak_import_guard_service
 from app.services.sell_advisor_service import sell_advisor_service
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
@@ -85,6 +87,15 @@ async def metrics_reconciliation(
 async def charge_window_status(_: SessionData = Depends(require_viewer)) -> ChargeWindowStatus:
     adapter = get_adapter()
     return await charge_window_service.get_status(adapter)
+
+
+@router.get("/peak-import-guard", response_model=PeakImportGuardStatus)
+async def peak_import_guard_status(
+    session: SessionData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> PeakImportGuardStatus:
+    _ = session
+    return await peak_import_guard_service.get_status(db)
 
 
 @router.get("/sell-opportunity", response_model=SellOpportunity)

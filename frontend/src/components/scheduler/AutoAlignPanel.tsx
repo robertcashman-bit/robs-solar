@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 
 import { apiClient, ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
-import { autoScheduleStatusSchema, evStatusSchema, type AutoScheduleStatus } from "@/lib/schemas";
+import {
+  autoScheduleStatusSchema,
+  evStatusSchema,
+  peakImportGuardStatusSchema,
+  type AutoScheduleStatus,
+  type PeakImportGuardStatus,
+} from "@/lib/schemas";
 
 type AutoAlignPanelProps = {
   disabled?: boolean;
@@ -13,8 +19,10 @@ type AutoAlignPanelProps = {
 export function AutoAlignPanel({ disabled = false }: AutoAlignPanelProps) {
   const { user } = useAuth();
   const [status, setStatus] = useState<AutoScheduleStatus | null>(null);
+  const [guardStatus, setGuardStatus] = useState<PeakImportGuardStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [guardSaving, setGuardSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [evNote, setEvNote] = useState<string | null>(null);
   const [floorInput, setFloorInput] = useState("20");
@@ -35,6 +43,14 @@ export function AutoAlignPanel({ disabled = false }: AutoAlignPanelProps) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Could not load auto-align status");
         }
+      }
+      try {
+        const guard = peakImportGuardStatusSchema.parse(
+          await apiClient.get("/metrics/peak-import-guard"),
+        );
+        if (!cancelled) setGuardStatus(guard);
+      } catch {
+        if (!cancelled) setGuardStatus(null);
       }
       try {
         const ev = evStatusSchema.parse(await apiClient.get("/metrics/ev/status"));
@@ -68,6 +84,19 @@ export function AutoAlignPanel({ disabled = false }: AutoAlignPanelProps) {
       setError(e instanceof ApiError ? e.message : "Failed to update auto-align");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleGuard = async (enabled: boolean) => {
+    setGuardSaving(true);
+    setError(null);
+    try {
+      const data = await apiClient.post("/controls/peak-import-guard", { enabled });
+      setGuardStatus(peakImportGuardStatusSchema.parse(data));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to update peak import guard");
+    } finally {
+      setGuardSaving(false);
     }
   };
 
@@ -119,6 +148,43 @@ export function AutoAlignPanel({ disabled = false }: AutoAlignPanelProps) {
         >
           Disable
         </button>
+      </div>
+
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm space-y-3">
+        <div>
+          <h4 className="font-medium">Peak import guard</h4>
+          <p className="mt-1 text-[var(--muted)]">
+            When importing from the grid at peak rate with a high battery SOC, automatically
+            enable auto-align, switch out of sell mode, and re-align your schedule.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            className="solar-btn-primary"
+            disabled={disabled || guardSaving || guardStatus?.enabled}
+            onClick={() => void toggleGuard(true)}
+          >
+            Enable guard
+          </button>
+          <button
+            type="button"
+            className="solar-btn-ghost"
+            disabled={disabled || guardSaving || !guardStatus?.enabled}
+            onClick={() => void toggleGuard(false)}
+          >
+            Disable guard
+          </button>
+        </div>
+        {guardStatus ? (
+          <p>
+            Guard: <strong>{guardStatus.enabled ? "Enabled" : "Disabled"}</strong>
+            {guardStatus.armed ? " — armed (will act on next sample)" : ""}
+            {guardStatus.last_action_message
+              ? ` — Last action: ${guardStatus.last_action_message}`
+              : ""}
+          </p>
+        ) : null}
       </div>
 
       {evNote ? (
