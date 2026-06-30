@@ -61,6 +61,10 @@ target_soc_pct to the configured SOC floor so the battery discharges to cover \
 house load instead of importing from the grid.
 - Importing from the grid at the expensive day rate while the battery is well \
 above its SOC floor is a problem worth flagging.
+- Use "rate_plan" in context for the user's own Octopus import tariff: \
+cheap_rate_pence, peak_rate_pence, cheap_windows, peak_windows, current_is_cheap, \
+and planned_cheap_windows. Never use wholesale Agile market prices — only \
+rate_plan and tariff (the user's bill rates).
 - The auto-scheduler already computes ideal bands ("computed_bands" in context). \
 If the live bands match those, the schedule is optimal.
 - Selling to the grid: when the export rate is high (see "sell_opportunity" in \
@@ -199,6 +203,31 @@ class AiAdvisorService:
                     "import_rate_gbp_per_kwh": import_rate,
                     "export_rate_gbp_per_kwh": export_rate,
                 }
+                plan = await octopus_client.get_rate_plan()
+                if plan.configured:
+                    ctx["rate_plan"] = {
+                        "tariff_family": plan.tariff_family,
+                        "import_display_name": plan.import_display_name,
+                        "region": plan.region,
+                        "cheap_rate_pence": plan.cheap_rate_pence,
+                        "peak_rate_pence": plan.peak_rate_pence,
+                        "cheap_windows": [
+                            {"start": w.start, "end": w.end} for w in plan.cheap_windows
+                        ],
+                        "peak_windows": [
+                            {"start": w.start, "end": w.end} for w in plan.peak_windows
+                        ],
+                        "current_rate_pence": plan.current_rate_pence,
+                        "current_is_cheap": plan.current_is_cheap,
+                        "planned_cheap_windows": [
+                            {
+                                "start": w.start,
+                                "end": w.end,
+                                "source": w.source,
+                            }
+                            for w in plan.planned_cheap_windows
+                        ],
+                    }
         except Exception as exc:  # noqa: BLE001
             ctx["tariff_error"] = str(exc)
 

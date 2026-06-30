@@ -117,3 +117,57 @@ async def test_chat_handles_garbage_json(monkeypatch) -> None:
     resp = await service.chat(db=None, history=[AiChatMessage(role="user", content="hi")])  # type: ignore[arg-type]
     assert resp.reply
     assert resp.proposed_actions == []
+
+
+@pytest.mark.asyncio
+async def test_build_context_includes_rate_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.schemas.domain import OctopusRatePlan, RatePlanWindow
+    from app.services.ai_advisor_service import ai_advisor_service
+
+    def fake_configured() -> bool:
+        return True
+
+    async def fake_import_rate() -> float:
+        return 0.286
+
+    async def fake_export_rate() -> float:
+        return 0.12
+
+    async def fake_rate_plan() -> OctopusRatePlan:
+        return OctopusRatePlan(
+            configured=True,
+            tariff_family="IOG",
+            region="J",
+            import_display_name="Intelligent Octopus Go",
+            cheap_rate_pence=7.0,
+            peak_rate_pence=28.6,
+            cheap_windows=[RatePlanWindow(start="23:30", end="05:30")],
+            peak_windows=[RatePlanWindow(start="05:30", end="23:30")],
+            current_rate_pence=28.6,
+            current_is_cheap=False,
+        )
+
+    monkeypatch.setattr(
+        "app.services.ai_advisor_service.octopus_client.configured",
+        fake_configured,
+    )
+    monkeypatch.setattr(
+        "app.services.ai_advisor_service.octopus_client.get_import_rate_gbp",
+        fake_import_rate,
+    )
+    monkeypatch.setattr(
+        "app.services.ai_advisor_service.octopus_client.get_export_rate_gbp",
+        fake_export_rate,
+    )
+    monkeypatch.setattr(
+        "app.services.ai_advisor_service.octopus_client.get_rate_plan",
+        fake_rate_plan,
+    )
+
+    ctx = await ai_advisor_service.build_context(db=None)  # type: ignore[arg-type]
+    assert ctx["tariff"]["import_rate_gbp_per_kwh"] == 0.286
+    assert ctx["rate_plan"]["tariff_family"] == "IOG"
+    assert ctx["rate_plan"]["cheap_rate_pence"] == 7.0
+    assert ctx["rate_plan"]["peak_rate_pence"] == 28.6
+    assert ctx["rate_plan"]["current_is_cheap"] is False
+    assert ctx["rate_plan"]["cheap_windows"][0]["start"] == "23:30"
