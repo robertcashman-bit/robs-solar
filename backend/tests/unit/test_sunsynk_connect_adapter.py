@@ -115,6 +115,41 @@ async def test_get_live_metrics_parses_flow() -> None:
 
 
 @pytest.mark.asyncio
+async def test_concurrent_requests_share_single_login() -> None:
+    import asyncio
+
+    token_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal token_calls
+        if request.url.path == "/oauth/token/new":
+            token_calls += 1
+        return _ok_handler(request)
+
+    adapter = SunsynkConnectAdapter(client=_client(handler))
+    await asyncio.gather(*(adapter.get_live_metrics() for _ in range(8)))
+    # Without the auth lock + token cache, each concurrent call would log in,
+    # invalidating the others' tokens (Sunsynk allows one token per account).
+    assert token_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cached_token_is_reused_across_calls() -> None:
+    token_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal token_calls
+        if request.url.path == "/oauth/token/new":
+            token_calls += 1
+        return _ok_handler(request)
+
+    adapter = SunsynkConnectAdapter(client=_client(handler))
+    await adapter.get_live_metrics()
+    await adapter.get_live_metrics()
+    assert token_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_connectivity_degraded_when_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "sunsynk_username", "")
     monkeypatch.setattr(settings, "sunsynk_password", "")

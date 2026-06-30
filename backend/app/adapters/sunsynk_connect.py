@@ -13,6 +13,7 @@ IMPORTANT SAFETY / HONESTY NOTES:
 - Secrets (username/password/token) live only on the backend and are never logged.
 """
 
+import asyncio
 import time
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -63,6 +64,15 @@ class SunsynkConnectAdapter(InverterAdapter):
             timeout=settings.sunsynk_timeout_seconds,
         )
         self._token: Optional[str] = None
+        # Monotonic time after which the cached token is considered stale and is
+        # proactively refreshed (Sunsynk tokens expire; refreshing ahead of a 401
+        # avoids surfacing transient auth failures).
+        self._token_expiry: float = 0.0
+        # Serialises logins so concurrent callers (live poll, sampler, alert
+        # evaluation, etc.) perform at most one login. Sunsynk issues a single
+        # active token per account, so parallel logins would invalidate each
+        # other and produce spurious "authentication failed" errors.
+        self._auth_lock = asyncio.Lock()
         # (monotonic_expiry, local_date, totals) cache for derived daily energy.
         self._daily_cache: Optional[tuple[float, str, dict[str, float]]] = None
 
@@ -79,6 +89,7 @@ class SunsynkConnectAdapter(InverterAdapter):
                 # Refresh the token once and retry before surfacing the error.
                 if response.status_code == 401 and _auth_retry:
                     self._token = None
+                    self._token_expiry = 0.0
                     self._client.headers.pop("Authorization", None)
                     await self._authenticate()
                     return await self._request(method, url, _auth_retry=False, **kwargs)
@@ -93,25 +104,41 @@ class SunsynkConnectAdapter(InverterAdapter):
             f"Sunsynk request timed out after {attempts} attempt(s)"
         ) from last_exc
 
+    def _token_valid(self) -> bool:
+        return bool(self._token) and time.monotonic() < self._token_expiry
+
     async def _authenticate(self) -> str:
         if not settings.sunsynk_username or not settings.sunsynk_password:
             raise AdapterError("Sunsynk credentials not configured")
-        if self._token:
-            return self._token
-        try:
-            data = await sunsynk_login(
-                self._client,
-                username=settings.sunsynk_username,
-                plain_password=settings.sunsynk_password,
-            )
-        except (httpx.HTTPError, ValueError) as exc:
-            raise AdapterError(f"Sunsynk authentication failed: {exc}") from exc
-        token = data.get("access_token")
-        if not token:
-            raise AdapterError("Sunsynk authentication returned no access token")
-        self._token = token
-        self._client.headers["Authorization"] = f"Bearer {token}"
-        return token
+        if self._token_valid():
+            return self._token  # type: ignore[return-value]
+        async with self._auth_lock:
+            # Re-check inside the lock: another coroutine may have logged in while
+            # we waited, so we reuse its token instead of logging in again.
+            if self._token_valid():
+                return self._token  # type: ignore[return-value]
+            try:
+                data = await sunsynk_login(
+                    self._client,
+                    username=settings.sunsynk_username,
+                    plain_password=settings.sunsynk_password,
+                )
+            except (httpx.HTTPError, ValueError) as exc:
+                raise AdapterError(f"Sunsynk authentication failed: {exc}") from exc
+            token = data.get("access_token")
+            if not token:
+                raise AdapterError("Sunsynk authentication returned no access token")
+            try:
+                expires_in = float(data.get("expires_in") or 0)
+            except (TypeError, ValueError):
+                expires_in = 0.0
+            # Refresh a minute early; fall back to a short window if the API does
+            # not report an expiry so we still cache rather than logging in per call.
+            lifetime = expires_in - 60 if expires_in > 120 else 240.0
+            self._token = token
+            self._token_expiry = time.monotonic() + lifetime
+            self._client.headers["Authorization"] = f"Bearer {token}"
+            return token
 
     async def _plant_id(self) -> str:
         if settings.sunsynk_plant_id:
