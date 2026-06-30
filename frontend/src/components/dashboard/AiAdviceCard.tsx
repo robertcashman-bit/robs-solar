@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { summariseApplyResult } from "@/lib/ai-apply";
 import { apiClient, ApiError } from "@/lib/api-client";
 import {
   aiAssessmentSchema,
   aiStatusSchema,
-  controlWriteResultSchema,
   type AiAssessment,
   type AiProposedAction,
   type AiStatus,
@@ -62,12 +62,10 @@ export function AiAdviceCard({ canControl }: AiAdviceCardProps) {
   const applyAction = async (action: AiProposedAction, key: string) => {
     setApplied((prev) => ({ ...prev, [key]: "applying" }));
     try {
-      const result = controlWriteResultSchema.parse(
-        await apiClient.post(action.endpoint, action.body),
-      );
+      const raw = await apiClient.post(action.endpoint, action.body);
       setApplied((prev) => ({
         ...prev,
-        [key]: `Applied (audit #${result.audit_id})`,
+        [key]: summariseApplyResult(action, raw),
       }));
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "Failed to apply";

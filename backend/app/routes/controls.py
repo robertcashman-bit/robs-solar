@@ -208,7 +208,7 @@ async def set_auto_schedule(
 ) -> AutoScheduleStatus:
     validate_csrf(request, session)
     await enforce_write_rate_limit(request)
-    status_result = await auto_schedule_service.set_config(db, body)
+    await auto_schedule_service.set_config(db, body)
     await audit_service.record(
         db,
         username=session.username,
@@ -219,7 +219,10 @@ async def set_auto_schedule(
         adapter_response=None,
         outcome=AuditOutcome.SUCCESS,
     )
-    return status_result
+    if body.enabled is True:
+        adapter = get_adapter()
+        return await auto_schedule_service.run_once(db, adapter)
+    return await auto_schedule_service.get_status(db)
 
 
 @router.get("/rules", response_model=AutomationRulesResponse)

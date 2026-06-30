@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { summariseApplyResult } from "@/lib/ai-apply";
 import { apiClient, ApiError } from "@/lib/api-client";
 import {
   aiAssessmentSchema,
   aiChatResponseSchema,
   aiStatusSchema,
-  controlWriteResultSchema,
   type AiAssessment,
   type AiProposedAction,
   type AiStatus,
@@ -94,15 +94,8 @@ export function AssistantPanel() {
     setError(null);
     setApplied((prev) => ({ ...prev, [key]: "applying" }));
     try {
-      const result = controlWriteResultSchema.parse(
-        await apiClient.post(action.endpoint, action.body),
-      );
-      const verified = result.verified
-        ? "Confirmed on inverter"
-        : result.verification_pending
-          ? "Sent — awaiting confirmation"
-          : result.message;
-      setApplied((prev) => ({ ...prev, [key]: `Applied (audit #${result.audit_id}). ${verified}` }));
+      const raw = await apiClient.post(action.endpoint, action.body);
+      setApplied((prev) => ({ ...prev, [key]: summariseApplyResult(action, raw) }));
     } catch (e) {
       const msg =
         e instanceof ApiError ? `${e.message} (HTTP ${e.status})` : "Failed to apply change";
