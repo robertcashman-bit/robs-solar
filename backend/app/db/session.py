@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -6,6 +7,25 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.config import settings
 from app.db.models import Base
 
+
+def _ensure_sqlite_dir(database_url: str) -> None:
+    """Create the parent directory for a file-backed SQLite DB.
+
+    A fresh checkout (e.g. CI) has no ./data directory, so SQLite would fail
+    with "unable to open database file". Creating it up front keeps tests and
+    first-run deploys working without committing the database itself.
+    """
+    if not database_url.startswith("sqlite"):
+        return
+    db_path = database_url.split("///", 1)[-1]
+    if not db_path or db_path == ":memory:":
+        return
+    parent = Path(db_path).expanduser().parent
+    if parent and not parent.exists():
+        parent.mkdir(parents=True, exist_ok=True)
+
+
+_ensure_sqlite_dir(settings.database_url)
 engine = create_async_engine(settings.database_url, echo=False)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
