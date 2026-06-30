@@ -31,6 +31,14 @@ def _range_start(range_name: HistoryRange) -> datetime:
     return now - timedelta(days=30)
 
 
+def _compare_window_days(range_name: HistoryRange) -> int:
+    if range_name == HistoryRange.DAY:
+        return 1
+    if range_name == HistoryRange.WEEK:
+        return 7
+    return 30
+
+
 def _downsample(rows: list[MetricSampleRow], max_points: int) -> list[MetricSampleRow]:
     if len(rows) <= max_points:
         return rows
@@ -163,35 +171,38 @@ class AnalyticsService:
             export_rate_override=export_rate_override,
         )
 
-    async def get_compare(self, db: AsyncSession) -> MetricCompareResponse:
+    async def get_compare(
+        self, db: AsyncSession, range_name: HistoryRange = HistoryRange.DAY
+    ) -> MetricCompareResponse:
         now = datetime.now(timezone.utc)
-        today_start = now - timedelta(days=1)
-        yesterday_start = now - timedelta(days=2)
+        window_days = _compare_window_days(range_name)
+        current_start = now - timedelta(days=window_days)
+        previous_start = now - timedelta(days=window_days * 2)
 
         result = await db.execute(
             select(MetricSampleRow)
-            .where(MetricSampleRow.timestamp >= yesterday_start)
+            .where(MetricSampleRow.timestamp >= previous_start)
             .order_by(MetricSampleRow.timestamp.asc())
         )
         all_rows = list(result.scalars().all())
-        today_rows = [r for r in all_rows if _aware(r.timestamp) >= today_start]
-        yesterday_rows = [
-            r for r in all_rows if yesterday_start <= _aware(r.timestamp) < today_start
+        current_rows = [r for r in all_rows if _aware(r.timestamp) >= current_start]
+        previous_rows = [
+            r for r in all_rows if previous_start <= _aware(r.timestamp) < current_start
         ]
 
         import_rate_override, export_rate_override = await _octopus_rate_overrides()
 
         today = await _summary_from_rows(
             db,
-            today_rows,
-            range_name=HistoryRange.DAY,
+            current_rows,
+            range_name=range_name,
             import_rate_override=import_rate_override,
             export_rate_override=export_rate_override,
         )
         yesterday = await _summary_from_rows(
             db,
-            yesterday_rows,
-            range_name=HistoryRange.DAY,
+            previous_rows,
+            range_name=range_name,
             import_rate_override=import_rate_override,
             export_rate_override=export_rate_override,
         )
@@ -226,7 +237,12 @@ class AnalyticsService:
                 higher_is_better=True,
             ),
         ]
-        return MetricCompareResponse(today=today, yesterday=yesterday, deltas=deltas)
+        return MetricCompareResponse(
+            range=range_name,
+            today=today,
+            yesterday=yesterday,
+            deltas=deltas,
+        )
 
 
 analytics_service = AnalyticsService()

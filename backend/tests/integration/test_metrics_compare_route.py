@@ -52,7 +52,20 @@ async def test_compare_returns_today_and_yesterday(client: AsyncClient) -> None:
     response = await client.get("/metrics/compare")
     assert response.status_code == 200
     body = response.json()
+    assert body["range"] == "day"
     assert "today" in body
     assert "yesterday" in body
     assert len(body["deltas"]) >= 4
     assert body["deltas"][0]["label"] == "Savings"
+
+
+@pytest.mark.asyncio
+async def test_compare_accepts_week_and_month(client: AsyncClient) -> None:
+    await _seed_compare_samples()
+    await login(client, "viewer", "viewer-pass")
+    for range_name in ("week", "month"):
+        response = await client.get(f"/metrics/compare?range={range_name}")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["range"] == range_name
+        assert "deltas" in body

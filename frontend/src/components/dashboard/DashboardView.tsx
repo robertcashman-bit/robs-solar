@@ -23,13 +23,17 @@ import { QuickActionsStrip } from "./QuickActionsStrip";
 import { SavingsHeroBand } from "./SavingsHeroBand";
 import { SavingsInsightsPanel } from "./SavingsInsightsPanel";
 import { SavingsCard } from "./SavingsCard";
+import { AiAdviceCard } from "./AiAdviceCard";
 import { TodayCompareStrip } from "./TodayCompareStrip";
+import type { CompareRange } from "@/lib/money";
 
 type DashboardViewProps = {
   metrics: LiveMetrics | null;
   connectivity: ConnectivityStatus | null;
   summary: MetricSummary | null;
   compare: MetricCompare | null;
+  compareRange?: CompareRange;
+  onCompareRangeChange?: (range: CompareRange) => void;
   loading: boolean;
   error: string | null;
   readOnly: boolean;
@@ -75,6 +79,8 @@ export function DashboardView({
   connectivity,
   summary,
   compare,
+  compareRange = "day",
+  onCompareRangeChange = () => {},
   loading,
   error,
   readOnly,
@@ -178,7 +184,12 @@ export function DashboardView({
       </div>
 
       <SavingsHeroBand metrics={metrics} summary={summary} evCharging={evCharging} />
-      <TodayCompareStrip compare={compare} />
+      <TodayCompareStrip
+        compare={compare}
+        range={compareRange}
+        onRangeChange={onCompareRangeChange}
+      />
+      <AiAdviceCard canControl={canControl} />
       <QuickActionsStrip />
       <SavingsInsightsPanel insights={insights} />
 

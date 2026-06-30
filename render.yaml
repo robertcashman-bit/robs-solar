@@ -35,7 +35,7 @@ services:
       - key: AUTO_SCHEDULE_ENABLED
         value: "false"
       - key: AI_ENABLED
-        value: "false"
+        value: "true"
       # Set these in the Render dashboard (or via scripts/push-render-secrets.sh):
       - key: ADMIN_USERNAME
         sync: false

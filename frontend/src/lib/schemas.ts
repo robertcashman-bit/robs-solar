@@ -219,6 +219,7 @@ export const metricCompareDeltaSchema = z.object({
 });
 
 export const metricCompareSchema = z.object({
+  range: historyRangeSchema,
   today: metricSummarySchema,
   yesterday: metricSummarySchema,
   deltas: z.array(metricCompareDeltaSchema),

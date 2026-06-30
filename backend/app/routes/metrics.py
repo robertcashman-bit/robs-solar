@@ -65,10 +65,11 @@ async def metrics_summary(
 
 @router.get("/compare", response_model=MetricCompareResponse)
 async def metrics_compare(
+    range: HistoryRange = HistoryRange.DAY,
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> MetricCompareResponse:
-    return await analytics_service.get_compare(db)
+    return await analytics_service.get_compare(db, range_name=range)
 
 
 @router.get("/reconciliation", response_model=ReconciliationResponse)

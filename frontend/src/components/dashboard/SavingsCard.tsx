@@ -1,6 +1,7 @@
 "use client";
 
 import type { MetricSummary } from "@/lib/schemas";
+import { formatCurrencyAmount, formatSavings, SAVINGS_EXPLAINER } from "@/lib/money";
 
 type SavingsCardProps = {
   summary: MetricSummary | null;
@@ -9,8 +10,7 @@ type SavingsCardProps = {
 };
 
 function formatCurrency(value: number, currency: string) {
-  const symbol = currency === "GBP" ? "£" : currency === "EUR" ? "€" : "$";
-  return `${symbol}${Math.abs(value).toFixed(2)}`;
+  return formatCurrencyAmount(value, currency);
 }
 
 function StatTile({
@@ -68,6 +68,7 @@ export function SavingsCard({ summary, loading, compact = false }: SavingsCardPr
   }
 
   const isCredit = summary.net_cost < 0;
+  const savingsDisplay = formatSavings(summary.savings, summary.currency);
 
   return (
     <section className="solar-card overflow-hidden">
@@ -96,12 +97,14 @@ export function SavingsCard({ summary, loading, compact = false }: SavingsCardPr
         }}
       >
         <p className="solar-eyebrow">Estimated savings</p>
-        <p className="mt-1 text-4xl font-bold tracking-tight text-emerald-600 tabular-nums dark:text-emerald-400 sm:text-5xl">
-          {formatCurrency(summary.savings, summary.currency)}
+        <p className={`mt-1 text-4xl font-bold tracking-tight tabular-nums sm:text-5xl ${savingsDisplay.className}`}>
+          {savingsDisplay.amount}
         </p>
-        <p className="mt-2 text-sm text-[var(--muted)]">
+        <p className="mt-2 text-sm font-medium text-[var(--foreground)]">{savingsDisplay.headline}</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">
           vs {formatCurrency(summary.estimated_cost_without_solar, summary.currency)} without solar
         </p>
+        <p className="mt-2 text-xs text-[var(--muted)]">{SAVINGS_EXPLAINER}</p>
       </div>
 
       <div className={`mt-4 grid gap-3 ${compact ? "grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-4"}`}>

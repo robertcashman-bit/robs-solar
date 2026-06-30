@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { PeriodComparisonPanel } from "@/components/analytics/PeriodComparisonPanel";
 import { ReconciliationCard } from "@/components/analytics/ReconciliationCard";
 import { AnalyticsCharts } from "@/components/analytics/AnalyticsCharts";
 import { SavingsCard } from "@/components/dashboard/SavingsCard";
@@ -97,6 +98,7 @@ export default function AnalyticsPage() {
         {error ? <ErrorBanner message={error} /> : null}
 
         <SavingsCard summary={summary} loading={loading} />
+        <PeriodComparisonPanel loading={loading} />
         <ReconciliationCard data={reconciliation} range={range} loading={loading} />
         <AnalyticsCharts
           history={history}

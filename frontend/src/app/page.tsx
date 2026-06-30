@@ -28,6 +28,7 @@ import {
   type SellOpportunity,
 } from "@/lib/schemas";
 import { useLiveMetrics } from "@/lib/use-live-metrics";
+import type { CompareRange } from "@/lib/money";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -38,6 +39,7 @@ export default function DashboardPage() {
   const [connectivity, setConnectivity] = useState<ConnectivityStatus | null>(null);
   const [summary, setSummary] = useState<MetricSummary | null>(null);
   const [compare, setCompare] = useState<MetricCompare | null>(null);
+  const [compareRange, setCompareRange] = useState<CompareRange>("day");
   const [readOnly, setReadOnly] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export default function DashboardPage() {
   const [chargeWindow, setChargeWindow] = useState<ChargeWindowStatus | null>(null);
   const [sellOpportunity, setSellOpportunity] = useState<SellOpportunity | null>(null);
 
-  const refreshMeta = useCallback(async () => {
+  const refreshMeta = useCallback(async (range: CompareRange = compareRange) => {
     setError(null);
     setOffline(false);
     try {
@@ -57,7 +59,7 @@ export default function DashboardPage() {
         apiClient.get<unknown>("/health"),
         apiClient.get<unknown>("/metrics/connectivity"),
         apiClient.get<unknown>("/metrics/summary?range=day"),
-        apiClient.get<unknown>("/metrics/compare").catch(() => null),
+        apiClient.get<unknown>(`/metrics/compare?range=${range}`).catch(() => null),
       ]);
       const health = healthResponseSchema.parse(healthData);
       setReadOnly(health.read_only);
@@ -117,7 +119,20 @@ export default function DashboardPage() {
       }
       setError(fetchError instanceof Error ? fetchError.message : "Failed to load dashboard");
     }
-  }, []);
+  }, [compareRange]);
+
+  const handleCompareRangeChange = useCallback(
+    async (range: CompareRange) => {
+      setCompareRange(range);
+      try {
+        const compareData = await apiClient.get(`/metrics/compare?range=${range}`);
+        setCompare(metricCompareSchema.parse(compareData));
+      } catch {
+        setCompare(null);
+      }
+    },
+    [],
+  );
 
   const refresh = useCallback(async () => {
     await Promise.all([refreshMetrics(), refreshMeta()]);
@@ -210,6 +225,8 @@ export default function DashboardPage() {
           connectivity={connectivity}
           summary={summary}
           compare={compare}
+          compareRange={compareRange}
+          onCompareRangeChange={(range) => void handleCompareRangeChange(range)}
           loading={loading && !metrics}
           error={null}
           readOnly={readOnly}

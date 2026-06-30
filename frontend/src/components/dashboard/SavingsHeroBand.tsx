@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import type { LiveMetrics, MetricSummary } from "@/lib/schemas";
+import { formatSavings, SAVINGS_EXPLAINER } from "@/lib/money";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -17,11 +18,6 @@ type SavingsHeroBandProps = {
   summary: MetricSummary | null;
   evCharging?: boolean;
 };
-
-function formatCurrency(value: number, currency: string) {
-  const sym = currency === "GBP" ? "£" : currency === "EUR" ? "€" : "$";
-  return `${sym}${Math.abs(value).toFixed(2)}`;
-}
 
 function gridLabel(metrics: LiveMetrics) {
   if (metrics.grid_export_w > 100) {
@@ -47,6 +43,7 @@ export function SavingsHeroBand({ metrics, summary, evCharging = false }: Saving
   const selfPct = summary?.self_consumption_pct ?? 0;
   const savingsToday = summary?.savings ?? 0;
   const currency = summary?.currency ?? "GBP";
+  const savingsDisplay = formatSavings(savingsToday, currency);
 
   return (
     <section aria-label="Savings control centre KPIs" className="space-y-3">
@@ -54,15 +51,15 @@ export function SavingsHeroBand({ metrics, summary, evCharging = false }: Saving
         <div>
           <p className="solar-eyebrow">Savings control centre</p>
           <h2 className="text-xl font-bold tracking-tight sm:text-2xl">
-            {savingsToday > 0 ? (
-              <>
-                <span className="text-gradient-solar">{formatCurrency(savingsToday, currency)}</span>
-                <span className="text-[var(--foreground)]"> saved today</span>
-              </>
+            {summary ? (
+              <span className={savingsDisplay.className}>{savingsDisplay.headline}</span>
             ) : (
               <span>Today&apos;s energy snapshot</span>
             )}
           </h2>
+          {summary ? (
+            <p className="mt-1 max-w-xl text-xs text-[var(--muted)]">{SAVINGS_EXPLAINER}</p>
+          ) : null}
         </div>
         <Link href="/analytics" className="solar-btn-ghost text-xs sm:text-sm">
           Full analytics →
@@ -76,17 +73,21 @@ export function SavingsHeroBand({ metrics, summary, evCharging = false }: Saving
 
       <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 snap-x snap-mandatory sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0 lg:grid-cols-5">
         <article
-          className={`hero-kpi relative min-w-[72%] shrink-0 snap-start overflow-hidden rounded-2xl border bg-gradient-to-br p-4 sm:min-w-0 ${toneClasses.savings}`}
+          className={`hero-kpi relative min-w-[72%] shrink-0 snap-start overflow-hidden rounded-2xl border bg-gradient-to-br p-4 sm:min-w-0 ${
+            savingsDisplay.tone === "negative"
+              ? "from-amber-500/20 to-amber-600/5 border-amber-400/30 text-amber-800 dark:text-amber-300"
+              : toneClasses.savings
+          }`}
         >
           <div className="flex items-start justify-between gap-2">
             <div>
               <p className="text-[0.65rem] font-semibold uppercase tracking-wider opacity-80">
                 Est. savings
               </p>
-              <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight">
-                {summary ? formatCurrency(savingsToday, currency) : "—"}
+              <p className={`mt-1 text-2xl font-bold tabular-nums tracking-tight ${savingsDisplay.className}`}>
+                {summary ? savingsDisplay.amount : "—"}
               </p>
-              <p className="mt-0.5 text-xs opacity-75">vs no solar</p>
+              <p className="mt-0.5 text-xs opacity-75">{summary ? savingsDisplay.sublabel : "vs no solar"}</p>
             </div>
             <ChartIcon size={22} className="opacity-70" />
           </div>

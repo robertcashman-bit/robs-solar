@@ -325,6 +325,7 @@ class MetricCompareDelta(BaseModel):
 
 
 class MetricCompareResponse(BaseModel):
+    range: HistoryRange
     today: MetricSummaryResponse
     yesterday: MetricSummaryResponse
     deltas: list[MetricCompareDelta]

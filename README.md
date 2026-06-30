@@ -253,6 +253,8 @@ bash scripts/deploy-hosted.sh
 
 Set `APP_ENV=production` on Render (in `render.yaml`). Change default passwords before going public.
 
+**AI assistant:** sign in as the **admin** user (not viewer) to see **Assistant** in the nav and the dashboard AI card. The backend needs `AI_ENABLED=true` and `OPENAI_API_KEY` — sync from local `.env` with `bash scripts/push-render-secrets.sh` or set in the Vercel/Render dashboard, then redeploy.
+
 ## License
 
 Private — for Rob's home solar setup.
