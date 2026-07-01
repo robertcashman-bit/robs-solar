@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   batteryDisplayState,
   deriveHouseLoad,
+  deriveHouseLoadDisplay,
   deriveInverterOutput,
   energyBalanceError,
   gridDisplayState,
@@ -95,5 +96,20 @@ describe("energy-flow helpers", () => {
 
   it("resolveBatteryPower uses API value when provided", () => {
     expect(resolveBatteryPower({ ...baseMetrics, battery_power_w: 150 })).toBe(150);
+  });
+
+  it("deriveHouseLoadDisplay shows Minimal during export-heavy low load", () => {
+    const metrics = {
+      ...baseMetrics,
+      pv_power_w: 95,
+      grid_import_w: 0,
+      grid_export_w: 125,
+      house_load_w: 0,
+      battery_power_w: 26,
+    };
+    const display = deriveHouseLoadDisplay(metrics, 26);
+    expect(display.value).toBe("Minimal");
+    expect(display.sublabel).toBe("Surplus to grid");
+    expect(display.isMinimal).toBe(true);
   });
 });

@@ -5,11 +5,12 @@ import type { ReactNode } from "react";
 import type { LiveMetrics } from "@/lib/schemas";
 import {
   batteryDisplayState,
-  deriveHouseLoad,
+  deriveHouseLoadDisplay,
   deriveInverterOutput,
   FLOW_ANIMATION_THRESHOLD_W,
   formatPowerW,
   gridDisplayState,
+  POWER_NOISE_FLOOR_W,
   resolveBatteryPower,
 } from "@/lib/energy-flow";
 import {
@@ -120,15 +121,17 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
   const pvActive = metrics.pv_power_w > FLOW_ANIMATION_THRESHOLD_W;
 
   const batteryPower = resolveBatteryPower(metrics);
-  const houseLoadW = deriveHouseLoad(metrics, batteryPower);
+  const houseLoad = deriveHouseLoadDisplay(metrics, batteryPower);
   const batteryState = batteryDisplayState(batteryPower);
 
-  const loadActive = houseLoadW > FLOW_ANIMATION_THRESHOLD_W;
-  const inverterOutputW = deriveInverterOutput(houseLoadW, metrics.grid_export_w);
+  const loadActive =
+    houseLoad.watts > FLOW_ANIMATION_THRESHOLD_W ||
+    (houseLoad.isMinimal && metrics.pv_power_w > POWER_NOISE_FLOOR_W);
+  const inverterOutputW = deriveInverterOutput(houseLoad.watts, metrics.grid_export_w);
 
   const peak = Math.max(
     metrics.pv_power_w,
-    houseLoadW,
+    houseLoad.watts,
     metrics.grid_import_w,
     metrics.grid_export_w,
     Math.abs(batteryPower),
@@ -182,7 +185,7 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
             to={home}
             active={loadActive}
             color={loadColor}
-            strength={houseLoadW / peak}
+            strength={houseLoad.watts / peak}
           />
           <FlowConnector
             from={batteryState.charging ? hub : battery}
@@ -270,7 +273,8 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
             <FlowNode
               icon={<HomeIcon size={18} />}
               label="Home"
-              value={formatW(houseLoadW)}
+              value={houseLoad.value}
+              sub={houseLoad.sublabel}
               accentVar={loadColor}
               active={loadActive}
             />

@@ -16,6 +16,16 @@ export type GridDisplayState = {
   watts: number;
 };
 
+/** Sunsynk load CT often reads 0 during export; allow this much balance slack. */
+export const EXPORT_IMBALANCE_TOLERANCE_W = 30;
+
+export type HouseLoadDisplay = {
+  watts: number;
+  value: string;
+  sublabel?: string;
+  isMinimal: boolean;
+};
+
 export type BatteryDisplayState = {
   charging: boolean;
   discharging: boolean;
@@ -42,12 +52,45 @@ export function resolveBatteryPower(metrics: LiveMetrics): number {
 
 /** Instantaneous house load from API or power balance. */
 export function deriveHouseLoad(metrics: LiveMetrics, batteryPowerW: number): number {
+  return deriveHouseLoadDisplay(metrics, batteryPowerW).watts;
+}
+
+/** House load for display — handles export-heavy snapshots where load CT reads 0. */
+export function deriveHouseLoadDisplay(
+  metrics: LiveMetrics,
+  batteryPowerW: number,
+): HouseLoadDisplay {
   if (metrics.house_load_w > POWER_NOISE_FLOOR_W) {
-    return metrics.house_load_w;
+    const watts = metrics.house_load_w;
+    return { watts, value: formatPowerW(watts), isMinimal: false };
   }
-  const derived =
+
+  const raw =
     metrics.pv_power_w + metrics.grid_import_w - metrics.grid_export_w + batteryPowerW;
-  return derived > POWER_NOISE_FLOOR_W ? derived : metrics.house_load_w;
+
+  if (raw > POWER_NOISE_FLOOR_W) {
+    return { watts: raw, value: formatPowerW(raw), isMinimal: false };
+  }
+
+  const exporting = metrics.grid_export_w > POWER_NOISE_FLOOR_W;
+  const generating =
+    metrics.pv_power_w > POWER_NOISE_FLOOR_W ||
+    Math.abs(batteryPowerW) > POWER_NOISE_FLOOR_W;
+
+  if (exporting && generating && raw > -EXPORT_IMBALANCE_TOLERANCE_W) {
+    return {
+      watts: 0,
+      value: "Minimal",
+      sublabel: "Surplus to grid",
+      isMinimal: true,
+    };
+  }
+
+  return {
+    watts: Math.max(0, metrics.house_load_w),
+    value: "0 W",
+    isMinimal: false,
+  };
 }
 
 export function deriveInverterOutput(houseLoadW: number, gridExportW: number): number {

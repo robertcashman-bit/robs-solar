@@ -73,4 +73,23 @@ describe("EnergyFlow", () => {
     expect(screen.getByText("Importing")).toBeInTheDocument();
     expect(screen.getByText("Idle")).toBeInTheDocument();
   });
+
+  it("shows Minimal home load when exporting surplus with unreadable load CT", () => {
+    render(
+      <EnergyFlow
+        metrics={{
+          ...metrics,
+          pv_power_w: 95,
+          grid_import_w: 0,
+          grid_export_w: 125,
+          house_load_w: 0,
+          battery_power_w: 26,
+          battery_soc_pct: 98,
+        }}
+      />,
+    );
+    expect(screen.getByText("Minimal")).toBeInTheDocument();
+    expect(screen.getByText("Surplus to grid")).toBeInTheDocument();
+    expect(screen.getByText("Exporting")).toBeInTheDocument();
+  });
 });
