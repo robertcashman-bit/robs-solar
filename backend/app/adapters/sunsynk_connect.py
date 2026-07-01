@@ -380,6 +380,7 @@ class SunsynkConnectAdapter(InverterAdapter):
         work_mode_raw = data.get("sysWorkMode")
         work_mode = work_mode_from_sunsynk(work_mode_raw)
         flow_daily = self._flow_daily_totals(data)
+        exists_meter = self._flag(data, "existsMeter")
         return LiveMetrics(
             pv_power_w=pv_power_w,
             battery_soc_pct=min(100.0, max(0.0, num("soc"))),
@@ -399,6 +400,7 @@ class SunsynkConnectAdapter(InverterAdapter):
             daily_import_kwh=flow_daily.get("import", 0.0) if flow_daily else 0.0,
             daily_export_kwh=flow_daily.get("export", 0.0) if flow_daily else 0.0,
             timestamp=datetime.now(timezone.utc),
+            grid_meter_connected=exists_meter,
         )
 
     @staticmethod

@@ -63,5 +63,11 @@ services:
         sync: false
       - key: OCTOPUS_ACCOUNT_NUMBER
         sync: false
+      - key: OCTOPUS_MPAN
+        sync: false
+      - key: OCTOPUS_METER_SERIAL
+        sync: false
+      - key: OCTOPUS_REGION
+        sync: false
       - key: OPENAI_API_KEY
         sync: false

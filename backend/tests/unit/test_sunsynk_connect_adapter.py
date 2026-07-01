@@ -5,11 +5,12 @@ These tests pin the adapter's behaviour against a fully mocked transport so we n
 call the real cloud service, and so unverified write paths stay feature-flagged.
 """
 
+from datetime import datetime, timezone
+
 import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from datetime import datetime, timezone
 
 from app.adapters.sunsynk_connect import SunsynkConnectAdapter
 from app.config import settings
@@ -105,6 +106,7 @@ LOW_LOAD_FLOW_RESPONSE = {
         "toGrid": False,
         "battPower": 1,
         "batTo": True,
+        "existsMeter": False,
     },
 }
 
@@ -116,8 +118,6 @@ def _low_load_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=TOKEN_RESPONSE)
     if path.endswith("/flow"):
         return httpx.Response(200, json=LOW_LOAD_FLOW_RESPONSE)
-    if "/plant/energy/" in path and path.endswith("/day"):
-        return httpx.Response(200, json=DAY_SERIES_RESPONSE)
     if path == "/api/v1/plants":
         return httpx.Response(200, json={"success": True, "data": [{"id": "123"}]})
     return httpx.Response(404, json={"success": False})
@@ -181,6 +181,7 @@ async def test_get_live_metrics_low_load_matches_sunsynk_and_fills_daily_kwh(
     assert metrics.grid_import_w == pytest.approx(12)
     assert metrics.house_load_w == pytest.approx(22)
     assert metrics.house_load_source == HouseLoadSource.DERIVED
+    assert metrics.grid_meter_connected is False
     assert metrics.daily_pv_kwh == pytest.approx(0.679)
     assert metrics.daily_import_kwh == pytest.approx(30.825)
     assert metrics.daily_export_kwh == pytest.approx(0.375)

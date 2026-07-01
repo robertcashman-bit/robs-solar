@@ -11,7 +11,13 @@ from typing import Any
 import httpx
 
 from app.config import settings
-from app.schemas.domain import DispatchResponse, DispatchWindow, OctopusMeterPower, OctopusRatePlan, OffPeakWindow
+from app.schemas.domain import (
+    DispatchResponse,
+    DispatchWindow,
+    OctopusMeterPower,
+    OctopusRatePlan,
+    OffPeakWindow,
+)
 
 OCTOPUS_BASE = "https://api.octopus.energy/v1"
 KRAKEN_GRAPHQL = "https://api.octopus.energy/v1/graphql/"
