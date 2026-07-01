@@ -100,7 +100,7 @@ export function SavingsHeroBand({ metrics, summary, evCharging = false }: Saving
           <p className="mt-1 text-2xl font-bold tabular-nums">{metrics.battery_soc_pct.toFixed(0)}%</p>
           <p className="mt-0.5 text-xs opacity-75">
             {metrics.battery_power_w != null && Math.abs(metrics.battery_power_w) > 50
-              ? `${metrics.battery_power_w > 0 ? "Charging" : "Discharging"} ${Math.round(Math.abs(metrics.battery_power_w))} W`
+              ? `${metrics.battery_power_w > 0 ? "Discharging" : "Charging"} ${Math.round(Math.abs(metrics.battery_power_w))} W`
               : "Idle"}
           </p>
           <div className="mt-2 h-1 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">

@@ -133,7 +133,7 @@ export function buildSavingsInsights(
     });
   }
 
-  if (metrics.battery_soc_pct > 90 && exporting && batt < -200) {
+  if (metrics.battery_soc_pct > 90 && exporting && batt < 200) {
     const exportNote =
       exportP != null ? ` Export earns about ${exportP.toFixed(1)}p/kWh.` : "";
     insights.push({
@@ -156,8 +156,8 @@ export function buildSavingsInsights(
   }
 
   const hoursToFull =
-    batt > 50
-      ? (((100 - metrics.battery_soc_pct) / 100) * BATTERY_KWH) / (batt / 1000)
+    batt < -50
+      ? (((100 - metrics.battery_soc_pct) / 100) * BATTERY_KWH) / (-batt / 1000)
       : null;
   if (hoursToFull != null && hoursToFull < 2 && metrics.pv_power_w > 2000) {
     insights.push({

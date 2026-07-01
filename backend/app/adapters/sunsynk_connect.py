@@ -244,22 +244,64 @@ class SunsynkConnectAdapter(InverterAdapter):
                 return str(raw).strip().lower() in {"1", "true", "yes", "on"}
         return None
 
-    def _signed_battery_power(self, data: dict[str, Any], magnitude: float) -> float:
-        """Battery power using the app convention: positive = discharging.
+    _FLOW_IDLE_W = 50.0
 
-        Sunsynk firmware varies: some report a signed ``battPower``; others report
-        an unsigned magnitude plus direction booleans (``toBat`` = charging,
-        ``batteryTo`` = discharging). Prefer the explicit flags when present so a
-        charging battery is never misread as discharging (which would defeat the
-        peak-import and discharge logic). Fall back to the raw signed value.
+    def _resolve_battery_power(
+        self,
+        data: dict[str, Any],
+        raw_batt: float,
+        *,
+        pv: float,
+        grid_import: float,
+        grid_export: float,
+        reported_load: float,
+    ) -> float:
+        """Battery power in app convention: positive = discharging.
+
+        Sunsynk firmware varies: direction booleans (``toBat`` / ``batteryTo``),
+        signed ``battPower`` (negative = discharging on many inverters), or an
+        unsigned positive magnitude. Prefer explicit flags; otherwise infer sign
+        from the power balance when ``loadOrEpsPower`` is trustworthy.
         """
         charging = self._flag(data, "toBat", "toBattery", "gridToBat")
         discharging = self._flag(data, "batteryTo", "battTo", "batteryOut", "batToLoad")
         if charging is True and discharging is not True:
-            return -abs(magnitude)
+            return -abs(raw_batt)
         if discharging is True and charging is not True:
-            return abs(magnitude)
-        return magnitude
+            return abs(raw_batt)
+        if abs(raw_batt) < 1:
+            return 0.0
+        abs_mag = abs(raw_batt)
+        if raw_batt < 0:
+            # Common Sunsynk Connect sign: negative = discharging.
+            return abs_mag
+        discharge = abs_mag
+        charge = -abs_mag
+        if reported_load > self._FLOW_IDLE_W:
+            load_if_discharge = pv + grid_import - grid_export + discharge
+            load_if_charge = pv + grid_import - grid_export + charge
+            err_dis = abs(load_if_discharge - reported_load)
+            err_chg = abs(load_if_charge - reported_load)
+            return discharge if err_dis <= err_chg else charge
+        return discharge
+
+    @staticmethod
+    def _resolve_house_load(
+        reported: float,
+        *,
+        pv: float,
+        grid_import: float,
+        grid_export: float,
+        battery_power_w: float,
+    ) -> float:
+        """Use Sunsynk ``loadOrEpsPower`` when plausible; else derive from balance."""
+        idle = SunsynkConnectAdapter._FLOW_IDLE_W
+        if reported > idle:
+            return reported
+        derived = pv + grid_import - grid_export + battery_power_w
+        if derived > idle:
+            return derived
+        return max(0.0, reported)
 
     def _signed_grid(self, data: dict[str, Any], grid: float) -> tuple[float, float]:
         """Return (import_w, export_w) using direction flags when present.
@@ -286,9 +328,25 @@ class SunsynkConnectAdapter(InverterAdapter):
             except (TypeError, ValueError) as exc:
                 raise AdapterError(f"Malformed Sunsynk flow field '{key}'") from exc
 
+        pv_power_w = max(0.0, num("pvPower"))
+        reported_load = num("loadOrEpsPower")
         grid = num("gridOrMeterPower")
         grid_import_w, grid_export_w = self._signed_grid(data, grid)
-        battery_power_w = self._signed_battery_power(data, num("battPower"))
+        battery_power_w = self._resolve_battery_power(
+            data,
+            num("battPower"),
+            pv=pv_power_w,
+            grid_import=grid_import_w,
+            grid_export=grid_export_w,
+            reported_load=reported_load,
+        )
+        house_load_w = self._resolve_house_load(
+            reported_load,
+            pv=pv_power_w,
+            grid_import=grid_import_w,
+            grid_export=grid_export_w,
+            battery_power_w=battery_power_w,
+        )
         fault_raw = data.get("fault") or data.get("faultCode") or data.get("alarm")
         has_fault = bool(fault_raw) and str(fault_raw) not in ("0", "none", "None", "")
         soh_raw = data.get("soh") or data.get("batterySoh") or data.get("battSoh")
@@ -301,10 +359,10 @@ class SunsynkConnectAdapter(InverterAdapter):
         work_mode_raw = data.get("sysWorkMode")
         work_mode = work_mode_from_sunsynk(work_mode_raw)
         return LiveMetrics(
-            pv_power_w=max(0.0, num("pvPower")),
+            pv_power_w=pv_power_w,
             battery_soc_pct=min(100.0, max(0.0, num("soc"))),
             battery_power_w=battery_power_w,
-            house_load_w=max(0.0, num("loadOrEpsPower")),
+            house_load_w=house_load_w,
             grid_import_w=grid_import_w,
             grid_export_w=grid_export_w,
             inverter_mode=work_mode_to_inverter_mode(work_mode)

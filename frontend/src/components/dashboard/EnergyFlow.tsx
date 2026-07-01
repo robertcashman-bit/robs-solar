@@ -36,6 +36,15 @@ function resolveBatteryPower(metrics: LiveMetrics): number {
   );
 }
 
+function resolveHouseLoad(metrics: LiveMetrics, batteryPower: number): number {
+  if (metrics.house_load_w > FLOW_THRESHOLD) {
+    return metrics.house_load_w;
+  }
+  const derived =
+    metrics.pv_power_w + metrics.grid_import_w - metrics.grid_export_w + batteryPower;
+  return derived > FLOW_THRESHOLD ? derived : metrics.house_load_w;
+}
+
 /** Animated connector drawn behind the nodes. Coordinates are in percent. */
 function FlowConnector({
   from,
@@ -122,23 +131,24 @@ function FlowNode({
 
 export function EnergyFlow({ metrics }: EnergyFlowProps) {
   const pvActive = metrics.pv_power_w > FLOW_THRESHOLD;
-  const loadActive = metrics.house_load_w > FLOW_THRESHOLD;
   const importActive = metrics.grid_import_w > FLOW_THRESHOLD;
   const exportActive = metrics.grid_export_w > FLOW_THRESHOLD;
 
   const batteryPower = resolveBatteryPower(metrics);
-  const charging = batteryPower > FLOW_THRESHOLD;
-  const discharging = batteryPower < -FLOW_THRESHOLD;
+  const houseLoadW = resolveHouseLoad(metrics, batteryPower);
+  const charging = batteryPower < -FLOW_THRESHOLD;
+  const discharging = batteryPower > FLOW_THRESHOLD;
   const batteryFlowSub =
     charging || discharging
       ? `${formatW(batteryPower)} ${charging ? "Charging" : "Discharging"}`
       : "Idle";
 
-  const inverterOutputW = metrics.house_load_w + metrics.grid_export_w;
+  const loadActive = houseLoadW > FLOW_THRESHOLD;
+  const inverterOutputW = houseLoadW + metrics.grid_export_w;
 
   const peak = Math.max(
     metrics.pv_power_w,
-    metrics.house_load_w,
+    houseLoadW,
     metrics.grid_import_w,
     metrics.grid_export_w,
     Math.abs(batteryPower),
@@ -192,7 +202,7 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
             to={home}
             active={loadActive}
             color={loadColor}
-            strength={metrics.house_load_w / peak}
+            strength={houseLoadW / peak}
           />
           <FlowConnector
             from={charging ? hub : battery}
@@ -282,7 +292,7 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
             <FlowNode
               icon={<HomeIcon size={18} />}
               label="Home"
-              value={formatW(metrics.house_load_w)}
+              value={formatW(houseLoadW)}
               accentVar={loadColor}
               active={loadActive}
             />

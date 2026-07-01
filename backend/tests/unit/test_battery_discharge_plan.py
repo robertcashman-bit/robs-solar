@@ -250,6 +250,14 @@ class TestSignConvention:
         )
         assert m.battery_power_w == 600  # discharging -> positive
 
+    def test_battery_signed_negative_is_discharging(self) -> None:
+        m = self._adapter()._parse_flow(
+            {"data": {"battPower": -158, "soc": 98,
+                      "pvPower": 85, "loadOrEpsPower": 0, "gridOrMeterPower": 12}}
+        )
+        assert m.battery_power_w == 158
+        assert m.house_load_w == pytest.approx(255, abs=5)
+
     def test_battery_signed_fallback_without_flags(self) -> None:
         m = self._adapter()._parse_flow(
             {"data": {"battPower": 600, "soc": 80,

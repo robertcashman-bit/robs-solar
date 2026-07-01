@@ -15,15 +15,15 @@ function batteryEta(metrics: LiveMetrics): string | undefined {
   }
   const remainingKwh =
     metrics.battery_power_w > 0
-      ? ((100 - metrics.battery_soc_pct) / 100) * BATTERY_KWH
-      : (metrics.battery_soc_pct / 100) * BATTERY_KWH;
+      ? (metrics.battery_soc_pct / 100) * BATTERY_KWH
+      : ((100 - metrics.battery_soc_pct) / 100) * BATTERY_KWH;
   const hours = remainingKwh / (Math.abs(metrics.battery_power_w) / 1000);
   if (!Number.isFinite(hours) || hours <= 0) {
     return undefined;
   }
   const h = Math.floor(hours);
   const m = Math.round((hours - h) * 60);
-  return metrics.battery_power_w > 0 ? `Full in ~${h}h ${m}m` : `Empty in ~${h}h ${m}m`;
+  return metrics.battery_power_w > 0 ? `Empty in ~${h}h ${m}m` : `Full in ~${h}h ${m}m`;
 }
 
 type LiveDetailCardsProps = {

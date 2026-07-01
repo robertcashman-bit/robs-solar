@@ -28,7 +28,7 @@ describe("EnergyFlow", () => {
 
   it("shows real battery charge/discharge watts when provided", () => {
     render(<EnergyFlow metrics={metrics} />);
-    expect(screen.getByText(/600 W Charging/i)).toBeInTheDocument();
+    expect(screen.getByText(/600 W Discharging/i)).toBeInTheDocument();
   });
 
   it("shows inverter throughput on the hub", () => {
