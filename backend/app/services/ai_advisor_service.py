@@ -65,8 +65,21 @@ above its SOC floor is a problem worth flagging.
 cheap_rate_pence, peak_rate_pence, cheap_windows, peak_windows, current_is_cheap, \
 and planned_cheap_windows. Never use wholesale Agile market prices — only \
 rate_plan and tariff (the user's bill rates).
-- The auto-scheduler already computes ideal bands ("computed_bands" in context). \
-If the live bands match those, the schedule is optimal.
+- The auto-scheduler ("auto-align") already computes ideal bands ("computed_bands" in \
+context). If the live bands match those, the schedule is optimal.
+- Auto-align is the primary fix for peak-rate grid import at high battery SOC. It \
+keeps daytime TOU bands on the SOC floor with grid-charge OFF and switches the \
+inverter to self_use during peak. NEVER propose disabling auto-align \
+(set_auto_schedule enabled=false) to reduce peak import — that stops automatic \
+schedule and mode correction and makes import worse.
+- When you see peak import while battery SOC is above the configured floor, prefer: \
+(1) confirm auto-align is enabled, (2) set_operating_mode to self_use if the \
+inverter is in feed_in/selling mode, (3) set_tou_bands matching computed_bands if \
+bands are misaligned. Only propose set_auto_schedule with enabled=true (not false).
+- Grid import below about 50 W is often CT noise or standby load — mention it but \
+do not treat tiny imports as a crisis requiring drastic changes.
+- The peak_import_guard in context auto-enables auto-align and remediates sustained \
+peak import — do not contradict it by disabling auto-align.
 - Selling to the grid: when the export rate is high (see "sell_opportunity" in \
 context) and the battery has headroom above its reserve, it can be worth \
 exporting. To start selling, propose set_operating_mode with mode "feed_in" \
@@ -266,7 +279,73 @@ class AiAdvisorService:
         except Exception as exc:  # noqa: BLE001
             ctx["safety_error"] = str(exc)
 
+        try:
+            from app.services.peak_import_guard_service import peak_import_guard_service
+
+            guard = await peak_import_guard_service.get_status(db)
+            ctx["peak_import_guard"] = guard.model_dump(mode="json")
+        except Exception as exc:  # noqa: BLE001
+            ctx["peak_import_guard_error"] = str(exc)
+
+        ctx["advisor_notes"] = {
+            "never_disable_auto_align_for_peak_import": (
+                "Disabling auto-align does not stop grid import; it stops automatic "
+                "TOU alignment and peak self-use mode fixes."
+            ),
+            "small_import_threshold_w": 50,
+            "preferred_peak_import_remediation": [
+                "Keep or enable auto-align with soc_floor_pct around 20",
+                "Switch to self_use if inverter_mode is feed_in",
+                "Align TOU bands to computed_bands with daytime grid_charge_enabled=false",
+            ],
+        }
+
         return ctx
+
+    @staticmethod
+    def _disabling_auto_align_is_harmful(context: dict[str, Any]) -> bool:
+        """Block AI suggestions to disable auto-align during peak/high-SOC import."""
+        auto = context.get("auto_schedule")
+        if not isinstance(auto, dict):
+            return False
+        live = context.get("live_metrics")
+        if not isinstance(live, dict):
+            return False
+
+        soc_floor = int(auto.get("soc_floor_pct") or 20)
+        soc = float(live.get("battery_soc_pct") or 0)
+        if soc <= soc_floor + 5:
+            return False
+
+        rate_plan = context.get("rate_plan")
+        on_peak = isinstance(rate_plan, dict) and rate_plan.get("current_is_cheap") is False
+        grid_import = float(live.get("grid_import_w") or 0)
+        if on_peak or grid_import > 0:
+            return True
+        return False
+
+    def _filter_actions(
+        self,
+        context: dict[str, Any],
+        actions: list[AiProposedAction],
+    ) -> list[AiProposedAction]:
+        """Drop known-bad suggestions the model occasionally produces."""
+        kept: list[AiProposedAction] = []
+        for action in actions:
+            if (
+                action.kind == AiActionKind.SET_AUTO_SCHEDULE
+                and action.body.get("enabled") is False
+                and self._disabling_auto_align_is_harmful(context)
+            ):
+                logger.info(
+                    "Dropping harmful AI action: disable auto-align during peak/high-SOC "
+                    "(soc=%s, grid_import=%sW)",
+                    (context.get("live_metrics") or {}).get("battery_soc_pct"),
+                    (context.get("live_metrics") or {}).get("grid_import_w"),
+                )
+                continue
+            kept.append(action)
+        return kept
 
     def _normalise_actions(self, raw_actions: Any) -> list[AiProposedAction]:
         actions: list[AiProposedAction] = []
@@ -312,11 +391,12 @@ class AiAdvisorService:
             ]
         )
         data = _safe_json(raw)
+        actions = self._normalise_actions(data.get("proposed_actions"))
         return AiAssessment(
             optimal=bool(data.get("optimal", False)),
             headline=str(data.get("headline") or "Assessment complete."),
             findings=[str(f) for f in (data.get("findings") or []) if str(f).strip()],
-            proposed_actions=self._normalise_actions(data.get("proposed_actions")),
+            proposed_actions=self._filter_actions(context, actions),
         )
 
     async def chat(self, db: AsyncSession, history: list[AiChatMessage]) -> AiChatResponse:
@@ -338,9 +418,10 @@ class AiAdvisorService:
             messages.append({"role": msg.role, "content": msg.content})
         raw = await self._complete(messages)
         data = _safe_json(raw)
+        actions = self._normalise_actions(data.get("proposed_actions"))
         return AiChatResponse(
             reply=str(data.get("reply") or "Sorry, I could not produce an answer."),
-            proposed_actions=self._normalise_actions(data.get("proposed_actions")),
+            proposed_actions=self._filter_actions(context, actions),
         )
 
 

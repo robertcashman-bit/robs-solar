@@ -100,6 +100,45 @@ async def test_assess_parses_completion(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_assess_filters_harmful_disable_auto_align(monkeypatch) -> None:
+    service = AiAdvisorService()
+
+    async def fake_build_context(_db):
+        return {
+            "auto_schedule": {"enabled": True, "soc_floor_pct": 20},
+            "live_metrics": {
+                "battery_soc_pct": 98,
+                "grid_import_w": 16,
+                "inverter_mode": "self_use",
+            },
+            "rate_plan": {"current_is_cheap": False},
+        }
+
+    async def fake_complete(_messages):
+        return json.dumps(
+            {
+                "optimal": False,
+                "headline": "Peak import at high SOC.",
+                "findings": ["Importing 16 W on peak rate."],
+                "proposed_actions": [
+                    {
+                        "kind": "set_auto_schedule",
+                        "summary": "Disable auto-align",
+                        "reason": "wrong",
+                        "body": {"enabled": False, "soc_floor_pct": 20},
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr(service, "build_context", fake_build_context)
+    monkeypatch.setattr(service, "_complete", fake_complete)
+
+    assessment = await service.assess(db=None)  # type: ignore[arg-type]
+    assert assessment.proposed_actions == []
+
+
+@pytest.mark.asyncio
 async def test_chat_handles_garbage_json(monkeypatch) -> None:
     service = AiAdvisorService()
 
@@ -171,3 +210,50 @@ async def test_build_context_includes_rate_plan(monkeypatch: pytest.MonkeyPatch)
     assert ctx["rate_plan"]["peak_rate_pence"] == 28.6
     assert ctx["rate_plan"]["current_is_cheap"] is False
     assert ctx["rate_plan"]["cheap_windows"][0]["start"] == "23:30"
+
+
+def test_disabling_auto_align_harmful_on_peak_high_soc() -> None:
+    service = AiAdvisorService()
+    context = {
+        "auto_schedule": {"enabled": True, "soc_floor_pct": 20},
+        "live_metrics": {"battery_soc_pct": 98, "grid_import_w": 16},
+        "rate_plan": {"current_is_cheap": False},
+    }
+    assert service._disabling_auto_align_is_harmful(context) is True
+
+
+def test_disabling_auto_align_ok_when_soc_at_floor() -> None:
+    service = AiAdvisorService()
+    context = {
+        "auto_schedule": {"enabled": True, "soc_floor_pct": 20},
+        "live_metrics": {"battery_soc_pct": 22, "grid_import_w": 500},
+        "rate_plan": {"current_is_cheap": False},
+    }
+    assert service._disabling_auto_align_is_harmful(context) is False
+
+
+def test_filter_actions_drops_disable_auto_align_on_peak() -> None:
+    service = AiAdvisorService()
+    context = {
+        "auto_schedule": {"enabled": True, "soc_floor_pct": 20},
+        "live_metrics": {"battery_soc_pct": 98, "grid_import_w": 16},
+        "rate_plan": {"current_is_cheap": False},
+    }
+    raw = [
+        {
+            "kind": "set_auto_schedule",
+            "summary": "Disable auto-align",
+            "reason": "wrong advice",
+            "body": {"enabled": False, "soc_floor_pct": 20},
+        },
+        {
+            "kind": "set_auto_schedule",
+            "summary": "Enable auto-align",
+            "reason": "good advice",
+            "body": {"enabled": True, "soc_floor_pct": 20},
+        },
+    ]
+    actions = service._normalise_actions(raw)
+    filtered = service._filter_actions(context, actions)
+    assert len(filtered) == 1
+    assert filtered[0].body["enabled"] is True
