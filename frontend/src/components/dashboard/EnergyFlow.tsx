@@ -7,6 +7,7 @@ import {
   batteryDisplayState,
   deriveHouseLoadDisplay,
   deriveInverterOutputDisplay,
+  loadSourceBadge,
   FLOW_ANIMATION_THRESHOLD_W,
   formatPowerW,
   gridDisplayState,
@@ -128,6 +129,7 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
     houseLoad.watts > FLOW_ANIMATION_THRESHOLD_W ||
     (houseLoad.isMinimal && metrics.pv_power_w > POWER_NOISE_FLOOR_W);
   const inverterOutputW = deriveInverterOutputDisplay(metrics, houseLoad.watts, batteryPower);
+  const loadBadge = loadSourceBadge(metrics, houseLoad);
 
   const peak = Math.max(
     metrics.pv_power_w,
@@ -152,12 +154,12 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
   const exportColor = "var(--accent-export)";
 
   return (
-    <section aria-label="Energy flow" className="solar-card overflow-hidden">
+    <section aria-label="Live power now" className="solar-card overflow-hidden">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="solar-section-title">Energy flow</h2>
+          <h2 className="solar-section-title">Live power (now)</h2>
           <p className="mt-0.5 text-sm text-[var(--muted)]">
-            Live power routed through your inverter.
+            Instant watts through your inverter. Today&apos;s kWh totals are in the cards below.
           </p>
         </div>
         <span className="solar-status-pill text-[var(--accent-battery)]">
@@ -165,6 +167,12 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
           Live
         </span>
       </div>
+
+      {loadBadge ? (
+        <p className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface-sunken)] px-3 py-2 text-xs text-[var(--muted)]">
+          {loadBadge}
+        </p>
+      ) : null}
 
       <div className="relative mt-4 aspect-[4/3] w-full sm:aspect-[16/9]">
         <svg
@@ -274,7 +282,7 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
               icon={<HomeIcon size={18} />}
               label="Home"
               value={houseLoad.value}
-              sub={houseLoad.sublabel}
+              sub={loadBadge ? undefined : houseLoad.sublabel}
               accentVar={loadColor}
               active={loadActive}
             />

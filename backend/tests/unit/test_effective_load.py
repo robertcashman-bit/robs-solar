@@ -72,3 +72,49 @@ def test_finalize_live_metrics_leaves_plausible_reported_load() -> None:
     finalized = finalize_live_metrics(metrics)
     assert finalized.house_load_w == pytest.approx(1800)
     assert finalized.house_load_source == HouseLoadSource.REPORTED
+
+
+def test_finalize_live_metrics_matches_sunsynk_low_load_snapshot() -> None:
+    """Mirrors live Sunsynk /flow: 9 W PV, 12 W grid import, 0 W CT, 1 W battery."""
+    metrics = LiveMetrics(
+        pv_power_w=9,
+        battery_soc_pct=95,
+        battery_power_w=1,
+        house_load_w=0,
+        house_load_source=HouseLoadSource.MINIMAL,
+        house_load_reported_w=0,
+        grid_import_w=12,
+        grid_export_w=0,
+        inverter_mode=InverterMode.SELF_USE,
+        inverter_status=InverterStatus.ONLINE,
+        daily_pv_kwh=0,
+        daily_import_kwh=0,
+        daily_export_kwh=0,
+        timestamp=datetime(2026, 7, 1, 20, 0, tzinfo=timezone.utc),
+    )
+    finalized = finalize_live_metrics(metrics)
+    assert finalized.house_load_w == pytest.approx(22.0)
+    assert finalized.house_load_source == HouseLoadSource.DERIVED
+
+
+def test_finalize_live_metrics_preserves_high_load_kettle_scenario() -> None:
+    """Heavy appliance: reported CT should stay trusted (kettle / oven scale)."""
+    metrics = LiveMetrics(
+        pv_power_w=0,
+        battery_soc_pct=55,
+        battery_power_w=100,
+        house_load_w=2700,
+        house_load_source=HouseLoadSource.REPORTED,
+        house_load_reported_w=2700,
+        grid_import_w=2800,
+        grid_export_w=0,
+        inverter_mode=InverterMode.SELF_USE,
+        inverter_status=InverterStatus.ONLINE,
+        daily_pv_kwh=0.6,
+        daily_import_kwh=31,
+        daily_export_kwh=0,
+        timestamp=datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc),
+    )
+    finalized = finalize_live_metrics(metrics)
+    assert finalized.house_load_w == pytest.approx(2700)
+    assert finalized.house_load_source == HouseLoadSource.REPORTED

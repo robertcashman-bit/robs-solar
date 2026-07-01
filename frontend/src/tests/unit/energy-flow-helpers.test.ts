@@ -6,6 +6,7 @@ import {
   deriveHouseLoadDisplay,
   deriveInverterOutput,
   deriveInverterOutputDisplay,
+  loadSourceBadge,
   energyBalanceError,
   gridDisplayState,
   gridHeroLabel,
@@ -147,6 +148,21 @@ describe("energy-flow helpers", () => {
     expect(display.value).toBe("25 W");
     expect(display.isMinimal).toBe(false);
     expect(display.source).toBe("derived");
+  });
+
+  it("loadSourceBadge explains derived load for transparency", () => {
+    const metrics = {
+      ...baseMetrics,
+      pv_power_w: 9,
+      grid_import_w: 12,
+      grid_export_w: 0,
+      house_load_w: 22,
+      house_load_source: "derived" as const,
+      house_load_reported_w: 0,
+      battery_power_w: 1,
+    };
+    const display = deriveHouseLoadDisplay(metrics, 1);
+    expect(loadSourceBadge(metrics, display)).toBe("Load estimated from balance");
   });
 
   it("energyBalanceError is near zero for consistent metrics", () => {

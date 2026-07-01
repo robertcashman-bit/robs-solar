@@ -21,7 +21,7 @@ const metrics = {
 describe("EnergyFlow", () => {
   it("renders energy flow diagram with live values", () => {
     render(<EnergyFlow metrics={metrics} />);
-    expect(screen.getByLabelText("Energy flow")).toBeInTheDocument();
+    expect(screen.getByLabelText("Live power now")).toBeInTheDocument();
     expect(screen.getByText("4,200 W")).toBeInTheDocument();
     expect(screen.getByText("68.0%")).toBeInTheDocument();
   });
@@ -92,5 +92,47 @@ describe("EnergyFlow", () => {
     expect(screen.getByText("Minimal")).toBeInTheDocument();
     expect(screen.getByText("Surplus to grid")).toBeInTheDocument();
     expect(screen.getByText("Exporting surplus")).toBeInTheDocument();
+  });
+
+  it("shows live-now heading and derived-load transparency badge", () => {
+    render(
+      <EnergyFlow
+        metrics={{
+          ...metrics,
+          pv_power_w: 9,
+          grid_import_w: 12,
+          grid_export_w: 0,
+          house_load_w: 22,
+          house_load_source: "derived" as const,
+          house_load_reported_w: 0,
+          battery_power_w: 1,
+          battery_soc_pct: 98,
+        }}
+      />,
+    );
+    expect(screen.getByText("Live power (now)")).toBeInTheDocument();
+    expect(screen.getByText(/Today's kWh totals are in the cards below/i)).toBeInTheDocument();
+    expect(screen.getByText(/Load estimated from balance/i)).toBeInTheDocument();
+  });
+
+  it("shows kW-scale grid and home when a heavy load draws", () => {
+    render(
+      <EnergyFlow
+        metrics={{
+          ...metrics,
+          pv_power_w: 0,
+          grid_import_w: 2800,
+          grid_export_w: 0,
+          house_load_w: 2700,
+          house_load_source: "reported" as const,
+          battery_power_w: 100,
+          battery_soc_pct: 55,
+        }}
+      />,
+    );
+    expect(screen.getByText("2,800 W")).toBeInTheDocument();
+    expect(screen.getByText("2,700 W")).toBeInTheDocument();
+    expect(screen.getByText("Importing")).toBeInTheDocument();
+    expect(screen.queryByText("Load estimated from balance")).not.toBeInTheDocument();
   });
 });

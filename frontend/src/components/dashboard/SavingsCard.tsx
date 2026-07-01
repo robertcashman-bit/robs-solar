@@ -84,7 +84,7 @@ export function SavingsCard({ summary, live = null, loading, compact = false }: 
             {compact ? "Today's savings" : "Savings & cost"}
           </h2>
           <p className="mt-0.5 text-sm text-[var(--muted)]">
-            {summary.range.charAt(0).toUpperCase() + summary.range.slice(1)} range · current tariff
+            {summary.range.charAt(0).toUpperCase() + summary.range.slice(1)} range · cumulative kWh since midnight
           </p>
         </div>
         {!compact ? (

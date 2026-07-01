@@ -9,6 +9,7 @@ import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from datetime import datetime, timezone
 
 from app.adapters.sunsynk_connect import SunsynkConnectAdapter
 from app.config import settings
@@ -92,6 +93,36 @@ def _ok_handler(request: httpx.Request) -> httpx.Response:
     return httpx.Response(404, json={"success": False})
 
 
+LOW_LOAD_FLOW_RESPONSE = {
+    "success": True,
+    "data": {
+        "pvPower": 9,
+        "soc": 95,
+        "loadOrEpsPower": 0,
+        "homeLoadPower": 0,
+        "gridOrMeterPower": 12,
+        "gridTo": True,
+        "toGrid": False,
+        "battPower": 1,
+        "batTo": True,
+    },
+}
+
+def _low_load_handler(request: httpx.Request) -> httpx.Response:
+    path = request.url.path
+    if path == "/anonymous/publicKey":
+        return httpx.Response(200, json={"success": True, "data": TEST_PUBLIC_KEY_PEM})
+    if path == "/oauth/token/new":
+        return httpx.Response(200, json=TOKEN_RESPONSE)
+    if path.endswith("/flow"):
+        return httpx.Response(200, json=LOW_LOAD_FLOW_RESPONSE)
+    if "/plant/energy/" in path and path.endswith("/day"):
+        return httpx.Response(200, json=DAY_SERIES_RESPONSE)
+    if path == "/api/v1/plants":
+        return httpx.Response(200, json={"success": True, "data": [{"id": "123"}]})
+    return httpx.Response(404, json={"success": False})
+
+
 def test_flow_daily_totals_parses_etoday_fields() -> None:
     totals = SunsynkConnectAdapter._flow_daily_totals(
         {
@@ -128,6 +159,31 @@ async def test_get_live_metrics_parses_flow() -> None:
     assert metrics.daily_pv_kwh == pytest.approx(14.2)
     assert metrics.daily_import_kwh == pytest.approx(1.5)
     assert metrics.daily_export_kwh == pytest.approx(6.1)
+
+
+@pytest.mark.asyncio
+async def test_get_live_metrics_low_load_matches_sunsynk_and_fills_daily_kwh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live watts match Sunsynk /flow; day-series fills kWh when etoday* absent."""
+    adapter = SunsynkConnectAdapter(client=_client(_low_load_handler))
+
+    async def fake_daily(_plant_id: str):
+        return (
+            {"pv": 0.679, "import": 30.825, "export": 0.375},
+            296.0,
+            datetime(2026, 7, 1, 5, 25, tzinfo=timezone.utc),
+        )
+
+    monkeypatch.setattr(adapter, "_daily_day_data", fake_daily)
+    metrics = await adapter.get_live_metrics()
+    assert metrics.pv_power_w == pytest.approx(9)
+    assert metrics.grid_import_w == pytest.approx(12)
+    assert metrics.house_load_w == pytest.approx(22)
+    assert metrics.house_load_source == HouseLoadSource.DERIVED
+    assert metrics.daily_pv_kwh == pytest.approx(0.679)
+    assert metrics.daily_import_kwh == pytest.approx(30.825)
+    assert metrics.daily_export_kwh == pytest.approx(0.375)
 
 
 @pytest.mark.asyncio

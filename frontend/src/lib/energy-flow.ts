@@ -115,6 +115,28 @@ function houseLoadSublabel(metrics: LiveMetrics, derivedOverride: boolean): stri
   return undefined;
 }
 
+/** Short badge when load is inferred rather than CT-reported (for transparency chips). */
+export function loadSourceBadge(
+  metrics: LiveMetrics,
+  display: HouseLoadDisplay,
+): string | null {
+  if (display.isMinimal) {
+    return null;
+  }
+  const source = display.source ?? metrics.house_load_source ?? "reported";
+  if (source === "derived") {
+    return "Load estimated from balance";
+  }
+  if (source === "day_series") {
+    const age = minutesAgoLabel(metrics.house_load_at);
+    return age ? `Load from chart · ${age}` : "Load from today's chart";
+  }
+  if (source === "recent_typical") {
+    return "Typical load when drawing";
+  }
+  return null;
+}
+
 export function balanceDerivedLoad(metrics: LiveMetrics, batteryPowerW: number): number {
   return metrics.pv_power_w + metrics.grid_import_w - metrics.grid_export_w + batteryPowerW;
 }
