@@ -7,8 +7,9 @@ import {
   batteryDisplayState,
   deriveHouseLoadDisplay,
   deriveInverterOutputDisplay,
-  DISPLAY_WATTS_FLOOR_W,
+  isInverterMeterLimited,
   loadSourceBadge,
+  meterLimitedWarningHeadline,
   FLOW_ANIMATION_THRESHOLD_W,
   formatPowerW,
   gridDisplayState,
@@ -134,11 +135,21 @@ export function EnergyFlow({ metrics, octopusMeter = null }: EnergyFlowProps) {
   const inverterOutputW = deriveInverterOutputDisplay(metrics, houseLoad.watts, batteryPower);
   const loadBadge = loadSourceBadge(metrics, houseLoad);
   const octopusMeterDisplay = octopusMeterPowerDisplay(octopusMeter);
-  const meterLimited =
-    metrics.grid_meter_connected === false ||
-    (metrics.house_load_reported_w === 0 &&
-      metrics.house_load_source === "derived" &&
-      metrics.grid_import_w <= DISPLAY_WATTS_FLOOR_W);
+  const meterLimited = isInverterMeterLimited(metrics, octopusMeter, houseLoad.watts);
+  const gridCtOnly = metrics.grid_meter_connected !== true && meterLimited;
+  const homeSub =
+    octopusMeterDisplay && !loadBadge
+      ? [houseLoad.sublabel, `Meter avg ${octopusMeterDisplay.headline.replace(" average", "")}`]
+          .filter(Boolean)
+          .join(" · ")
+      : loadBadge
+        ? octopusMeterDisplay
+          ? `Meter avg ${octopusMeterDisplay.headline.replace(" average", "")}`
+          : undefined
+        : houseLoad.sublabel;
+  const gridSub = gridCtOnly
+    ? `${gridState.sublabel} · Inverter CT only`
+    : gridState.sublabel;
 
   const peak = Math.max(
     metrics.pv_power_w,
@@ -184,7 +195,7 @@ export function EnergyFlow({ metrics, octopusMeter = null }: EnergyFlowProps) {
       ) : null}
 
       {octopusMeterDisplay ? (
-        <div className="mt-3 rounded-lg border border-sky-400/35 bg-sky-500/10 px-3 py-2 text-xs text-sky-950 dark:text-sky-100">
+        <div className="mt-3 rounded-lg border border-sky-400/35 bg-sky-500/10 px-3 py-2 text-sm text-sky-950 dark:text-sky-100">
           <p className="font-semibold tabular-nums">
             Smart meter (Octopus): {octopusMeterDisplay.headline}
           </p>
@@ -193,10 +204,8 @@ export function EnergyFlow({ metrics, octopusMeter = null }: EnergyFlowProps) {
       ) : null}
 
       {meterLimited ? (
-        <p className="mt-3 rounded-lg border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-          {metrics.grid_meter_connected === false
-            ? "Sunsynk is not receiving live grid meter data (grid CT not connected in the cloud feed)."
-            : "Live load is estimated from the inverter only."}{" "}
+        <p className="mt-3 rounded-lg border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+          {meterLimitedWarningHeadline(metrics)}{" "}
           Your smart meter measures whole-home draw at the electricity meter and can read much
           higher (e.g. 300–400 W) while the inverter API shows only what passes through its
           sensors (~{Math.round(houseLoad.watts)} W now).
@@ -260,7 +269,7 @@ export function EnergyFlow({ metrics, octopusMeter = null }: EnergyFlowProps) {
               icon={gridState.importing ? <ArrowDownIcon size={18} /> : <ArrowUpIcon size={18} />}
               label="Grid"
               value={gridState.value}
-              sub={gridState.sublabel}
+              sub={gridSub}
               accentVar={
                 gridState.exporting && gridState.watts === metrics.grid_export_w
                   ? exportColor
@@ -311,7 +320,7 @@ export function EnergyFlow({ metrics, octopusMeter = null }: EnergyFlowProps) {
               icon={<HomeIcon size={18} />}
               label="Home"
               value={houseLoad.value}
-              sub={loadBadge ? undefined : houseLoad.sublabel}
+              sub={homeSub}
               accentVar={loadColor}
               active={loadActive}
             />

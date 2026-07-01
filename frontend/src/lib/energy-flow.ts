@@ -15,6 +15,9 @@ export const UNDERREPORTED_SLACK_W = 500;
 /** Sunsynk load CT often reads 0 during export; allow this much balance slack. */
 export const EXPORT_IMBALANCE_TOLERANCE_W = 30;
 
+/** Octopus smart meter vs inverter load gap that suggests missing grid CT. */
+export const SMART_METER_GAP_THRESHOLD_W = 100;
+
 export type GridSublabel =
   | "Importing"
   | "Exporting"
@@ -143,6 +146,52 @@ function formatIntervalClock(iso: string): string {
     return iso;
   }
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function smartMeterAverageW(
+  metrics: LiveMetrics,
+  octopusMeter?: OctopusMeterPower | null,
+): number | null {
+  if (octopusMeter?.configured && octopusMeter.average_power_w != null) {
+    return octopusMeter.average_power_w;
+  }
+  if (metrics.smart_meter_average_w != null) {
+    return metrics.smart_meter_average_w;
+  }
+  return null;
+}
+
+/** True when inverter lacks grid CT or smart meter reads much higher than inverter load. */
+export function isInverterMeterLimited(
+  metrics: LiveMetrics,
+  octopusMeter?: OctopusMeterPower | null,
+  houseLoadW?: number,
+): boolean {
+  const loadW = houseLoadW ?? metrics.house_load_w;
+  const reportedZero =
+    (metrics.house_load_reported_w ?? metrics.house_load_w) <= POWER_NOISE_FLOOR_W;
+  const derivedLoad =
+    metrics.house_load_source === "derived" ||
+    (reportedZero && loadW > DISPLAY_WATTS_FLOOR_W);
+
+  if (metrics.grid_meter_connected !== true && derivedLoad) {
+    return true;
+  }
+  if (metrics.house_load_source === "derived" && reportedZero) {
+    return true;
+  }
+  const meterAvg = smartMeterAverageW(metrics, octopusMeter);
+  if (meterAvg != null && meterAvg - loadW > SMART_METER_GAP_THRESHOLD_W) {
+    return true;
+  }
+  return false;
+}
+
+export function meterLimitedWarningHeadline(metrics: LiveMetrics): string {
+  if (metrics.grid_meter_connected === false) {
+    return "Sunsynk is not receiving live grid meter data (grid CT not connected in the cloud feed).";
+  }
+  return "Live load is estimated from the inverter only.";
 }
 
 /** Octopus half-hourly smart meter estimate for dashboard display. */

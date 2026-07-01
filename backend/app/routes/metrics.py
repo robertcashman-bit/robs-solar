@@ -27,10 +27,28 @@ from app.services.charge_window_service import charge_window_service
 from app.services.effective_load import finalize_live_metrics
 from app.services.ev_load_detector import ev_load_detector, sync_ev_detector
 from app.services.live_metrics_cache import live_metrics_cache
+from app.services.octopus_client import octopus_client
 from app.services.peak_import_guard_service import peak_import_guard_service
 from app.services.sell_advisor_service import sell_advisor_service
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
+
+
+async def _enrich_with_smart_meter(metrics: LiveMetrics) -> LiveMetrics:
+    """Attach Octopus half-hour average when available (cached, non-blocking)."""
+    try:
+        estimate = await octopus_client.get_meter_power_estimate()
+    except Exception:
+        return metrics
+    if not estimate.configured or estimate.average_power_w is None:
+        return metrics
+    return metrics.model_copy(
+        update={
+            "smart_meter_average_w": estimate.average_power_w,
+            "smart_meter_interval_start": estimate.interval_start,
+            "smart_meter_interval_end": estimate.interval_end,
+        }
+    )
 
 
 @router.get("/live", response_model=LiveMetrics)
@@ -44,7 +62,8 @@ async def live_metrics(_: SessionData = Depends(require_viewer)) -> LiveMetrics:
             detail=str(exc),
         ) from exc
     await sync_ev_detector(metrics)
-    return finalize_live_metrics(metrics)
+    finalized = finalize_live_metrics(metrics)
+    return await _enrich_with_smart_meter(finalized)
 
 
 @router.get("/connectivity", response_model=ConnectivityStatus)

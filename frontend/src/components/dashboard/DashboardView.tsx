@@ -43,6 +43,8 @@ type DashboardViewProps = {
   readOnly: boolean;
   octopusTariff?: OctopusTariff | null;
   octopusMeter?: OctopusMeterPower | null;
+  octopusMeterLoading?: boolean;
+  octopusMeterError?: string | null;
   agilePricePence?: number | null;
   evCharging?: boolean;
   chargeWindow?: ChargeWindowStatus | null;
@@ -88,6 +90,8 @@ export function DashboardView({
   readOnly,
   octopusTariff = null,
   octopusMeter = null,
+  octopusMeterLoading = false,
+  octopusMeterError = null,
   agilePricePence = null,
   evCharging = false,
   chargeWindow = null,
@@ -193,6 +197,9 @@ export function DashboardView({
         summary={summary}
         evCharging={evCharging}
         chargeWindow={chargeWindow}
+        octopusMeter={octopusMeter}
+        octopusMeterLoading={octopusMeterLoading}
+        octopusMeterError={octopusMeterError}
       />
       <TodayCompareStrip
         compare={compare}

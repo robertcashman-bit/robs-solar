@@ -17,7 +17,6 @@ import {
   healthResponseSchema,
   metricSummarySchema,
   metricCompareSchema,
-  octopusMeterPowerSchema,
   octopusRatePlanSchema,
   octopusTariffSchema,
   evStatusSchema,
@@ -26,12 +25,12 @@ import {
   type ConnectivityStatus,
   type MetricCompare,
   type MetricSummary,
-  type OctopusMeterPower,
   type OctopusRatePlan,
   type OctopusTariff,
   type SellOpportunity,
 } from "@/lib/schemas";
 import { useLiveMetrics } from "@/lib/use-live-metrics";
+import { useOctopusMeter } from "@/lib/use-octopus-meter";
 import type { CompareRange } from "@/lib/money";
 
 export default function DashboardPage() {
@@ -40,6 +39,12 @@ export default function DashboardPage() {
   const { metrics, error: metricsError, connected, refresh: refreshMetrics } = useLiveMetrics({
     enabled: Boolean(user),
   });
+  const {
+    meter: octopusMeter,
+    loading: octopusMeterLoading,
+    error: octopusMeterError,
+    refresh: refreshOctopusMeter,
+  } = useOctopusMeter({ enabled: Boolean(user) });
   const [connectivity, setConnectivity] = useState<ConnectivityStatus | null>(null);
   const [summary, setSummary] = useState<MetricSummary | null>(null);
   const [compare, setCompare] = useState<MetricCompare | null>(null);
@@ -51,7 +56,6 @@ export default function DashboardPage() {
   const [polling, setPolling] = useState(true);
   const [agilePricePence, setAgilePricePence] = useState<number | null>(null);
   const [octopusTariff, setOctopusTariff] = useState<OctopusTariff | null>(null);
-  const [octopusMeter, setOctopusMeter] = useState<OctopusMeterPower | null>(null);
   const [evCharging, setEvCharging] = useState(false);
   const [chargeWindow, setChargeWindow] = useState<ChargeWindowStatus | null>(null);
   const [ratePlan, setRatePlan] = useState<OctopusRatePlan | null>(null);
@@ -114,12 +118,6 @@ export default function DashboardPage() {
         setChargeWindow(null);
       }
       try {
-        const meter = octopusMeterPowerSchema.parse(await apiClient.get("/octopus/meter-power"));
-        setOctopusMeter(meter);
-      } catch {
-        setOctopusMeter(null);
-      }
-      try {
         const plan = octopusRatePlanSchema.parse(await apiClient.get("/octopus/rate-plan"));
         setRatePlan(plan);
       } catch {
@@ -155,8 +153,8 @@ export default function DashboardPage() {
   );
 
   const refresh = useCallback(async () => {
-    await Promise.all([refreshMetrics(), refreshMeta()]);
-  }, [refreshMetrics, refreshMeta]);
+    await Promise.all([refreshMetrics(), refreshMeta(), refreshOctopusMeter()]);
+  }, [refreshMetrics, refreshMeta, refreshOctopusMeter]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -271,6 +269,8 @@ export default function DashboardPage() {
           readOnly={readOnly}
           octopusTariff={octopusTariff}
           octopusMeter={octopusMeter}
+          octopusMeterLoading={octopusMeterLoading}
+          octopusMeterError={octopusMeterError}
           agilePricePence={agilePricePence}
           evCharging={evCharging}
           chargeWindow={chargeWindow}

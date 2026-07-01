@@ -2,8 +2,16 @@
 
 import Link from "next/link";
 
-import type { LiveMetrics, MetricSummary, ChargeWindowStatus } from "@/lib/schemas";
-import { deriveHouseLoadDisplay, gridHeroLabel, resolveBatteryPower, selfConsumptionPctFromLive } from "@/lib/energy-flow";
+import type { LiveMetrics, MetricSummary, ChargeWindowStatus, OctopusMeterPower } from "@/lib/schemas";
+import {
+  deriveHouseLoadDisplay,
+  gridHeroLabel,
+  isInverterMeterLimited,
+  meterLimitedWarningHeadline,
+  octopusMeterPowerDisplay,
+  resolveBatteryPower,
+  selfConsumptionPctFromLive,
+} from "@/lib/energy-flow";
 import { formatSavings, SAVINGS_EXPLAINER } from "@/lib/money";
 import {
   ArrowDownIcon,
@@ -19,6 +27,9 @@ type SavingsHeroBandProps = {
   summary: MetricSummary | null;
   evCharging?: boolean;
   chargeWindow?: ChargeWindowStatus | null;
+  octopusMeter?: OctopusMeterPower | null;
+  octopusMeterLoading?: boolean;
+  octopusMeterError?: string | null;
 };
 
 const HIGH_GRID_DRAW_W = 4000;
@@ -30,6 +41,7 @@ const toneClasses = {
   savings: "from-emerald-500/25 to-emerald-600/5 border-emerald-400/35 text-emerald-700 dark:text-emerald-300",
   battery: "from-emerald-500/20 to-teal-600/5 border-emerald-400/30 text-emerald-700 dark:text-emerald-300",
   pv: "from-amber-500/25 to-orange-600/5 border-amber-400/35 text-amber-800 dark:text-amber-300",
+  meter: "from-sky-500/20 to-sky-600/5 border-sky-400/35 text-sky-800 dark:text-sky-200",
 };
 
 export function SavingsHeroBand({
@@ -37,9 +49,15 @@ export function SavingsHeroBand({
   summary,
   evCharging = false,
   chargeWindow = null,
+  octopusMeter = null,
+  octopusMeterLoading = false,
+  octopusMeterError = null,
 }: SavingsHeroBandProps) {
   const grid = gridHeroLabel(metrics);
-  const houseLoad = deriveHouseLoadDisplay(metrics, resolveBatteryPower(metrics));
+  const batteryPower = resolveBatteryPower(metrics);
+  const houseLoad = deriveHouseLoadDisplay(metrics, batteryPower);
+  const octopusDisplay = octopusMeterPowerDisplay(octopusMeter);
+  const meterLimited = isInverterMeterLimited(metrics, octopusMeter, houseLoad.watts);
   const showEvBadge =
     evCharging || (Boolean(chargeWindow?.cheap_now) && metrics.grid_import_w > HIGH_GRID_DRAW_W);
   const showGridDraw = metrics.grid_import_w > HIGH_GRID_DRAW_W;
@@ -79,7 +97,7 @@ export function SavingsHeroBand({
         ) : null}
       </div>
 
-      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 snap-x snap-mandatory sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0 lg:grid-cols-5">
+      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 snap-x snap-mandatory sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0 lg:grid-cols-6">
         <article
           className={`hero-kpi relative min-w-[72%] shrink-0 snap-start overflow-hidden rounded-2xl border bg-gradient-to-br p-4 sm:min-w-0 ${
             savingsDisplay.tone === "negative"
@@ -139,6 +157,37 @@ export function SavingsHeroBand({
           <p className="mt-0.5 text-xs opacity-75">{metrics.daily_pv_kwh.toFixed(1)} kWh today</p>
         </article>
 
+        <article
+          className={`hero-kpi relative min-w-[72%] shrink-0 snap-start overflow-hidden rounded-2xl border bg-gradient-to-br p-4 sm:min-w-0 ${toneClasses.meter}`}
+        >
+          <p className="text-[0.65rem] font-semibold uppercase tracking-wider opacity-80">Smart meter</p>
+          {octopusDisplay ? (
+            <>
+              <p className="mt-1 text-2xl font-bold tabular-nums">
+                {Math.round(octopusMeter!.average_power_w!).toLocaleString()} W
+              </p>
+              <p className="mt-0.5 text-xs opacity-75">30-min average · Octopus</p>
+            </>
+          ) : octopusMeterLoading ? (
+            <>
+              <p className="mt-1 text-lg font-bold leading-tight">Connecting…</p>
+              <p className="mt-0.5 text-xs opacity-75">Loading meter data</p>
+            </>
+          ) : octopusMeter?.configured === false || octopusMeterError ? (
+            <>
+              <p className="mt-1 text-lg font-bold leading-tight">Not linked</p>
+              <p className="mt-0.5 text-xs opacity-75">
+                {octopusMeterError ?? octopusMeter?.message ?? "Link Octopus in Settings"}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mt-1 text-lg font-bold leading-tight">—</p>
+              <p className="mt-0.5 text-xs opacity-75">Waiting for readings</p>
+            </>
+          )}
+        </article>
+
         <article className="hero-kpi relative min-w-[72%] shrink-0 snap-start overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-4 sm:col-span-2 sm:min-w-0 lg:col-span-1">
           <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--muted)]">
             Self-consumed
@@ -147,6 +196,28 @@ export function SavingsHeroBand({
           <p className="mt-0.5 text-xs text-[var(--muted)]">Of PV used on-site</p>
         </article>
       </div>
+
+      {meterLimited ? (
+        <p className="rounded-lg border border-amber-400/35 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-900 dark:text-amber-200">
+          {meterLimitedWarningHeadline(metrics)}{" "}
+          {octopusDisplay ? (
+            <>
+              Your smart meter reads about{" "}
+              <span className="font-semibold tabular-nums">
+                {Math.round(octopusMeter!.average_power_w!).toLocaleString()} W
+              </span>{" "}
+              (30-min average) while the inverter shows only what passes through its sensors (~
+              {Math.round(houseLoad.watts).toLocaleString()} W now).
+            </>
+          ) : (
+            <>
+              Your smart meter measures whole-home draw at the electricity meter and can read much
+              higher (e.g. 300–400 W) while the inverter API shows only what passes through its
+              sensors (~{Math.round(houseLoad.watts).toLocaleString()} W now).
+            </>
+          )}
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap gap-2 text-xs">
         <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1">

@@ -65,6 +65,7 @@ describe("EnergyFlow", () => {
           house_load_w: 0,
           battery_power_w: 0,
           battery_soc_pct: 98,
+          grid_meter_connected: true,
         }}
       />,
     );
@@ -113,6 +114,77 @@ describe("EnergyFlow", () => {
     expect(screen.getByText("Live power (now)")).toBeInTheDocument();
     expect(screen.getByText(/Today's kWh totals are in the cards below/i)).toBeInTheDocument();
     expect(screen.getByText(/Load estimated from balance/i)).toBeInTheDocument();
+  });
+
+  it("warns when grid meter unknown with derived load and grid import above floor", () => {
+    render(
+      <EnergyFlow
+        metrics={{
+          ...metrics,
+          pv_power_w: 17,
+          grid_import_w: 12,
+          grid_export_w: 0,
+          house_load_w: 30,
+          house_load_source: "derived" as const,
+          house_load_reported_w: 0,
+          battery_power_w: 1,
+          battery_soc_pct: 98,
+          grid_meter_connected: null,
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(/not receiving live grid meter data|estimated from the inverter only/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows Inverter CT only on grid node when meter limited", () => {
+    render(
+      <EnergyFlow
+        metrics={{
+          ...metrics,
+          pv_power_w: 17,
+          grid_import_w: 12,
+          grid_export_w: 0,
+          house_load_w: 30,
+          house_load_source: "derived" as const,
+          house_load_reported_w: 0,
+          battery_power_w: 1,
+          battery_soc_pct: 98,
+          grid_meter_connected: false,
+        }}
+      />,
+    );
+    expect(screen.getByText(/Inverter CT only/i)).toBeInTheDocument();
+  });
+
+  it("shows meter avg on home node when Octopus data available", () => {
+    render(
+      <EnergyFlow
+        metrics={{
+          ...metrics,
+          pv_power_w: 17,
+          grid_import_w: 0,
+          grid_export_w: 0,
+          house_load_w: 30,
+          house_load_source: "derived" as const,
+          house_load_reported_w: 0,
+          battery_power_w: 13,
+          battery_soc_pct: 98,
+          grid_meter_connected: false,
+        }}
+        octopusMeter={{
+          configured: true,
+          average_power_w: 376,
+          consumption_kwh: 0.188,
+          interval_start: "2026-07-01T19:00:00Z",
+          interval_end: "2026-07-01T19:30:00Z",
+          is_current_interval: true,
+          message: "",
+        }}
+      />,
+    );
+    expect(screen.getByText(/Meter avg 376 W/i)).toBeInTheDocument();
   });
 
   it("warns when Sunsynk grid meter is not connected in cloud feed", () => {

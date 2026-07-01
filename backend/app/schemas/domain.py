@@ -91,6 +91,10 @@ class LiveMetrics(BaseModel):
     house_load_at: Optional[datetime] = None
     # Sunsynk /flow: False when grid CT data is not reaching the cloud API
     grid_meter_connected: Optional[bool] = None
+    # Octopus smart meter half-hour average (embedded when configured)
+    smart_meter_average_w: Optional[float] = Field(default=None, ge=0)
+    smart_meter_interval_start: Optional[datetime] = None
+    smart_meter_interval_end: Optional[datetime] = None
 
 
 class ConnectivityStatus(BaseModel):

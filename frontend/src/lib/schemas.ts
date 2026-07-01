@@ -32,6 +32,9 @@ export const liveMetricsSchema = z.object({
   daily_battery_discharge_kwh: z.number().nullable().optional(),
   system_work_mode: z.string().nullable().optional(),
   grid_meter_connected: z.boolean().nullable().optional(),
+  smart_meter_average_w: z.number().nullable().optional(),
+  smart_meter_interval_start: z.string().nullable().optional(),
+  smart_meter_interval_end: z.string().nullable().optional(),
 });
 
 export const connectivitySchema = z.object({

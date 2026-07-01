@@ -6,6 +6,7 @@ import {
   deriveHouseLoadDisplay,
   deriveInverterOutput,
   deriveInverterOutputDisplay,
+  isInverterMeterLimited,
   loadSourceBadge,
   octopusMeterPowerDisplay,
   energyBalanceError,
@@ -164,6 +165,69 @@ describe("energy-flow helpers", () => {
     };
     const display = deriveHouseLoadDisplay(metrics, 1);
     expect(loadSourceBadge(metrics, display)).toBe("Load estimated from balance");
+  });
+
+  it("isInverterMeterLimited when grid meter null and load derived", () => {
+    const metrics = {
+      ...baseMetrics,
+      pv_power_w: 17,
+      grid_import_w: 12,
+      grid_export_w: 0,
+      house_load_w: 30,
+      house_load_source: "derived" as const,
+      house_load_reported_w: 0,
+      battery_power_w: 1,
+      grid_meter_connected: null,
+    };
+    expect(isInverterMeterLimited(metrics, null, 30)).toBe(true);
+  });
+
+  it("isInverterMeterLimited when Octopus reads much higher than inverter load", () => {
+    const metrics = {
+      ...baseMetrics,
+      pv_power_w: 17,
+      grid_import_w: 0,
+      house_load_w: 30,
+      house_load_source: "reported" as const,
+      grid_meter_connected: true,
+    };
+    expect(
+      isInverterMeterLimited(
+        metrics,
+        {
+          configured: true,
+          average_power_w: 376,
+          consumption_kwh: 0.188,
+          interval_start: "2026-07-01T19:00:00Z",
+          interval_end: "2026-07-01T19:30:00Z",
+          is_current_interval: true,
+          message: "",
+        },
+        30,
+      ),
+    ).toBe(true);
+  });
+
+  it("isInverterMeterLimited uses smart_meter_average_w from live metrics", () => {
+    const metrics = {
+      ...baseMetrics,
+      pv_power_w: 17,
+      house_load_w: 30,
+      house_load_source: "reported" as const,
+      grid_meter_connected: true,
+      smart_meter_average_w: 376,
+    };
+    expect(isInverterMeterLimited(metrics, null, 30)).toBe(true);
+  });
+
+  it("isInverterMeterLimited false when CT connected and loads align", () => {
+    const metrics = {
+      ...baseMetrics,
+      house_load_w: 1800,
+      house_load_source: "reported" as const,
+      grid_meter_connected: true,
+    };
+    expect(isInverterMeterLimited(metrics, null, 1800)).toBe(false);
   });
 
   it("octopusMeterPowerDisplay formats half-hour average", () => {
