@@ -63,8 +63,10 @@ export const sessionResponseSchema = z.object({
 export const healthResponseSchema = z.object({
   status: z.string(),
   adapter_mode: z.string(),
+  data_source: z.enum(["live", "simulated"]).optional(),
   read_only: z.boolean(),
   timestamp: z.string(),
+  plant_id: z.string().nullable().optional(),
 });
 
 export const auditEntrySchema = z.object({

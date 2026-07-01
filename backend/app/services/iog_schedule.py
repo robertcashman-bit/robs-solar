@@ -46,6 +46,22 @@ def merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
     return [(s, e) for s, e in merged]
 
 
+def interval_overlaps_offpeak(
+    start_minute: int,
+    end_minute: int,
+    offpeak_start: str,
+    offpeak_end: str,
+) -> bool:
+    """True when any part of [start, end) overlaps the configured off-peak window."""
+    off_start = time_to_minutes(offpeak_start)
+    off_end = time_to_minutes(offpeak_end)
+    for seg_start, seg_end in expand_interval(start_minute, end_minute):
+        for off_s, off_e in expand_interval(off_start, off_end):
+            if seg_start < off_e and off_s < seg_end:
+                return True
+    return False
+
+
 def charge_intervals_from_windows(
     offpeak_start: str,
     offpeak_end: str,
@@ -64,9 +80,13 @@ def charge_intervals_from_windows(
             continue
         local_start = to_tariff(window.start).strftime("%H:%M")
         local_end = to_tariff(window.end).strftime("%H:%M")
-        intervals.extend(
-            expand_interval(time_to_minutes(local_start), time_to_minutes(local_end))
-        )
+        start_m = time_to_minutes(local_start)
+        end_m = time_to_minutes(local_end)
+        # Skip peak-only smart-charge windows — they create daytime grid-charge bands
+        # that block battery discharge and cause expensive peak import.
+        if not interval_overlaps_offpeak(start_m, end_m, offpeak_start, offpeak_end):
+            continue
+        intervals.extend(expand_interval(start_m, end_m))
     return merge_intervals(intervals)
 
 
@@ -168,6 +188,48 @@ def segments_to_bands(
     return bands
 
 
+def pad_bands_to_six(
+    bands: list[TouBandWrite],
+    *,
+    soc_floor_pct: int,
+    discharge_power_w: int = 8000,
+) -> list[TouBandWrite]:
+    """Ensure six Sunsynk slots are defined; unused slots stay on safe daytime discharge."""
+    if not bands:
+        return bands
+    discharge_template = next(
+        (b for b in reversed(bands) if not b.grid_charge_enabled),
+        bands[-1],
+    )
+    by_slot = {band.slot: band for band in bands}
+    used_starts = {band.start for band in bands}
+    filler_starts = ["06:00", "12:00", "18:00", "08:00", "14:00", "20:00"]
+    filler_iter = iter(start for start in filler_starts if start not in used_starts)
+    padded: list[TouBandWrite] = []
+    for slot in range(1, 7):
+        if slot in by_slot:
+            padded.append(by_slot[slot])
+            continue
+        start = next(filler_iter, discharge_template.start)
+        while start in used_starts:
+            try:
+                start = next(filler_iter)
+            except StopIteration:
+                start = discharge_template.start
+                break
+        used_starts.add(start)
+        padded.append(
+            TouBandWrite(
+                slot=slot,
+                start=start,
+                target_soc_pct=soc_floor_pct,
+                grid_charge_enabled=False,
+                power_w=discharge_power_w,
+            )
+        )
+    return padded
+
+
 def compute_iog_bands(
     *,
     offpeak_start: str,
@@ -180,11 +242,14 @@ def compute_iog_bands(
     charge = charge_intervals_from_windows(offpeak_start, offpeak_end, planned, now=now)
     segments = segments_from_charge_intervals(charge)
     collapsed = collapse_to_six(segments)
-    return segments_to_bands(
+    bands = segments_to_bands(
         collapsed,
         soc_floor_pct=soc_floor_pct,
         overnight_target_pct=overnight_target_pct,
     )
+    for idx, band in enumerate(bands, start=1):
+        band.slot = idx
+    return pad_bands_to_six(bands, soc_floor_pct=soc_floor_pct)
 
 
 def bands_equivalent(

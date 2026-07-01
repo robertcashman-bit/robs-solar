@@ -27,8 +27,10 @@ from app.schemas.domain import (
 from app.services.charge_window_service import evaluate_charge_window
 from app.services.iog_schedule import (
     charge_intervals_from_windows,
+    collapse_to_six,
     compute_iog_bands,
     is_charge_minute,
+    segments_from_charge_intervals,
 )
 from app.services.peak_import_guard_service import should_remediate
 from app.services.schedule_validation import errors_only, validate_schedule_config
@@ -39,9 +41,11 @@ OFFPEAK_END = "05:30"
 
 def _band_covering(bands, minute: int):
     """Return the band whose [start, next-start) window contains *minute*."""
-    parsed = sorted((int(b.start[:2]) * 60 + int(b.start[3:]), b) for b in bands)
-    chosen = parsed[-1][1]
-    for start_min, band in parsed:
+    parsed = sorted(
+        (int(b.start[:2]) * 60 + int(b.start[3:]), b.slot, b) for b in bands
+    )
+    chosen = parsed[-1][2]
+    for start_min, _, band in parsed:
         if start_min <= minute:
             chosen = band
     return chosen
@@ -331,17 +335,13 @@ class TestSchedulerConflict:
         assert is_charge_minute(2 * 60, charge) is True  # 02:00
         assert is_charge_minute(12 * 60, charge) is False  # 12:00
 
-    def test_adjacent_bands_alternate_grid_charge(self) -> None:
-        bands = compute_iog_bands(
-            offpeak_start=OFFPEAK_START,
-            offpeak_end=OFFPEAK_END,
-            planned=[],
-            soc_floor_pct=20,
-        )
-        for left, right in zip(bands, bands[1:]):
-            assert left.grid_charge_enabled != right.grid_charge_enabled
+    def test_adjacent_schedule_segments_alternate_grid_charge(self) -> None:
+        charge = charge_intervals_from_windows(OFFPEAK_START, OFFPEAK_END, [])
+        segments = collapse_to_six(segments_from_charge_intervals(charge))
+        for left, right in zip(segments, segments[1:]):
+            assert left.charge != right.charge
 
-    def test_planned_dispatch_added_as_charge_window(self) -> None:
+    def test_peak_planned_dispatch_is_not_added_as_charge_window(self) -> None:
         planned = [
             DispatchWindow(
                 start=datetime(2026, 1, 15, 12, 1, tzinfo=timezone.utc),
@@ -353,6 +353,5 @@ class TestSchedulerConflict:
             OFFPEAK_START, OFFPEAK_END, planned,
             now=datetime(2026, 1, 15, 11, 0, tzinfo=timezone.utc),
         )
-        # The dispatch window should register as a charge interval at its local time.
         local_minute = 12 * 60 + 15
-        assert is_charge_minute(local_minute, charge) is True
+        assert is_charge_minute(local_minute, charge) is False

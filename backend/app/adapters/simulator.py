@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from app.adapters.base import InverterAdapter
+from app.adapters.sunsynk_tou import active_band_index
 from app.schemas.domain import (
     AdapterCapabilities,
     BatteryControlRequest,
@@ -130,25 +131,44 @@ class SimulatorAdapter(InverterAdapter):
         self._last_known_good["schedule"] = self._schedule
         return {"windows": self._schedule}
 
+    def _normalize_band_ends(self, bands: list[TouBand]) -> list[TouBand]:
+        """Recompute band end times from sorted start times (matches Sunsynk TOU model)."""
+        ordered = sorted(bands, key=lambda b: b.slot)
+        normalized: list[TouBand] = []
+        for idx, band in enumerate(ordered):
+            next_start = ordered[idx + 1].start if idx + 1 < len(ordered) else "24:00"
+            normalized.append(
+                TouBand(
+                    slot=band.slot,
+                    start=band.start,
+                    end=next_start,
+                    target_soc_pct=band.target_soc_pct,
+                    grid_charge_enabled=band.grid_charge_enabled,
+                    power_w=band.power_w,
+                )
+            )
+        return normalized
+
     async def set_tou_bands(self, request: TouBandsRequest) -> dict[str, Any]:
         by_slot = {b.slot: b for b in self._bands}
         for band in request.bands:
             existing = by_slot.get(band.slot)
-            end = existing.end if existing else "24:00"
             by_slot[band.slot] = TouBand(
                 slot=band.slot,
                 start=band.start,
-                end=end,
+                end=existing.end if existing else "24:00",
                 target_soc_pct=band.target_soc_pct,
                 grid_charge_enabled=band.grid_charge_enabled,
                 power_w=band.power_w,
             )
-        self._bands = [by_slot[slot] for slot in sorted(by_slot)]
+        self._bands = self._normalize_band_ends([by_slot[slot] for slot in sorted(by_slot)])
         return {"bands": len(request.bands), "verified": True}
 
     async def get_inverter_settings(self) -> InverterSettingsResponse:
-        active_slot = self._bands[0].slot if self._bands else None
-        active = self._bands[0] if self._bands else None
+        bands = self._normalize_band_ends(list(self._bands))
+        self._bands = bands
+        active_slot = active_band_index(bands)
+        active = next((b for b in bands if b.slot == active_slot), bands[0] if bands else None)
         return InverterSettingsResponse(
             inverter_sn="SIM-0001",
             plant_id="sim-plant",

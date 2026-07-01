@@ -16,6 +16,7 @@ from app.schemas.domain import (
 )
 from app.services.analytics_helpers import integrate_kwh, range_start
 from app.services.charge_window_service import charge_window_service
+from app.services.data_source import apply_sample_source_filter
 from app.services.iog_schedule import time_to_minutes
 from app.services.tariff_clock import tariff_now, to_tariff
 from app.services.tariff_service import tariff_service
@@ -53,9 +54,11 @@ class SystemWarningsService:
 
         start = range_start(HistoryRange.DAY)
         result = await db.execute(
-            select(MetricSampleRow)
-            .where(MetricSampleRow.timestamp >= start)
-            .order_by(MetricSampleRow.timestamp.asc())
+            apply_sample_source_filter(
+                select(MetricSampleRow)
+                .where(MetricSampleRow.timestamp >= start)
+                .order_by(MetricSampleRow.timestamp.asc())
+            )
         )
         rows = list(result.scalars().all())
 

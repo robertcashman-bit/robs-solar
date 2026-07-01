@@ -12,6 +12,7 @@ from app.config import settings
 from app.db.models import MetricSampleRow
 from app.db.session import SessionLocal
 from app.schemas.domain import AdapterError, LiveMetrics
+from app.services.data_source import current_data_source
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ async def sample_once() -> None:
     try:
         adapter = get_adapter()
         metrics = await adapter.get_live_metrics()
-        data_source = "simulated" if settings.adapter_mode.lower() == "simulator" else "live"
+        data_source = current_data_source()
         await record_sample(
             metrics,
             adapter_mode=settings.adapter_mode,

@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 
 import { DashboardView } from "@/components/dashboard/DashboardView";
 import { LiveClock } from "@/components/dashboard/LiveClock";
+import { LiveDataRequiredPanel } from "@/components/dashboard/LiveDataRequiredPanel";
 import { AppShell } from "@/components/shared/AppShell";
+import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, OfflineBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient, ApiError } from "@/lib/api-client";
@@ -37,20 +39,22 @@ import type { CompareRange } from "@/lib/money";
 export default function DashboardPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const [dataSource, setDataSource] = useState<"live" | "simulated" | null>(null);
+  const [adapterMode, setAdapterMode] = useState<string | null>(null);
   const { metrics, error: metricsError, connected, refresh: refreshMetrics } = useLiveMetrics({
-    enabled: Boolean(user),
+    enabled: Boolean(user) && dataSource === "live",
   });
   const {
     meter: octopusMeter,
     loading: octopusMeterLoading,
     error: octopusMeterError,
     refresh: refreshOctopusMeter,
-  } = useOctopusMeter({ enabled: Boolean(user) });
+  } = useOctopusMeter({ enabled: Boolean(user) && dataSource === "live" });
   const {
     warnings,
     recommendations,
     refresh: refreshOptimisation,
-  } = useOptimisationDashboard({ enabled: Boolean(user) });
+  } = useOptimisationDashboard({ enabled: Boolean(user) && dataSource === "live" });
   const [connectivity, setConnectivity] = useState<ConnectivityStatus | null>(null);
   const [summary, setSummary] = useState<MetricSummary | null>(null);
   const [compare, setCompare] = useState<MetricCompare | null>(null);
@@ -71,16 +75,30 @@ export default function DashboardPage() {
     setError(null);
     setOffline(false);
     try {
-      // Warm live-metrics cache so day summary can align with Sunsynk etoday totals.
+      const healthData = await apiClient.get<unknown>("/health");
+      const health = healthResponseSchema.parse(healthData);
+      setReadOnly(health.read_only);
+      setDataSource(health.data_source ?? null);
+      setAdapterMode(health.adapter_mode);
+
+      if (health.data_source !== "live") {
+        setConnectivity(null);
+        setSummary(null);
+        setCompare(null);
+        setOctopusTariff(null);
+        setAgilePricePence(null);
+        setRatePlan(null);
+        setSellOpportunity(null);
+        setChargeWindow(null);
+        return;
+      }
+
       await apiClient.get<unknown>("/metrics/live").catch(() => null);
-      const [healthData, connectivityData, summaryData, compareData] = await Promise.all([
-        apiClient.get<unknown>("/health"),
+      const [connectivityData, summaryData, compareData] = await Promise.all([
         apiClient.get<unknown>("/metrics/connectivity"),
         apiClient.get<unknown>("/metrics/summary?range=day"),
         apiClient.get<unknown>(`/metrics/compare?range=${range}`).catch(() => null),
       ]);
-      const health = healthResponseSchema.parse(healthData);
-      setReadOnly(health.read_only);
       setConnectivity(connectivitySchema.parse(connectivityData));
       setSummary(metricSummarySchema.parse(summaryData));
       if (compareData) {
@@ -197,17 +215,17 @@ export default function DashboardPage() {
   }, [user, refreshMeta, refreshMetrics]);
 
   useEffect(() => {
-    if (!user || !polling) {
+    if (!user || !polling || dataSource !== "live") {
       return;
     }
     const timer = window.setInterval(() => {
       void refreshMeta();
     }, 30000);
     return () => window.clearInterval(timer);
-  }, [user, polling, refreshMeta]);
+  }, [user, polling, refreshMeta, dataSource]);
 
   useEffect(() => {
-    if (!user) {
+    if (!user || dataSource !== "live") {
       return;
     }
     const refreshEv = async () => {
@@ -223,9 +241,13 @@ export default function DashboardPage() {
       void refreshEv();
     }, 10000);
     return () => window.clearInterval(timer);
-  }, [user]);
+  }, [user, dataSource]);
 
-  if (authLoading || !user) {
+  if (authLoading) {
+    return <AuthLoadingShell />;
+  }
+
+  if (!user) {
     return null;
   }
 
@@ -268,31 +290,39 @@ export default function DashboardPage() {
         ) : null}
         {displayError ? <ErrorBanner message={displayError} /> : null}
 
-        <DashboardView
-          metrics={metrics}
-          connectivity={connectivity}
-          summary={summary}
-          compare={compare}
-          compareRange={compareRange}
-          onCompareRangeChange={(range) => void handleCompareRangeChange(range)}
-          loading={loading && !metrics}
-          error={null}
-          readOnly={readOnly}
-          octopusTariff={octopusTariff}
-          octopusMeter={octopusMeter}
-          octopusMeterLoading={octopusMeterLoading}
-          octopusMeterError={octopusMeterError}
-          agilePricePence={agilePricePence}
-          evCharging={evCharging}
-          chargeWindow={chargeWindow}
-          ratePlan={ratePlan}
-          sellOpportunity={sellOpportunity}
-          canControl={canWrite(user)}
-          warnings={warnings}
-          recommendations={recommendations}
-          onOptimisationRefresh={() => void refreshOptimisation()}
-          onRefresh={refresh}
-        />
+        {dataSource === "simulated" ? (
+          <LiveDataRequiredPanel adapterMode={adapterMode ?? undefined} />
+        ) : dataSource === "live" ? (
+          <DashboardView
+            metrics={metrics}
+            connectivity={connectivity}
+            summary={summary}
+            compare={compare}
+            compareRange={compareRange}
+            onCompareRangeChange={(range) => void handleCompareRangeChange(range)}
+            loading={loading && !metrics}
+            error={null}
+            readOnly={readOnly}
+            octopusTariff={octopusTariff}
+            octopusMeter={octopusMeter}
+            octopusMeterLoading={octopusMeterLoading}
+            octopusMeterError={octopusMeterError}
+            agilePricePence={agilePricePence}
+            evCharging={evCharging}
+            chargeWindow={chargeWindow}
+            ratePlan={ratePlan}
+            sellOpportunity={sellOpportunity}
+            canControl={canWrite(user)}
+            warnings={warnings}
+            recommendations={recommendations}
+            onOptimisationRefresh={() => void refreshOptimisation()}
+            onRefresh={refresh}
+          />
+        ) : (
+          <section className="solar-card text-sm text-[var(--muted)]" role="status">
+            Checking data source…
+          </section>
+        )}
       </div>
     </AppShell>
   );

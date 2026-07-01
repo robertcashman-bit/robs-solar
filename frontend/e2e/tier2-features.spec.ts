@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { loginAsAdmin } from "./helpers";
+import { gotoWhenAuthed } from "./helpers";
 
 test("PWA manifest is served", async ({ request }) => {
   const response = await request.get("/manifest.json");
@@ -15,20 +15,20 @@ test("PWA manifest is served", async ({ request }) => {
 });
 
 test("admin can view automation rules on controls page", async ({ page }) => {
-  await loginAsAdmin(page);
-  await page.goto("/controls");
+  await gotoWhenAuthed(page, "/controls");
   await expect(page.getByText("Automation rules")).toBeVisible();
 });
 
 test("analytics shows bill reconciliation section", async ({ page }) => {
-  await loginAsAdmin(page);
-  await page.goto("/analytics");
-  await expect(page.getByText("Bill reconciliation")).toBeVisible();
+  await gotoWhenAuthed(page, "/analytics");
+  await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bill reconciliation" })).toBeVisible({
+    timeout: 20_000,
+  });
 });
 
 test("admin sees notification settings on settings page", async ({ page }) => {
-  await loginAsAdmin(page);
-  await page.goto("/settings");
+  await gotoWhenAuthed(page, "/settings");
   await expect(page.getByText("Alert notifications")).toBeVisible();
   await expect(page.getByText("Runtime safety toggles")).toBeVisible();
 });

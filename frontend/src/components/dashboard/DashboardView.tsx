@@ -158,7 +158,8 @@ export function DashboardView({
     );
   }
 
-  const isSimulated = (connectivity?.adapter_mode ?? "simulator") === "simulator";
+  const adapterMode = connectivity?.adapter_mode;
+  const dataBadgeLabel = adapterMode ? "Live data" : "Connecting…";
   const connected = connectivity?.adapter_connected ?? false;
   const selfSufficiency = selfSufficiencyPct(metrics);
 
@@ -172,8 +173,8 @@ export function DashboardView({
         onRefresh={onRefresh}
       />
       <div className="flex flex-wrap items-center gap-2">
-        <StatusPill dotColor={isSimulated ? "bg-sky-400" : "bg-violet-400"} pulse={!isSimulated}>
-          {isSimulated ? "Simulated data" : "Live data"}
+        <StatusPill dotColor={adapterMode ? "bg-violet-400" : "bg-zinc-400"} pulse={Boolean(adapterMode)}>
+          {dataBadgeLabel}
         </StatusPill>
         <StatusPill dotColor={connected ? "bg-emerald-400" : "bg-amber-400"} pulse={connected}>
           {connected ? "Connected" : "Degraded"}

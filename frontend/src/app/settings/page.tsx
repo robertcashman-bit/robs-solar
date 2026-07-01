@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AppShell } from "@/components/shared/AppShell";
+import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { SettingsIcon, ShieldIcon } from "@/components/shared/icons";
@@ -119,7 +120,11 @@ export default function SettingsPage() {
     })();
   }, [user]);
 
-  if (loading || !user) {
+  if (loading) {
+    return <AuthLoadingShell />;
+  }
+
+  if (!user) {
     return null;
   }
 

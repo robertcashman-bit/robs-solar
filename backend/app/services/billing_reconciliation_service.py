@@ -12,6 +12,7 @@ from app.config import settings
 from app.db.models import MetricSampleRow
 from app.schemas.domain import HistoryRange, ReconciliationInterval, ReconciliationResponse
 from app.services.analytics_service import _integrate_kwh, _range_start, analytics_service
+from app.services.data_source import apply_sample_source_filter
 from app.services.iog_schedule import charge_intervals_from_windows, is_charge_minute
 from app.services.octopus_client import octopus_client
 
@@ -125,9 +126,11 @@ class BillingReconciliationService:
             )
 
         result = await db.execute(
-            select(MetricSampleRow)
-            .where(MetricSampleRow.timestamp >= range_start)
-            .order_by(MetricSampleRow.timestamp.asc())
+            apply_sample_source_filter(
+                select(MetricSampleRow)
+                .where(MetricSampleRow.timestamp >= range_start)
+                .order_by(MetricSampleRow.timestamp.asc())
+            )
         )
         rows = list(result.scalars().all())
         export_kwh = _integrate_kwh(rows, "grid_export_w")

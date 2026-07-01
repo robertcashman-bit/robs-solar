@@ -40,7 +40,7 @@ describe("DashboardView", () => {
         metrics={metrics}
         connectivity={{
           backend_healthy: true,
-          adapter_mode: "simulator",
+          adapter_mode: "sunsynk_connect",
           adapter_connected: true,
         }}
         summary={null}
@@ -59,25 +59,8 @@ describe("DashboardView", () => {
     expect(screen.getByText("Read-only")).toBeInTheDocument();
   });
 
-  it("labels simulated data distinctly from live data", () => {
-    const { rerender } = render(
-      <DashboardView
-        metrics={metrics}
-        connectivity={{
-          backend_healthy: true,
-          adapter_mode: "simulator",
-          adapter_connected: true,
-        }}
-        summary={null}
-        compare={null}
-        loading={false}
-        error={null}
-        readOnly
-      />,
-    );
-    expect(screen.getByText("Simulated data")).toBeInTheDocument();
-
-    rerender(
+  it("labels live adapter mode on the dashboard", () => {
+    render(
       <DashboardView
         metrics={metrics}
         connectivity={{
@@ -93,6 +76,21 @@ describe("DashboardView", () => {
       />,
     );
     expect(screen.getByText("Live data")).toBeInTheDocument();
+  });
+
+  it("shows connecting when adapter mode is not yet known", () => {
+    render(
+      <DashboardView
+        metrics={metrics}
+        connectivity={null}
+        summary={null}
+        compare={null}
+        loading={false}
+        error={null}
+        readOnly
+      />,
+    );
+    expect(screen.getByText("Connecting…")).toBeInTheDocument();
   });
 
   it("shows IOG import and export rate pills when octopus tariff is provided", () => {

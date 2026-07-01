@@ -11,6 +11,7 @@ import { OctopusPriceTimeline } from "@/components/scheduler/OctopusPriceTimelin
 import { TouTimeline } from "@/components/scheduler/TouTimeline";
 import { InstallerAccessPanel } from "@/components/settings/InstallerAccessPanel";
 import { AppShell } from "@/components/shared/AppShell";
+import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -92,7 +93,13 @@ export default function SchedulerPage() {
     })();
   }, [user, loadSettings]);
 
-  if (loading || !user) return null;
+  if (loading) {
+    return <AuthLoadingShell />;
+  }
+
+  if (!user) {
+    return null;
+  }
 
   const applyPreset = async (preset: StrategyPreset) => {
     setError(null);

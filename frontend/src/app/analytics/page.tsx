@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { LiveDataRequiredPanel } from "@/components/dashboard/LiveDataRequiredPanel";
 import { PeriodComparisonPanel } from "@/components/analytics/PeriodComparisonPanel";
 import { ReconciliationCard } from "@/components/analytics/ReconciliationCard";
 import { AnalyticsCharts } from "@/components/analytics/AnalyticsCharts";
 import { SavingsHistoryCharts } from "@/components/analytics/SavingsHistoryCharts";
 import { SavingsCard } from "@/components/dashboard/SavingsCard";
 import { AppShell } from "@/components/shared/AppShell";
+import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ChartIcon } from "@/components/shared/icons";
@@ -25,6 +27,7 @@ import {
   type Reconciliation,
   savingsHistorySchema,
   type SavingsHistory,
+  healthResponseSchema,
 } from "@/lib/schemas";
 
 export default function AnalyticsPage() {
@@ -37,6 +40,8 @@ export default function AnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
   const [reconciliation, setReconciliation] = useState<Reconciliation | null>(null);
   const [savingsHistory, setSavingsHistory] = useState<SavingsHistory | null>(null);
+  const [dataSource, setDataSource] = useState<"live" | "simulated" | null>(null);
+  const [adapterMode, setAdapterMode] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -47,6 +52,22 @@ export default function AnalyticsPage() {
       setLoading(true);
       setError(null);
       try {
+        const healthData = await apiClient.get<unknown>("/health");
+        const health = healthResponseSchema.parse(healthData);
+        if (!active) {
+          return;
+        }
+        setDataSource(health.data_source ?? null);
+        setAdapterMode(health.adapter_mode);
+
+        if (health.data_source !== "live") {
+          setHistory(null);
+          setSummary(null);
+          setReconciliation(null);
+          setSavingsHistory(null);
+          return;
+        }
+
         const parsedRange = historyRangeSchema.parse(range);
         const [historyData, summaryData, reconciliationData, savingsData] = await Promise.all([
           apiClient.get(`/metrics/history?range=${parsedRange}`),
@@ -91,7 +112,11 @@ export default function AnalyticsPage() {
     }
   }, [authLoading, user, router]);
 
-  if (authLoading || !user) {
+  if (authLoading) {
+    return <AuthLoadingShell />;
+  }
+
+  if (!user) {
     return null;
   }
 
@@ -107,21 +132,31 @@ export default function AnalyticsPage() {
 
         {error ? <ErrorBanner message={error} /> : null}
 
-        <SavingsCard summary={summary} loading={loading} />
-        <PeriodComparisonPanel loading={loading} />
-        <ReconciliationCard data={reconciliation} range={range} loading={loading} />
-        <SavingsHistoryCharts
-          savingsHistory={savingsHistory}
-          metricHistory={history}
-          currency={summary?.currency}
-        />
-        <AnalyticsCharts
-          history={history}
-          summary={summary}
-          range={range}
-          onRangeChange={setRange}
-          loading={loading}
-        />
+        {dataSource === "simulated" ? (
+          <LiveDataRequiredPanel adapterMode={adapterMode ?? undefined} />
+        ) : dataSource === "live" ? (
+          <>
+            <SavingsCard summary={summary} loading={loading} />
+            <PeriodComparisonPanel loading={loading} />
+            <ReconciliationCard data={reconciliation} range={range} loading={loading} />
+            <SavingsHistoryCharts
+              savingsHistory={savingsHistory}
+              metricHistory={history}
+              currency={summary?.currency}
+            />
+            <AnalyticsCharts
+              history={history}
+              summary={summary}
+              range={range}
+              onRangeChange={setRange}
+              loading={loading}
+            />
+          </>
+        ) : (
+          <section className="solar-card text-sm text-[var(--muted)]" role="status">
+            Checking data source…
+          </section>
+        )}
       </div>
     </AppShell>
   );

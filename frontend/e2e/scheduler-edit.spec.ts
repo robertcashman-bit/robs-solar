@@ -1,10 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { loginAsAdmin, loginAsViewer } from "./helpers";
+import { loginAsViewer, gotoWhenAuthed } from "./helpers";
 
 test("admin can edit a TOU band and write it to the inverter", async ({ page }) => {
-  await loginAsAdmin(page);
-  await page.goto("/scheduler");
+  await gotoWhenAuthed(page, "/scheduler");
 
   await expect(page.getByRole("heading", { name: "Time-of-use scheduler" })).toBeVisible();
 
@@ -28,7 +27,7 @@ test("admin can edit a TOU band and write it to the inverter", async ({ page }) 
 
 test("viewer does not see the schedule editor", async ({ page }) => {
   await loginAsViewer(page);
-  await page.goto("/scheduler");
+  await gotoWhenAuthed(page, "/scheduler");
   await expect(page.getByRole("heading", { name: "Time-of-use scheduler" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Edit schedule" })).toHaveCount(0);
 });

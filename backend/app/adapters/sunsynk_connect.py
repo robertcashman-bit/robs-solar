@@ -559,15 +559,19 @@ class SunsynkConnectAdapter(InverterAdapter):
 
         from app.db.models import MetricSampleRow
         from app.db.session import SessionLocal
+        from app.services.data_source import DATA_SOURCE_LIVE, is_live_mode
 
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=60)
         async with SessionLocal() as db:
-            result = await db.execute(
+            stmt = (
                 select(MetricSampleRow.house_load_w, MetricSampleRow.timestamp)
                 .where(MetricSampleRow.timestamp >= cutoff)
                 .where(MetricSampleRow.house_load_w > 50)
-                .order_by(MetricSampleRow.timestamp.desc())
-                .limit(120)
+            )
+            if is_live_mode():
+                stmt = stmt.where(MetricSampleRow.data_source == DATA_SOURCE_LIVE)
+            result = await db.execute(
+                stmt.order_by(MetricSampleRow.timestamp.desc()).limit(120)
             )
             rows = result.all()
         if len(rows) < 3:

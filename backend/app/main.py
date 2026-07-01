@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -30,11 +31,21 @@ from app.routes import (
 from app.services.auto_scheduler import start_auto_scheduler, stop_auto_scheduler
 from app.services.metric_sampler import start_sampler, stop_sampler
 
+logger = logging.getLogger(__name__)
+
+
+def _warn_production_simulator() -> None:
+    if settings.app_env.lower() == "production" and settings.adapter_mode.lower() == "simulator":
+        logger.error(
+            "APP_ENV=production but ADAPTER_MODE=simulator — dashboard figures will be simulated"
+        )
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
     warn_if_default_passwords()
+    _warn_production_simulator()
     await init_db()
     await _load_octopus_credentials()
     start_sampler()

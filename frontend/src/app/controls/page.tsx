@@ -10,6 +10,7 @@ import { OperatingModeForm } from "@/components/controls/OperatingModeForm";
 import { RulesPanel } from "@/components/controls/RulesPanel";
 import { ScheduleForm } from "@/components/controls/ScheduleForm";
 import { AppShell } from "@/components/shared/AppShell";
+import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { RestoreConfigButton } from "@/components/shared/RestoreConfigButton";
@@ -54,7 +55,11 @@ export default function ControlsPage() {
     })();
   }, [user]);
 
-  if (loading || !user || !canWrite(user)) {
+  if (loading) {
+    return <AuthLoadingShell />;
+  }
+
+  if (!user || !canWrite(user)) {
     return null;
   }
 

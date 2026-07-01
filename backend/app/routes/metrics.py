@@ -33,6 +33,10 @@ from app.services.effective_load import finalize_live_metrics
 from app.services.ev_load_detector import ev_load_detector, sync_ev_detector
 from app.services.forecast_strategy_service import forecast_strategy_service
 from app.services.live_metrics_cache import live_metrics_cache
+from app.services.live_metrics_guard import (
+    LiveMetricsGuardError,
+    assert_live_metrics_integrity,
+)
 from app.services.octopus_client import octopus_client
 from app.services.peak_import_guard_service import peak_import_guard_service
 from app.services.sell_advisor_service import sell_advisor_service
@@ -63,6 +67,21 @@ async def live_metrics(_: SessionData = Depends(require_viewer)) -> LiveMetrics:
     adapter = get_adapter()
     try:
         metrics = await live_metrics_cache.get(adapter)
+        connectivity = await adapter.get_connectivity()
+        settings_payload = None
+        get_settings = getattr(adapter, "get_inverter_settings", None)
+        if get_settings is not None:
+            settings_payload = await get_settings()
+        assert_live_metrics_integrity(
+            metrics,
+            connectivity=connectivity,
+            settings_payload=settings_payload,
+        )
+    except LiveMetricsGuardError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
     except AdapterError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

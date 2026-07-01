@@ -128,8 +128,10 @@ class SessionResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     adapter_mode: str
+    data_source: str
     read_only: bool
     timestamp: datetime
+    plant_id: Optional[str] = None
 
 
 class AuditOutcome(str, Enum):

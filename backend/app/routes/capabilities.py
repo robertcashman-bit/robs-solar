@@ -7,6 +7,7 @@ from app.auth.sessions import SessionData
 from app.config import settings
 from app.db.session import get_db
 from app.schemas.domain import SystemCapabilitiesResponse
+from app.services.data_source import current_data_source
 from app.services.octopus_client import octopus_client
 from app.services.safety_settings_service import safety_settings_service
 
@@ -21,10 +22,9 @@ async def get_capabilities(
     adapter = get_adapter()
     caps = await adapter.get_capabilities()
     safety = await safety_settings_service.get_settings(db)
-    data_source = "simulated" if settings.adapter_mode.lower() == "simulator" else "live"
     return SystemCapabilitiesResponse(
         adapter=caps,
-        data_source=data_source,
+        data_source=current_data_source(),
         read_only=safety.read_only,
         enable_live_writes=safety.enable_live_writes,
         sunsynk_enable_unverified_writes=settings.sunsynk_enable_unverified_writes,

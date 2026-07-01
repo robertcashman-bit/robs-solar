@@ -1,10 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { loginAsAdmin } from "./helpers";
+import { gotoWhenAuthed } from "./helpers";
 
 test("restore flow in simulator mode", async ({ page }) => {
-  await loginAsAdmin(page);
-  await page.goto("/controls");
+  await gotoWhenAuthed(page, "/controls");
   await expect(page.getByRole("heading", { name: "Controls" })).toBeVisible();
 
   await page.getByLabel("Export limit (W)").fill("2000");
@@ -21,6 +20,6 @@ test("restore flow in simulator mode", async ({ page }) => {
   await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
   await expect(page.getByText(/Last known good configuration restored/i)).toBeVisible();
 
-  await page.goto("/audit");
+  await gotoWhenAuthed(page, "/audit");
   await expect(page.getByRole("cell", { name: "restore_last_known_good" }).first()).toBeVisible();
 });

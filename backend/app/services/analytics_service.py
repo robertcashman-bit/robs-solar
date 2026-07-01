@@ -18,6 +18,7 @@ from app.schemas.domain import (
     MetricSummaryResponse,
 )
 from app.services.analytics_helpers import integrate_kwh, range_start, split_import_kwh
+from app.services.data_source import apply_sample_source_filter
 from app.services.octopus_client import octopus_client
 from app.services.optimisation_score_service import compute_optimisation_score
 from app.services.savings_calculation import SavingsInputs, compute_savings
@@ -197,9 +198,11 @@ class AnalyticsService:
     ) -> MetricHistoryResponse:
         start = _range_start(range_name)
         result = await db.execute(
-            select(MetricSampleRow)
-            .where(MetricSampleRow.timestamp >= start)
-            .order_by(MetricSampleRow.timestamp.asc())
+            apply_sample_source_filter(
+                select(MetricSampleRow)
+                .where(MetricSampleRow.timestamp >= start)
+                .order_by(MetricSampleRow.timestamp.asc())
+            )
         )
         rows = list(result.scalars().all())
         rows = _downsample(rows, _MAX_POINTS[range_name.value])
@@ -225,9 +228,11 @@ class AnalyticsService:
     ) -> MetricSummaryResponse:
         start = _range_start(range_name)
         result = await db.execute(
-            select(MetricSampleRow)
-            .where(MetricSampleRow.timestamp >= start)
-            .order_by(MetricSampleRow.timestamp.asc())
+            apply_sample_source_filter(
+                select(MetricSampleRow)
+                .where(MetricSampleRow.timestamp >= start)
+                .order_by(MetricSampleRow.timestamp.asc())
+            )
         )
         rows = list(result.scalars().all())
 
@@ -276,9 +281,11 @@ class AnalyticsService:
             previous_start = now - timedelta(days=window_days * 2)
 
         result = await db.execute(
-            select(MetricSampleRow)
-            .where(MetricSampleRow.timestamp >= previous_start)
-            .order_by(MetricSampleRow.timestamp.asc())
+            apply_sample_source_filter(
+                select(MetricSampleRow)
+                .where(MetricSampleRow.timestamp >= previous_start)
+                .order_by(MetricSampleRow.timestamp.asc())
+            )
         )
         all_rows = list(result.scalars().all())
         current_rows = [r for r in all_rows if _aware(r.timestamp) >= current_start]

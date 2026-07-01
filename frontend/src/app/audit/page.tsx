@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { AuditTable } from "@/components/audit/AuditTable";
 import { AppShell } from "@/components/shared/AppShell";
+import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ShieldIcon } from "@/components/shared/icons";
@@ -43,7 +44,11 @@ export default function AuditPage() {
     })();
   }, [user]);
 
-  if (loading || !user || !canViewAudit(user)) {
+  if (loading) {
+    return <AuthLoadingShell />;
+  }
+
+  if (!user || !canViewAudit(user)) {
     return null;
   }
 
