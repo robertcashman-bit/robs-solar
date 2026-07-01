@@ -47,7 +47,8 @@ describe("SettingsPage", () => {
   it("shows adapter mode and live writes disabled", async () => {
     render(<SettingsPage />);
     expect(await screen.findByText("Safety & configuration")).toBeInTheDocument();
-    expect(screen.getByText("simulator")).toBeInTheDocument();
+    expect(screen.getByText("Remote access")).toBeInTheDocument();
+    expect(screen.getAllByText("simulator").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Simulated data")).toBeInTheDocument();
     expect(screen.getByText(/Live writes disabled/i)).toBeInTheDocument();
   });

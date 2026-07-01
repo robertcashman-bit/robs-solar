@@ -6,6 +6,12 @@ export const POWER_NOISE_FLOOR_W = 5;
 /** Above this wattage, animate flow connectors and node glow. */
 export const FLOW_ANIMATION_THRESHOLD_W = 50;
 
+/** When derived load exceeds reported by this much, CT is missing off-CT draw (EV). */
+export const UNDERREPORTED_SLACK_W = 500;
+
+/** Sunsynk load CT often reads 0 during export; allow this much balance slack. */
+export const EXPORT_IMBALANCE_TOLERANCE_W = 30;
+
 export type GridDisplayState = {
   importing: boolean;
   exporting: boolean;
@@ -16,14 +22,19 @@ export type GridDisplayState = {
   watts: number;
 };
 
-/** Sunsynk load CT often reads 0 during export; allow this much balance slack. */
-export const EXPORT_IMBALANCE_TOLERANCE_W = 30;
+export type HouseLoadSource =
+  | "reported"
+  | "derived"
+  | "day_series"
+  | "recent_typical"
+  | "minimal";
 
 export type HouseLoadDisplay = {
   watts: number;
   value: string;
   sublabel?: string;
   isMinimal: boolean;
+  source?: HouseLoadSource;
 };
 
 export type BatteryDisplayState = {
@@ -35,6 +46,49 @@ export type BatteryDisplayState = {
 
 export function formatPowerW(value: number): string {
   return `${Math.round(Math.abs(value)).toLocaleString()} W`;
+}
+
+function minutesAgoLabel(isoTimestamp: string | null | undefined): string | undefined {
+  if (!isoTimestamp) {
+    return undefined;
+  }
+  const sampleAt = Date.parse(isoTimestamp);
+  if (Number.isNaN(sampleAt)) {
+    return undefined;
+  }
+  const minutes = Math.max(1, Math.round((Date.now() - sampleAt) / 60_000));
+  if (minutes < 60) {
+    return `~${minutes} min ago`;
+  }
+  return `~${Math.round(minutes / 60)} hr ago`;
+}
+
+function houseLoadSublabel(metrics: LiveMetrics, derivedOverride: boolean): string | undefined {
+  if (derivedOverride) {
+    return "Includes EV / off-CT load";
+  }
+  const source = metrics.house_load_source ?? "reported";
+  if (source === "day_series") {
+    return minutesAgoLabel(metrics.house_load_at) ?? "~5 min ago";
+  }
+  if (source === "recent_typical") {
+    return "Typical when drawing";
+  }
+  if (source === "derived") {
+    const reported = metrics.house_load_reported_w ?? metrics.house_load_w;
+    const offCt =
+      reported > POWER_NOISE_FLOOR_W &&
+      metrics.grid_import_w > reported + UNDERREPORTED_SLACK_W;
+    return offCt ? "Includes EV / off-CT load" : "Estimated from balance";
+  }
+  if (source === "minimal") {
+    return "Surplus to grid";
+  }
+  return undefined;
+}
+
+export function balanceDerivedLoad(metrics: LiveMetrics, batteryPowerW: number): number {
+  return metrics.pv_power_w + metrics.grid_import_w - metrics.grid_export_w + batteryPowerW;
 }
 
 /** Battery power in app convention: positive = discharging. */
@@ -60,29 +114,52 @@ export function deriveHouseLoadDisplay(
   metrics: LiveMetrics,
   batteryPowerW: number,
 ): HouseLoadDisplay {
+  const source = metrics.house_load_source ?? "reported";
+  const derived = balanceDerivedLoad(metrics, batteryPowerW);
+  const reported = metrics.house_load_reported_w ?? metrics.house_load_w;
+  const derivedOverride =
+    reported > POWER_NOISE_FLOOR_W && derived > reported + UNDERREPORTED_SLACK_W;
+
   if (metrics.house_load_w > POWER_NOISE_FLOOR_W) {
-    const watts = metrics.house_load_w;
-    return { watts, value: formatPowerW(watts), isMinimal: false };
-  }
-
-  const raw =
-    metrics.pv_power_w + metrics.grid_import_w - metrics.grid_export_w + batteryPowerW;
-
-  if (raw > POWER_NOISE_FLOOR_W) {
-    return { watts: raw, value: formatPowerW(raw), isMinimal: false };
-  }
-
-  const exporting = metrics.grid_export_w > POWER_NOISE_FLOOR_W;
-  const generating =
-    metrics.pv_power_w > POWER_NOISE_FLOOR_W ||
-    Math.abs(batteryPowerW) > POWER_NOISE_FLOOR_W;
-
-  if (exporting && generating && raw > -EXPORT_IMBALANCE_TOLERANCE_W) {
+    const watts = derivedOverride ? derived : metrics.house_load_w;
     return {
-      watts: 0,
-      value: "Minimal",
-      sublabel: "Surplus to grid",
-      isMinimal: true,
+      watts,
+      value: formatPowerW(watts),
+      sublabel: houseLoadSublabel(metrics, derivedOverride),
+      isMinimal: false,
+      source: derivedOverride ? "derived" : source,
+    };
+  }
+
+  if (source === "minimal") {
+    const raw = derived;
+    const exporting = metrics.grid_export_w > POWER_NOISE_FLOOR_W;
+    const generating =
+      metrics.pv_power_w > POWER_NOISE_FLOOR_W ||
+      Math.abs(batteryPowerW) > POWER_NOISE_FLOOR_W;
+
+    if (exporting && generating && raw > -EXPORT_IMBALANCE_TOLERANCE_W) {
+      return {
+        watts: 0,
+        value: "Minimal",
+        sublabel: "Surplus to grid",
+        isMinimal: true,
+        source: "minimal",
+      };
+    }
+  }
+
+  if (derived > POWER_NOISE_FLOOR_W) {
+    return {
+      watts: derived,
+      value: formatPowerW(derived),
+      sublabel: houseLoadSublabel(
+        metrics,
+        reported > POWER_NOISE_FLOOR_W &&
+          metrics.grid_import_w > reported + UNDERREPORTED_SLACK_W,
+      ),
+      isMinimal: false,
+      source: "derived",
     };
   }
 
@@ -90,6 +167,7 @@ export function deriveHouseLoadDisplay(
     watts: Math.max(0, metrics.house_load_w),
     value: "0 W",
     isMinimal: false,
+    source,
   };
 }
 

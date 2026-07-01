@@ -8,6 +8,7 @@ from app.adapters.factory import get_adapter
 from app.auth.sessions import SESSION_COOKIE, session_manager
 from app.config import settings
 from app.schemas.domain import AdapterError
+from app.services.ev_load_detector import sync_ev_detector
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["websocket"])
@@ -27,6 +28,7 @@ async def ws_live(websocket: WebSocket) -> None:
         while True:
             try:
                 metrics = await adapter.get_live_metrics()
+                await sync_ev_detector(metrics)
                 await websocket.send_json(json.loads(metrics.model_dump_json()))
             except AdapterError as exc:
                 await websocket.send_json({"error": str(exc)})

@@ -18,6 +18,7 @@ from app.schemas.domain import (
     ExportLimitRequest,
     ForceBatteryAction,
     ForceBatteryRequest,
+    HouseLoadSource,
     TouBandsRequest,
     TouBandWrite,
     UnsupportedWriteError,
@@ -91,6 +92,17 @@ def _ok_handler(request: httpx.Request) -> httpx.Response:
     return httpx.Response(404, json={"success": False})
 
 
+def test_flow_daily_totals_parses_etoday_fields() -> None:
+    totals = SunsynkConnectAdapter._flow_daily_totals(
+        {
+            "etodayPv": 14.2,
+            "etodayFrom": 1.5,
+            "etodayTo": 6.1,
+        }
+    )
+    assert totals == {"pv": 14.2, "import": 1.5, "export": 6.1}
+
+
 @pytest.mark.asyncio
 async def test_capabilities_read_ready_writes_gated() -> None:
     adapter = SunsynkConnectAdapter(client=_client(_ok_handler))
@@ -108,10 +120,14 @@ async def test_get_live_metrics_parses_flow() -> None:
     metrics = await adapter.get_live_metrics()
     assert metrics.pv_power_w == 4200
     assert metrics.battery_soc_pct == 68
-    assert metrics.house_load_w == 1800
+    assert metrics.house_load_w == 2400
+    assert metrics.house_load_source == HouseLoadSource.DERIVED
     assert metrics.grid_export_w == 2400
     assert metrics.grid_import_w == 0
     assert metrics.battery_power_w == 600
+    assert metrics.daily_pv_kwh == pytest.approx(14.2)
+    assert metrics.daily_import_kwh == pytest.approx(1.5)
+    assert metrics.daily_export_kwh == pytest.approx(6.1)
 
 
 @pytest.mark.asyncio

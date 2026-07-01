@@ -65,17 +65,12 @@ async def sample_once() -> None:
         )
         async with SessionLocal() as db:
             from app.services.alert_service import alert_service
-            from app.services.ev_load_detector import ev_load_detector
-            from app.services.octopus_client import octopus_client
+            from app.services.ev_load_detector import sync_ev_detector
             from app.services.peak_import_guard_service import peak_import_guard_service
             from app.services.rules_engine import rules_engine
 
             await alert_service.evaluate(db, metrics)
-            try:
-                dispatches = await octopus_client.get_dispatches()
-                ev_load_detector.update(metrics, list(dispatches.planned))
-            except Exception:
-                ev_load_detector.update(metrics)
+            await sync_ev_detector(metrics)
             await rules_engine.evaluate(db, metrics)
             await peak_import_guard_service.evaluate(db, metrics, adapter)
     except (AdapterError, Exception) as exc:

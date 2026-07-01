@@ -1,5 +1,7 @@
 """Unit tests for deriving daily energy totals from the Sunsynk day series."""
 
+import pytest
+
 from app.adapters.sunsynk_connect import SunsynkConnectAdapter
 
 
@@ -52,3 +54,17 @@ def test_integrate_day_series_handles_missing_and_bad_values() -> None:
 def test_integrate_day_series_empty() -> None:
     totals = SunsynkConnectAdapter._integrate_day_series([])
     assert totals == {"pv": 0.0, "import": 0.0, "export": 0.0}
+
+
+def test_latest_series_value_skips_idle_tail() -> None:
+    infos = [
+        {
+            "label": "Load",
+            "records": [
+                {"time": "10:00", "value": "500"},
+                {"time": "10:05", "value": "2"},
+            ],
+        }
+    ]
+    watts, _ = SunsynkConnectAdapter._latest_series_value(infos, "Load", local_date="2026-06-30")
+    assert watts == pytest.approx(500)

@@ -186,6 +186,25 @@ export default function DashboardPage() {
     return () => window.clearInterval(timer);
   }, [user, polling, refreshMeta]);
 
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    const refreshEv = async () => {
+      try {
+        const ev = evStatusSchema.parse(await apiClient.get("/metrics/ev/status"));
+        setEvCharging(ev.car_charging_likely);
+      } catch {
+        setEvCharging(false);
+      }
+    };
+    void refreshEv();
+    const timer = window.setInterval(() => {
+      void refreshEv();
+    }, 10000);
+    return () => window.clearInterval(timer);
+  }, [user]);
+
   if (authLoading || !user) {
     return null;
   }

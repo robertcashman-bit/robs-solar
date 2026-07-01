@@ -86,23 +86,49 @@
     }
   },
   {
-    "id": "small_grid_only",
+    "id": "export_heavy_minimal_flow",
+    "skip_balance_check": true,
     "payload": {
       "data": {
-        "pvPower": 75,
-        "soc": 98,
+        "pvPower": 95,
+        "soc": 95,
         "loadOrEpsPower": 0,
-        "gridOrMeterPower": 13,
-        "gridTo": true,
-        "battPower": -150
+        "homeLoadPower": 0,
+        "gridOrMeterPower": 136,
+        "toGrid": true,
+        "batTo": true,
+        "toBat": false,
+        "battPower": 26
       }
     },
     "expected": {
-      "pv_power_w": 75,
-      "grid_import_w": 13,
+      "pv_power_w": 95,
+      "grid_import_w": 0,
+      "grid_export_w": 136,
+      "battery_power_w": 26,
+      "house_load_w": 0,
+      "house_load_source": "minimal"
+    }
+  },
+  {
+    "id": "ev_charge_grid_import",
+    "payload": {
+      "data": {
+        "pvPower": 0,
+        "soc": 85,
+        "loadOrEpsPower": 250,
+        "gridOrMeterPower": 7200,
+        "gridTo": true,
+        "battPower": 0
+      }
+    },
+    "expected": {
+      "pv_power_w": 0,
+      "grid_import_w": 7200,
       "grid_export_w": 0,
-      "battery_power_w": 150,
-      "house_load_w": 238
+      "battery_power_w": 0,
+      "house_load_w": 7200,
+      "house_load_source": "derived"
     }
   }
 ]

@@ -15,6 +15,7 @@ import {
 } from "@/components/shared/icons";
 import { useAuth } from "@/lib/auth-context";
 import { canViewAudit, canWrite } from "@/lib/permissions";
+import { InstallAppBanner } from "@/components/shared/InstallAppBanner";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: GaugeIcon },
@@ -130,7 +131,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">
+        {user ? <InstallAppBanner /> : null}
+        {children}
+      </main>
 
       <footer className="border-t border-[var(--border)] py-5 text-center">
         <p className="text-xs text-[var(--muted)]">

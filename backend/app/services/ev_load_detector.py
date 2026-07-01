@@ -7,16 +7,17 @@ from datetime import datetime, timezone
 
 from app.config import settings
 from app.schemas.domain import DispatchWindow, EvStatusResponse, LiveMetrics
+from app.services.effective_load import effective_load_w
 from app.services.iog_schedule import charge_intervals_from_windows, is_charge_minute
 
 _LOAD_THRESHOLD_W = 4000
-_SUSTAINED_SECONDS = 300
+_SUSTAINED_SECONDS = 120
 
 
 @dataclass
 class _LoadSample:
     timestamp: datetime
-    house_load_w: float
+    signal_w: float
 
 
 @dataclass
@@ -45,9 +46,10 @@ class EvLoadDetector:
     def update(self, metrics: LiveMetrics, planned: list[DispatchWindow] | None = None) -> None:
         now = metrics.timestamp or datetime.now(timezone.utc)
         self._prune(now)
-        self._samples.append(_LoadSample(timestamp=now, house_load_w=metrics.house_load_w))
         planned = planned or []
         self._in_dispatch = self._in_cheap_window(now, planned)
+        signal = effective_load_w(metrics, in_cheap_window=self._in_dispatch)
+        self._samples.append(_LoadSample(timestamp=now, signal_w=signal))
 
         if not self._in_dispatch:
             self._car_charging_likely = False
@@ -62,7 +64,7 @@ class EvLoadDetector:
             self._car_charging_likely = False
             return
 
-        high_load = all(s.house_load_w > _LOAD_THRESHOLD_W for s in self._samples)
+        high_load = all(s.signal_w > _LOAD_THRESHOLD_W for s in self._samples)
         self._car_charging_likely = high_load
 
     @property
@@ -71,7 +73,7 @@ class EvLoadDetector:
 
     def status(self, metrics: LiveMetrics | None = None) -> EvStatusResponse:
         load = metrics.house_load_w if metrics else (
-            self._samples[-1].house_load_w if self._samples else 0.0
+            self._samples[-1].signal_w if self._samples else 0.0
         )
         message = ""
         if self._car_charging_likely:
@@ -87,3 +89,16 @@ class EvLoadDetector:
 
 
 ev_load_detector = EvLoadDetector()
+
+
+async def sync_ev_detector(metrics: LiveMetrics) -> None:
+    """Refresh EV heuristics from a live metrics snapshot."""
+    planned: list[DispatchWindow] = []
+    try:
+        from app.services.octopus_client import octopus_client
+
+        dispatches = await octopus_client.get_dispatches()
+        planned = list(dispatches.planned)
+    except Exception:
+        pass
+    ev_load_detector.update(metrics, planned)

@@ -188,7 +188,12 @@ export function DashboardView({
         ) : null}
       </div>
 
-      <SavingsHeroBand metrics={metrics} summary={summary} evCharging={evCharging} />
+      <SavingsHeroBand
+        metrics={metrics}
+        summary={summary}
+        evCharging={evCharging}
+        chargeWindow={chargeWindow}
+      />
       <TodayCompareStrip
         compare={compare}
         range={compareRange}

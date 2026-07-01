@@ -7,6 +7,11 @@ export const liveMetricsSchema = z.object({
   battery_soc_pct: z.number(),
   battery_power_w: z.number().nullable().optional(),
   house_load_w: z.number(),
+  house_load_source: z
+    .enum(["reported", "derived", "day_series", "recent_typical", "minimal"])
+    .optional(),
+  house_load_reported_w: z.number().optional(),
+  house_load_at: z.string().nullable().optional(),
   grid_import_w: z.number(),
   grid_export_w: z.number(),
   inverter_mode: z.string(),

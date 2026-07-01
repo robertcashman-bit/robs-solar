@@ -11,6 +11,7 @@ import { OctopusSettingsForm } from "@/components/settings/OctopusSettingsForm";
 import { InstallerAccessPanel } from "@/components/settings/InstallerAccessPanel";
 import { TariffSettingsForm } from "@/components/settings/TariffSettingsForm";
 import { NotificationSettingsForm } from "@/components/settings/NotificationSettingsForm";
+import { RemoteAccessPanel } from "@/components/settings/RemoteAccessPanel";
 import { SafetySettingsPanel } from "@/components/settings/SafetySettingsPanel";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
@@ -144,6 +145,14 @@ export default function SettingsPage() {
           <p className="rounded-xl border border-sky-300/40 bg-sky-50/80 px-4 py-3 text-sm text-sky-900 dark:bg-sky-950/30 dark:text-sky-200">
             Read-only mode is enabled — all control writes are blocked at the API layer.
           </p>
+        ) : null}
+
+        {capabilities ? (
+          <RemoteAccessPanel
+            readOnly={capabilities.read_only}
+            liveWritesEnabled={capabilities.enable_live_writes}
+            adapterMode={capabilities.adapter.mode}
+          />
         ) : null}
 
         {capabilities ? (

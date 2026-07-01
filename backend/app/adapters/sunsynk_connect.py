@@ -15,7 +15,7 @@ IMPORTANT SAFETY / HONESTY NOTES:
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
@@ -39,6 +39,7 @@ from app.schemas.domain import (
     ExportLimitRequest,
     ForceBatteryAction,
     ForceBatteryRequest,
+    HouseLoadSource,
     InverterMode,
     InverterSettingsResponse,
     InverterStatus,
@@ -49,12 +50,12 @@ from app.schemas.domain import (
     UnsupportedWriteError,
     work_mode_to_inverter_mode,
 )
+from app.services.effective_load import resolve_house_load as _resolve_house_load_shared
+from app.services.tariff_clock import tariff_now, tariff_zone
 
 _PLANTS_PATH = "/api/v1/plants"
 _MODE = "sunsynk_connect"
-# The Sunsynk /flow endpoint has no daily energy totals, so they are derived by
-# integrating the 5-minute day series. That series only updates every 5 minutes,
-# so we cache the computed totals to avoid an extra call on every live poll.
+# The Sunsynk /flow endpoint may include etoday* daily counters; day series fills gaps.
 _DAILY_TOTALS_TTL_SECONDS = 300.0
 
 
@@ -75,8 +76,10 @@ class SunsynkConnectAdapter(InverterAdapter):
         # active token per account, so parallel logins would invalidate each
         # other and produce spurious "authentication failed" errors.
         self._auth_lock = asyncio.Lock()
-        # (monotonic_expiry, local_date, totals) cache for derived daily energy.
-        self._daily_cache: Optional[tuple[float, str, dict[str, float]]] = None
+        # (monotonic_expiry, local_date, totals, latest_load_w, latest_load_at)
+        self._daily_cache: Optional[
+            tuple[float, str, dict[str, float], float, Optional[datetime]]
+        ] = None
 
     async def _request(
         self, method: str, url: str, *, _auth_retry: bool = True, **kwargs: Any
@@ -307,15 +310,14 @@ class SunsynkConnectAdapter(InverterAdapter):
         grid_import: float,
         grid_export: float,
         battery_power_w: float,
-    ) -> float:
-        """Use Sunsynk ``loadOrEpsPower`` when plausible; else derive from balance."""
-        floor = SunsynkConnectAdapter._POWER_NOISE_FLOOR_W
-        if reported > floor:
-            return reported
-        derived = pv + grid_import - grid_export + battery_power_w
-        if derived > floor:
-            return derived
-        return max(0.0, reported)
+    ) -> tuple[float, HouseLoadSource]:
+        return _resolve_house_load_shared(
+            reported,
+            pv=pv,
+            grid_import=grid_import,
+            grid_export=grid_export,
+            battery_power_w=battery_power_w,
+        )
 
     def _signed_grid(self, data: dict[str, Any], grid: float) -> tuple[float, float]:
         """Return (import_w, export_w) using direction flags when present.
@@ -358,7 +360,7 @@ class SunsynkConnectAdapter(InverterAdapter):
             grid_export=grid_export_w,
             reported_load=reported_load,
         )
-        house_load_w = self._resolve_house_load(
+        house_load_w, house_load_source = self._resolve_house_load(
             reported_load,
             pv=pv_power_w,
             grid_import=grid_import_w,
@@ -376,11 +378,14 @@ class SunsynkConnectAdapter(InverterAdapter):
                 soh = None
         work_mode_raw = data.get("sysWorkMode")
         work_mode = work_mode_from_sunsynk(work_mode_raw)
+        flow_daily = self._flow_daily_totals(data)
         return LiveMetrics(
             pv_power_w=pv_power_w,
             battery_soc_pct=min(100.0, max(0.0, num("soc"))),
             battery_power_w=battery_power_w,
             house_load_w=house_load_w,
+            house_load_source=house_load_source,
+            house_load_reported_w=reported_load,
             grid_import_w=grid_import_w,
             grid_export_w=grid_export_w,
             inverter_mode=work_mode_to_inverter_mode(work_mode)
@@ -389,13 +394,38 @@ class SunsynkConnectAdapter(InverterAdapter):
             inverter_status=InverterStatus.FAULT if has_fault else InverterStatus.ONLINE,
             battery_soh_pct=soh,
             system_work_mode=work_mode,
-            # The /flow endpoint carries no daily energy totals; they are filled in
-            # by get_live_metrics() from the daily series. Start at zero.
-            daily_pv_kwh=0.0,
-            daily_import_kwh=0.0,
-            daily_export_kwh=0.0,
+            daily_pv_kwh=flow_daily.get("pv", 0.0) if flow_daily else 0.0,
+            daily_import_kwh=flow_daily.get("import", 0.0) if flow_daily else 0.0,
+            daily_export_kwh=flow_daily.get("export", 0.0) if flow_daily else 0.0,
             timestamp=datetime.now(timezone.utc),
         )
+
+    @staticmethod
+    def _flow_daily_totals(data: dict[str, Any]) -> Optional[dict[str, float]]:
+        """Parse official Sunsynk daily counters from /flow (matches the mobile app)."""
+        field_map = {
+            "pv": ("etodayPv", "eTodayPv", "todayPv"),
+            "import": ("etodayFrom", "eTodayFrom", "etodayImport", "todayImport"),
+            "export": ("etodayTo", "eTodayTo", "etodayExport", "todayExport"),
+        }
+        totals: dict[str, float] = {}
+        for label, keys in field_map.items():
+            for key in keys:
+                raw = data.get(key)
+                if raw in (None, ""):
+                    continue
+                try:
+                    totals[label] = max(0.0, float(raw))
+                except (TypeError, ValueError):
+                    continue
+                break
+        if "pv" not in totals:
+            return None
+        return {
+            "pv": totals.get("pv", 0.0),
+            "import": totals.get("import", 0.0),
+            "export": totals.get("export", 0.0),
+        }
 
     @staticmethod
     def _integrate_day_series(infos: list[dict[str, Any]]) -> dict[str, float]:
@@ -448,38 +478,155 @@ class SunsynkConnectAdapter(InverterAdapter):
             "export": integrate("Grid", positive_only=True, invert=True),
         }
 
-    async def _daily_totals(self, plant_id: str) -> dict[str, float]:
-        from app.services.tariff_clock import tariff_now
+    @staticmethod
+    def _series_sample_time(local_date: str, time_value: Any) -> Optional[datetime]:
+        try:
+            hh, mm = str(time_value).split(":")
+            hour, minute = int(hh), int(mm)
+        except (TypeError, ValueError, AttributeError):
+            return None
+        try:
+            year, month, day = (int(part) for part in local_date.split("-"))
+        except (TypeError, ValueError):
+            return None
+        local = datetime(year, month, day, hour, minute, tzinfo=tariff_zone())
+        return local.astimezone(timezone.utc)
 
+    @classmethod
+    def _latest_series_value(
+        cls,
+        infos: list[dict[str, Any]],
+        label: str,
+        *,
+        local_date: str,
+    ) -> tuple[float, Optional[datetime]]:
+        """Return the most recent non-idle sample from a labelled day series."""
+        by_label: dict[str, list[dict[str, Any]]] = {
+            str(series.get("label") or ""): (series.get("records") or []) for series in infos
+        }
+        records = by_label.get(label, [])
+        floor = cls._POWER_NOISE_FLOOR_W
+        for record in reversed(records):
+            try:
+                value = float(record.get("value"))
+            except (TypeError, ValueError):
+                continue
+            if value <= floor:
+                continue
+            sample_at = cls._series_sample_time(local_date, record.get("time"))
+            return value, sample_at
+        return 0.0, None
+
+    async def _daily_day_data(
+        self, plant_id: str
+    ) -> tuple[dict[str, float], float, Optional[datetime]]:
         local_date = tariff_now().strftime("%Y-%m-%d")
         now = time.monotonic()
         if self._daily_cache is not None:
-            expiry, cached_date, totals = self._daily_cache
+            expiry, cached_date, totals, latest_load_w, latest_load_at = self._daily_cache
             if cached_date == local_date and now < expiry:
-                return totals
+                return totals, latest_load_w, latest_load_at
         response = await self._request(
             "GET",
             f"/api/v1/plant/energy/{plant_id}/day",
             params={"date": local_date, "id": plant_id, "lan": "en"},
         )
         data = response.json().get("data") or {}
-        totals = self._integrate_day_series(data.get("infos") or [])
-        self._daily_cache = (now + _DAILY_TOTALS_TTL_SECONDS, local_date, totals)
+        infos = data.get("infos") or []
+        totals = self._integrate_day_series(infos)
+        latest_load_w, latest_load_at = self._latest_series_value(
+            infos, "Load", local_date=local_date
+        )
+        self._daily_cache = (
+            now + _DAILY_TOTALS_TTL_SECONDS,
+            local_date,
+            totals,
+            latest_load_w,
+            latest_load_at,
+        )
+        return totals, latest_load_w, latest_load_at
+
+    async def _daily_totals(self, plant_id: str) -> dict[str, float]:
+        totals, _, _ = await self._daily_day_data(plant_id)
         return totals
+
+    async def _recent_typical_house_load(self) -> Optional[tuple[float, datetime]]:
+        """Median house load from recent sampler rows when the live CT reads zero."""
+        from sqlalchemy import select
+
+        from app.db.models import MetricSampleRow
+        from app.db.session import SessionLocal
+
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=60)
+        async with SessionLocal() as db:
+            result = await db.execute(
+                select(MetricSampleRow.house_load_w, MetricSampleRow.timestamp)
+                .where(MetricSampleRow.timestamp >= cutoff)
+                .where(MetricSampleRow.house_load_w > 50)
+                .order_by(MetricSampleRow.timestamp.desc())
+                .limit(120)
+            )
+            rows = result.all()
+        if len(rows) < 3:
+            return None
+        values = sorted(row[0] for row in rows)
+        median = values[len(values) // 2]
+        latest_at = max(row[1] for row in rows)
+        if latest_at.tzinfo is None:
+            latest_at = latest_at.replace(tzinfo=timezone.utc)
+        return median, latest_at
+
+    def _apply_house_load_fallbacks(
+        self,
+        metrics: LiveMetrics,
+        *,
+        latest_load_w: float,
+        latest_load_at: Optional[datetime],
+        recent_typical: Optional[tuple[float, datetime]],
+    ) -> None:
+        floor = self._POWER_NOISE_FLOOR_W
+        if metrics.house_load_source != HouseLoadSource.MINIMAL:
+            return
+        if latest_load_w > floor:
+            metrics.house_load_w = latest_load_w
+            metrics.house_load_source = HouseLoadSource.DAY_SERIES
+            metrics.house_load_at = latest_load_at
+            return
+        if recent_typical is not None:
+            metrics.house_load_w = recent_typical[0]
+            metrics.house_load_source = HouseLoadSource.RECENT_TYPICAL
+            metrics.house_load_at = recent_typical[1]
 
     async def get_live_metrics(self) -> LiveMetrics:
         await self._authenticate()
         plant_id = await self._plant_id()
         response = await self._request("GET", f"/api/v1/plant/energy/{plant_id}/flow")
         metrics = self._parse_flow(response.json())
+        latest_load_w = 0.0
+        latest_load_at: Optional[datetime] = None
         try:
-            totals = await self._daily_totals(plant_id)
-            metrics.daily_pv_kwh = totals["pv"]
-            metrics.daily_import_kwh = totals["import"]
-            metrics.daily_export_kwh = totals["export"]
+            totals, latest_load_w, latest_load_at = await self._daily_day_data(plant_id)
+            # Prefer /flow etoday* counters (set in _parse_flow); fill gaps from day series.
+            if metrics.daily_pv_kwh <= 0 and totals["pv"] > 0:
+                metrics.daily_pv_kwh = totals["pv"]
+            if metrics.daily_import_kwh <= 0 and totals["import"] > 0:
+                metrics.daily_import_kwh = totals["import"]
+            if metrics.daily_export_kwh <= 0 and totals["export"] > 0:
+                metrics.daily_export_kwh = totals["export"]
         except (AdapterError, httpx.HTTPError, KeyError, ValueError):
-            # Daily totals are best-effort; never fail the live read over them.
             pass
+        recent_typical: Optional[tuple[float, datetime]] = None
+        if metrics.house_load_source == HouseLoadSource.MINIMAL:
+            try:
+                recent_typical = await self._recent_typical_house_load()
+            except Exception:
+                recent_typical = None
+        self._apply_house_load_fallbacks(
+            metrics,
+            latest_load_w=latest_load_w,
+            latest_load_at=latest_load_at,
+            recent_typical=recent_typical,
+        )
         return metrics
 
     async def get_connectivity(self) -> ConnectivityStatus:

@@ -8,6 +8,10 @@ test("PWA manifest is served", async ({ request }) => {
   const manifest = await response.json();
   expect(manifest.name).toContain("Rob's Solar");
   expect(manifest.theme_color).toBe("#f59e0b");
+  for (const icon of manifest.icons) {
+    const iconResponse = await request.get(icon.src);
+    expect(iconResponse.ok(), `icon ${icon.src} should exist`).toBeTruthy();
+  }
 });
 
 test("admin can view automation rules on controls page", async ({ page }) => {

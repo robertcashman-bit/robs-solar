@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-import type { LiveMetrics, MetricSummary } from "@/lib/schemas";
+import type { LiveMetrics, MetricSummary, ChargeWindowStatus } from "@/lib/schemas";
 import { deriveHouseLoadDisplay, gridHeroLabel, resolveBatteryPower } from "@/lib/energy-flow";
 import { formatSavings, SAVINGS_EXPLAINER } from "@/lib/money";
 import {
@@ -18,7 +18,10 @@ type SavingsHeroBandProps = {
   metrics: LiveMetrics;
   summary: MetricSummary | null;
   evCharging?: boolean;
+  chargeWindow?: ChargeWindowStatus | null;
 };
+
+const HIGH_GRID_DRAW_W = 4000;
 
 const toneClasses = {
   export: "from-violet-500/20 to-violet-600/5 border-violet-400/30 text-violet-700 dark:text-violet-300",
@@ -29,9 +32,17 @@ const toneClasses = {
   pv: "from-amber-500/25 to-orange-600/5 border-amber-400/35 text-amber-800 dark:text-amber-300",
 };
 
-export function SavingsHeroBand({ metrics, summary, evCharging = false }: SavingsHeroBandProps) {
+export function SavingsHeroBand({
+  metrics,
+  summary,
+  evCharging = false,
+  chargeWindow = null,
+}: SavingsHeroBandProps) {
   const grid = gridHeroLabel(metrics);
   const houseLoad = deriveHouseLoadDisplay(metrics, resolveBatteryPower(metrics));
+  const showEvBadge =
+    evCharging || (Boolean(chargeWindow?.cheap_now) && metrics.grid_import_w > HIGH_GRID_DRAW_W);
+  const showGridDraw = metrics.grid_import_w > HIGH_GRID_DRAW_W;
   const selfPct = summary?.self_consumption_pct ?? 0;
   const savingsToday = summary?.savings ?? 0;
   const currency = summary?.currency ?? "GBP";
@@ -56,9 +67,14 @@ export function SavingsHeroBand({ metrics, summary, evCharging = false }: Saving
         <Link href="/analytics" className="solar-btn-ghost text-xs sm:text-sm">
           Full analytics →
         </Link>
-        {evCharging ? (
+        {showEvBadge ? (
           <span className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
             EV charging (cheap window)
+          </span>
+        ) : null}
+        {showGridDraw ? (
+          <span className="rounded-full border border-rose-400/40 bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-800 dark:text-rose-300">
+            Grid draw {Math.round(metrics.grid_import_w).toLocaleString()} W
           </span>
         ) : null}
       </div>
@@ -135,7 +151,9 @@ export function SavingsHeroBand({ metrics, summary, evCharging = false }: Saving
       <div className="flex flex-wrap gap-2 text-xs">
         <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1">
           <BoltIcon size={12} className="text-amber-500" />
-          Load {houseLoad.isMinimal ? "Minimal" : `${Math.round(houseLoad.watts)} W`}
+          Load {houseLoad.isMinimal ? "Minimal" : houseLoad.value}
+          {houseLoad.sublabel && !houseLoad.isMinimal ? ` · ${houseLoad.sublabel}` : null}
+          {houseLoad.isMinimal && houseLoad.sublabel ? ` · ${houseLoad.sublabel}` : null}
         </span>
         <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1">
           <BatteryIcon size={12} className="text-emerald-500" />
@@ -143,7 +161,13 @@ export function SavingsHeroBand({ metrics, summary, evCharging = false }: Saving
             ? `+${metrics.daily_battery_charge_kwh.toFixed(1)} kWh charged today`
             : "Battery active"}
         </span>
-        {metrics.grid_import_w > 0 ? (
+        {showGridDraw ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-rose-400/40 bg-rose-500/15 px-2.5 py-1 font-medium text-rose-800 dark:text-rose-300">
+            <ArrowDownIcon size={12} />
+            Grid draw {Math.round(metrics.grid_import_w).toLocaleString()} W
+          </span>
+        ) : null}
+        {metrics.grid_import_w > 0 && !showGridDraw ? (
           <span className="inline-flex items-center gap-1 rounded-full border border-rose-400/30 bg-rose-500/10 px-2.5 py-1 text-rose-800 dark:text-rose-300">
             <ArrowDownIcon size={12} />
             {metrics.daily_import_kwh.toFixed(1)} kWh imported

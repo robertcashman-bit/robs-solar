@@ -83,6 +83,7 @@ describe("EnergyFlow", () => {
           grid_import_w: 0,
           grid_export_w: 125,
           house_load_w: 0,
+          house_load_source: "minimal" as const,
           battery_power_w: 26,
           battery_soc_pct: 98,
         }}

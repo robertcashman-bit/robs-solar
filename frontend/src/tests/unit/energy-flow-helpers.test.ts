@@ -61,7 +61,15 @@ describe("energy-flow helpers", () => {
   });
 
   it("deriveHouseLoad prefers API when plausible", () => {
-    expect(deriveHouseLoad(baseMetrics, 600)).toBe(1800);
+    const balanced = {
+      ...baseMetrics,
+      pv_power_w: 1700,
+      grid_import_w: 0,
+      grid_export_w: 500,
+      house_load_w: 1800,
+      battery_power_w: 600,
+    };
+    expect(deriveHouseLoad(balanced, 600)).toBe(1800);
   });
 
   it("deriveInverterOutput equals home load plus export", () => {
@@ -105,11 +113,59 @@ describe("energy-flow helpers", () => {
       grid_import_w: 0,
       grid_export_w: 125,
       house_load_w: 0,
+      house_load_source: "minimal" as const,
       battery_power_w: 26,
     };
     const display = deriveHouseLoadDisplay(metrics, 26);
     expect(display.value).toBe("Minimal");
     expect(display.sublabel).toBe("Surplus to grid");
     expect(display.isMinimal).toBe(true);
+  });
+
+  it("deriveHouseLoadDisplay shows day-series load with age sublabel", () => {
+    const metrics = {
+      ...baseMetrics,
+      pv_power_w: 95,
+      grid_import_w: 0,
+      grid_export_w: 125,
+      house_load_w: 420,
+      house_load_source: "day_series" as const,
+      house_load_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+      battery_power_w: 26,
+    };
+    const display = deriveHouseLoadDisplay(metrics, 26);
+    expect(display.value).toBe("420 W");
+    expect(display.sublabel).toMatch(/min ago/);
+    expect(display.isMinimal).toBe(false);
+  });
+
+  it("deriveHouseLoadDisplay shows recent typical load", () => {
+    const metrics = {
+      ...baseMetrics,
+      pv_power_w: 95,
+      grid_import_w: 0,
+      grid_export_w: 125,
+      house_load_w: 380,
+      house_load_source: "recent_typical" as const,
+      battery_power_w: 26,
+    };
+    const display = deriveHouseLoadDisplay(metrics, 26);
+    expect(display.value).toBe("380 W");
+    expect(display.sublabel).toBe("Typical when drawing");
+  });
+
+  it("deriveHouseLoadDisplay overrides under-reported CT during EV charge", () => {
+    const metrics = {
+      ...baseMetrics,
+      pv_power_w: 0,
+      grid_import_w: 7200,
+      grid_export_w: 0,
+      house_load_w: 250,
+      house_load_source: "derived" as const,
+      battery_power_w: 0,
+    };
+    const display = deriveHouseLoadDisplay(metrics, 0);
+    expect(display.value).toBe("7,200 W");
+    expect(display.sublabel).toBe("Includes EV / off-CT load");
   });
 });

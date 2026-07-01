@@ -24,6 +24,16 @@ class InverterStatus(str, Enum):
     OFFLINE = "offline"
 
 
+class HouseLoadSource(str, Enum):
+    """How ``house_load_w`` was determined for live metrics."""
+
+    REPORTED = "reported"
+    DERIVED = "derived"
+    DAY_SERIES = "day_series"
+    RECENT_TYPICAL = "recent_typical"
+    MINIMAL = "minimal"
+
+
 class SystemWorkMode(str, Enum):
     """Sunsynk register 232 work modes."""
 
@@ -76,6 +86,9 @@ class LiveMetrics(BaseModel):
     daily_battery_charge_kwh: Optional[float] = Field(default=None, ge=0)
     daily_battery_discharge_kwh: Optional[float] = Field(default=None, ge=0)
     system_work_mode: Optional[SystemWorkMode] = None
+    house_load_source: HouseLoadSource = HouseLoadSource.REPORTED
+    house_load_reported_w: float = Field(default=0.0, ge=0)
+    house_load_at: Optional[datetime] = None
 
 
 class ConnectivityStatus(BaseModel):

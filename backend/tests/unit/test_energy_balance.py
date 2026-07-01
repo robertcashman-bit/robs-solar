@@ -36,7 +36,13 @@ def test_sunsynk_flow_scenario(scenario: dict) -> None:
     expected = scenario["expected"]
 
     for key, value in expected.items():
-        assert getattr(metrics, key) == pytest.approx(value, abs=2), key
+        actual = getattr(metrics, key)
+        if key == "house_load_source":
+            actual = actual.value if hasattr(actual, "value") else actual
+        if isinstance(value, (int, float)):
+            assert actual == pytest.approx(value, abs=2), key
+        else:
+            assert actual == value, key
 
     if scenario.get("skip_balance_check"):
         return

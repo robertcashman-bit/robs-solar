@@ -24,7 +24,7 @@ from app.services.analytics_service import analytics_service
 from app.services.battery_plan_service import battery_plan_service
 from app.services.billing_reconciliation_service import billing_reconciliation_service
 from app.services.charge_window_service import charge_window_service
-from app.services.ev_load_detector import ev_load_detector
+from app.services.ev_load_detector import ev_load_detector, sync_ev_detector
 from app.services.peak_import_guard_service import peak_import_guard_service
 from app.services.sell_advisor_service import sell_advisor_service
 
@@ -35,12 +35,14 @@ router = APIRouter(prefix="/metrics", tags=["metrics"])
 async def live_metrics(_: SessionData = Depends(require_viewer)) -> LiveMetrics:
     adapter = get_adapter()
     try:
-        return await adapter.get_live_metrics()
+        metrics = await adapter.get_live_metrics()
     except AdapterError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+    await sync_ev_detector(metrics)
+    return metrics
 
 
 @router.get("/connectivity", response_model=ConnectivityStatus)
@@ -123,4 +125,5 @@ async def ev_status(_: SessionData = Depends(require_viewer)) -> EvStatusRespons
         metrics = await adapter.get_live_metrics()
     except AdapterError:
         return ev_load_detector.status()
+    await sync_ev_detector(metrics)
     return ev_load_detector.status(metrics)
