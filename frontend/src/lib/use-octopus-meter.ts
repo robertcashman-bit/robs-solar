@@ -15,14 +15,15 @@ export function useOctopusMeter({
   pollIntervalMs = 30_000,
 }: UseOctopusMeterOptions = {}) {
   const [meter, setMeter] = useState<OctopusMeterPower | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const loading = enabled && (refreshing || (meter === null && error === null));
 
   const fetchOnce = useCallback(async () => {
     if (!enabled) {
       return;
     }
-    setLoading(true);
+    setRefreshing(true);
     try {
       const data = octopusMeterPowerSchema.parse(await apiClient.get("/octopus/meter-power"));
       setMeter(data);
@@ -30,7 +31,7 @@ export function useOctopusMeter({
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Failed to load smart meter");
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   }, [enabled]);
 
@@ -38,9 +39,17 @@ export function useOctopusMeter({
     if (!enabled) {
       return;
     }
-    void fetchOnce();
-    const timer = window.setInterval(() => void fetchOnce(), pollIntervalMs);
-    return () => window.clearInterval(timer);
+    let pollTimer: number | undefined;
+    const bootTimer = window.setTimeout(() => {
+      void fetchOnce();
+      pollTimer = window.setInterval(() => void fetchOnce(), pollIntervalMs);
+    }, 0);
+    return () => {
+      window.clearTimeout(bootTimer);
+      if (pollTimer) {
+        window.clearInterval(pollTimer);
+      }
+    };
   }, [enabled, fetchOnce, pollIntervalMs]);
 
   return { meter, loading, error, refresh: fetchOnce };
