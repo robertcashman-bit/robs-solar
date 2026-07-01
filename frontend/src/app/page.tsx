@@ -58,6 +58,8 @@ export default function DashboardPage() {
     setError(null);
     setOffline(false);
     try {
+      // Warm live-metrics cache so day summary can align with Sunsynk etoday totals.
+      await apiClient.get<unknown>("/metrics/live").catch(() => null);
       const [healthData, connectivityData, summaryData, compareData] = await Promise.all([
         apiClient.get<unknown>("/health"),
         apiClient.get<unknown>("/metrics/connectivity"),

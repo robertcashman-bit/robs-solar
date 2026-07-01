@@ -25,6 +25,7 @@ from app.services.battery_plan_service import battery_plan_service
 from app.services.billing_reconciliation_service import billing_reconciliation_service
 from app.services.charge_window_service import charge_window_service
 from app.services.ev_load_detector import ev_load_detector, sync_ev_detector
+from app.services.live_metrics_cache import live_metrics_cache
 from app.services.peak_import_guard_service import peak_import_guard_service
 from app.services.sell_advisor_service import sell_advisor_service
 
@@ -35,7 +36,7 @@ router = APIRouter(prefix="/metrics", tags=["metrics"])
 async def live_metrics(_: SessionData = Depends(require_viewer)) -> LiveMetrics:
     adapter = get_adapter()
     try:
-        metrics = await adapter.get_live_metrics()
+        metrics = await live_metrics_cache.get(adapter)
     except AdapterError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -70,10 +71,12 @@ async def metrics_summary(
     if range != HistoryRange.DAY:
         return summary
     adapter = get_adapter()
-    try:
-        live = await adapter.get_live_metrics()
-    except AdapterError:
-        return summary
+    live = live_metrics_cache.peek()
+    if live is None:
+        try:
+            live = await live_metrics_cache.get(adapter)
+        except AdapterError:
+            return summary
     return await enrich_day_summary_with_live(db, summary, live)
 
 
@@ -87,11 +90,13 @@ async def metrics_compare(
     if range != HistoryRange.DAY:
         return compare
     adapter = get_adapter()
-    try:
-        live = await adapter.get_live_metrics()
-        today = await enrich_day_summary_with_live(db, compare.today, live)
-    except AdapterError:
-        return compare
+    live = live_metrics_cache.peek()
+    if live is None:
+        try:
+            live = await live_metrics_cache.get(adapter)
+        except AdapterError:
+            return compare
+    today = await enrich_day_summary_with_live(db, compare.today, live)
     return compare.model_copy(update={"today": today})
 
 

@@ -9,6 +9,11 @@ function liveWebSocketUrl(): string {
   if (typeof window === "undefined") {
     return "";
   }
+  // Hosted Vercel/Render proxies do not support WebSocket upgrades (404).
+  const host = window.location.hostname;
+  if (host !== "localhost" && host !== "127.0.0.1") {
+    return "";
+  }
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend";
   if (apiBase.startsWith("http")) {
     const url = new URL(apiBase);
@@ -49,28 +54,47 @@ export function useLiveMetrics({ enabled = true, pollIntervalMs = 5000 }: UseLiv
     }
 
     let pollTimer: number | undefined;
+    let wsTimer: number | undefined;
     let usePolling = false;
+    let stopped = false;
 
     const startPolling = () => {
+      if (usePolling) {
+        return;
+      }
       usePolling = true;
       setConnected(false);
       void fetchOnce();
       pollTimer = window.setInterval(() => void fetchOnce(), pollIntervalMs);
     };
 
+    // Always poll — hosted PWA cannot rely on WebSocket.
+    startPolling();
+
+    const wsUrl = liveWebSocketUrl();
+    if (!wsUrl) {
+      return () => {
+        stopped = true;
+        if (pollTimer) {
+          window.clearInterval(pollTimer);
+        }
+      };
+    }
+
     try {
-      const wsUrl = liveWebSocketUrl();
-      if (!wsUrl) {
-        startPolling();
-        return () => {
-          if (pollTimer) {
-            window.clearInterval(pollTimer);
-          }
-        };
-      }
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
-      ws.onopen = () => setConnected(true);
+
+      wsTimer = window.setTimeout(() => {
+        if (!stopped && ws.readyState !== WebSocket.OPEN) {
+          ws.close();
+        }
+      }, 8000);
+
+      ws.onopen = () => {
+        window.clearTimeout(wsTimer);
+        setConnected(true);
+      };
       ws.onmessage = (event) => {
         try {
           const payload = JSON.parse(String(event.data)) as unknown;
@@ -84,23 +108,15 @@ export function useLiveMetrics({ enabled = true, pollIntervalMs = 5000 }: UseLiv
           /* ignore malformed frames */
         }
       };
-      ws.onerror = () => {
-        if (!usePolling) {
-          ws.close();
-          startPolling();
-        }
-      };
-      ws.onclose = () => {
-        setConnected(false);
-        if (!usePolling) {
-          startPolling();
-        }
-      };
+      ws.onerror = () => ws.close();
+      ws.onclose = () => setConnected(false);
     } catch {
-      startPolling();
+      /* polling already running */
     }
 
     return () => {
+      stopped = true;
+      window.clearTimeout(wsTimer);
       if (pollTimer) {
         window.clearInterval(pollTimer);
       }

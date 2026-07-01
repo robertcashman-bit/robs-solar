@@ -1,10 +1,12 @@
 "use client";
 
-import type { MetricSummary } from "@/lib/schemas";
+import type { LiveMetrics, MetricSummary } from "@/lib/schemas";
+import { selfConsumptionPctFromLive } from "@/lib/energy-flow";
 import { formatCurrencyAmount, formatSavings, SAVINGS_EXPLAINER } from "@/lib/money";
 
 type SavingsCardProps = {
   summary: MetricSummary | null;
+  live?: LiveMetrics | null;
   loading?: boolean;
   compact?: boolean;
 };
@@ -43,7 +45,7 @@ function StatTile({
   );
 }
 
-export function SavingsCard({ summary, loading, compact = false }: SavingsCardProps) {
+export function SavingsCard({ summary, live = null, loading, compact = false }: SavingsCardProps) {
   if (loading) {
     return (
       <section className="solar-card solar-skeleton">
@@ -69,6 +71,10 @@ export function SavingsCard({ summary, loading, compact = false }: SavingsCardPr
 
   const isCredit = summary.net_cost < 0;
   const savingsDisplay = formatSavings(summary.savings, summary.currency);
+  const pvKwh = live?.daily_pv_kwh ?? summary.pv_kwh;
+  const importKwh = live?.daily_import_kwh ?? summary.import_kwh;
+  const exportKwh = live?.daily_export_kwh ?? summary.export_kwh;
+  const selfConsumedPct = live ? selfConsumptionPctFromLive(live) : summary.self_consumption_pct;
 
   return (
     <section className="solar-card overflow-hidden">
@@ -83,7 +89,7 @@ export function SavingsCard({ summary, loading, compact = false }: SavingsCardPr
         </div>
         {!compact ? (
           <span className="solar-status-pill text-emerald-600 dark:text-emerald-400">
-            {summary.self_consumption_pct.toFixed(0)}% self-consumed
+            {selfConsumedPct.toFixed(0)}% self-consumed
           </span>
         ) : null}
       </div>
@@ -122,18 +128,18 @@ export function SavingsCard({ summary, loading, compact = false }: SavingsCardPr
             />
             <StatTile
               label="Self-consumed"
-              value={`${summary.self_consumption_pct.toFixed(1)}%`}
+              value={`${selfConsumedPct.toFixed(1)}%`}
               sub="Of PV generation used on-site"
             />
             <StatTile
               label="Import cost"
               value={formatCurrency(summary.import_cost, summary.currency)}
-              sub={`${summary.import_kwh.toFixed(1)} kWh imported`}
+              sub={`${importKwh.toFixed(1)} kWh imported`}
             />
             <StatTile
               label="Export credit"
               value={formatCurrency(summary.export_credit, summary.currency)}
-              sub={`${summary.export_kwh.toFixed(1)} kWh exported`}
+              sub={`${exportKwh.toFixed(1)} kWh exported`}
             />
           </>
         ) : (
@@ -145,7 +151,7 @@ export function SavingsCard({ summary, loading, compact = false }: SavingsCardPr
             />
             <StatTile
               label="Self-consumed"
-              value={`${summary.self_consumption_pct.toFixed(0)}%`}
+              value={`${selfConsumedPct.toFixed(0)}%`}
             />
           </>
         )}
@@ -155,7 +161,7 @@ export function SavingsCard({ summary, loading, compact = false }: SavingsCardPr
         <dl className="mt-5 grid gap-x-6 gap-y-2 border-t border-[var(--border)] pt-4 text-sm sm:grid-cols-2">
           <div className="flex justify-between gap-4">
             <dt className="text-[var(--muted)]">PV generated</dt>
-            <dd className="font-semibold tabular-nums">{summary.pv_kwh.toFixed(1)} kWh</dd>
+            <dd className="font-semibold tabular-nums">{pvKwh.toFixed(1)} kWh</dd>
           </div>
           <div className="flex justify-between gap-4">
             <dt className="text-[var(--muted)]">Consumption</dt>
@@ -163,11 +169,11 @@ export function SavingsCard({ summary, loading, compact = false }: SavingsCardPr
           </div>
           <div className="flex justify-between gap-4">
             <dt className="text-[var(--muted)]">Grid import</dt>
-            <dd className="font-semibold tabular-nums">{summary.import_kwh.toFixed(1)} kWh</dd>
+            <dd className="font-semibold tabular-nums">{importKwh.toFixed(1)} kWh</dd>
           </div>
           <div className="flex justify-between gap-4">
             <dt className="text-[var(--muted)]">Grid export</dt>
-            <dd className="font-semibold tabular-nums">{summary.export_kwh.toFixed(1)} kWh</dd>
+            <dd className="font-semibold tabular-nums">{exportKwh.toFixed(1)} kWh</dd>
           </div>
         </dl>
       ) : null}

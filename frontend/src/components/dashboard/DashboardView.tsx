@@ -202,7 +202,7 @@ export function DashboardView({
 
       <EnergyFlow metrics={metrics} />
 
-      <SavingsCard summary={summary} />
+      <SavingsCard summary={summary} live={metrics} />
 
       <section aria-label="Live dashboard" className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
