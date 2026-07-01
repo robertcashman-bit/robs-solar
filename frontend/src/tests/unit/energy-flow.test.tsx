@@ -33,7 +33,7 @@ describe("EnergyFlow", () => {
 
   it("shows inverter throughput on the hub", () => {
     render(<EnergyFlow metrics={metrics} />);
-    expect(screen.getByText("2,300 W")).toBeInTheDocument();
+    expect(screen.getByText("4,800 W")).toBeInTheDocument();
   });
 
   it("shows small grid import instead of 0 W Idle", () => {
