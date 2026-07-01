@@ -246,6 +246,13 @@ class SunsynkConnectAdapter(InverterAdapter):
 
     _FLOW_IDLE_W = 50.0
 
+    @staticmethod
+    def _derived_house_load(
+        pv: float, grid_import: float, grid_export: float, battery_power_w: float
+    ) -> float:
+        """House load implied by instantaneous power balance (positive batt = discharging)."""
+        return pv + grid_import - grid_export + battery_power_w
+
     def _resolve_battery_power(
         self,
         data: dict[str, Any],
@@ -258,32 +265,39 @@ class SunsynkConnectAdapter(InverterAdapter):
     ) -> float:
         """Battery power in app convention: positive = discharging.
 
-        Sunsynk firmware varies: direction booleans (``toBat`` / ``batteryTo``),
+        Sunsynk firmware varies: direction booleans (``toBat`` / ``batTo``),
         signed ``battPower`` (negative = discharging on many inverters), or an
-        unsigned positive magnitude. Prefer explicit flags; otherwise infer sign
-        from the power balance when ``loadOrEpsPower`` is trustworthy.
+        unsigned positive magnitude. Prefer explicit flags when they agree with
+        the reported sign; when they conflict (common at low load), infer from
+        the power balance instead.
         """
         charging = self._flag(data, "toBat", "toBattery", "gridToBat")
-        discharging = self._flag(data, "batteryTo", "battTo", "batteryOut", "batToLoad")
-        if charging is True and discharging is not True:
-            return -abs(raw_batt)
-        if discharging is True and charging is not True:
-            return abs(raw_batt)
-        if abs(raw_batt) < 1:
-            return 0.0
+        discharging = self._flag(data, "batTo", "batteryTo", "batteryOut", "batToLoad")
         abs_mag = abs(raw_batt)
-        if raw_batt < 0:
-            # Common Sunsynk Connect sign: negative = discharging.
+        if abs_mag < 1:
+            return 0.0
+
+        # Trust direction flags only when they match the sign of ``battPower``.
+        if charging is True and discharging is not True and raw_batt >= 0:
+            return -abs_mag
+        if discharging is True and charging is not True:
             return abs_mag
-        discharge = abs_mag
-        charge = -abs_mag
-        if reported_load > self._FLOW_IDLE_W:
-            load_if_discharge = pv + grid_import - grid_export + discharge
-            load_if_charge = pv + grid_import - grid_export + charge
-            err_dis = abs(load_if_discharge - reported_load)
-            err_chg = abs(load_if_charge - reported_load)
-            return discharge if err_dis <= err_chg else charge
-        return discharge
+
+        candidates: list[float] = []
+        if raw_batt < 0:
+            candidates.extend([abs_mag, -abs_mag])
+        else:
+            candidates.extend([abs_mag, -abs_mag])
+
+        idle = self._FLOW_IDLE_W
+
+        def score(candidate: float) -> tuple[float, float]:
+            derived = self._derived_house_load(pv, grid_import, grid_export, candidate)
+            if reported_load > idle:
+                return (0.0 if derived > idle else 1.0, abs(derived - reported_load))
+            return (0.0 if derived > idle else 1.0, -derived)
+
+        return min(candidates, key=score)
 
     @staticmethod
     def _resolve_house_load(
@@ -329,7 +343,11 @@ class SunsynkConnectAdapter(InverterAdapter):
                 raise AdapterError(f"Malformed Sunsynk flow field '{key}'") from exc
 
         pv_power_w = max(0.0, num("pvPower"))
-        reported_load = num("loadOrEpsPower")
+        reported_load = max(
+            num("loadOrEpsPower"),
+            num("homeLoadPower"),
+            num("upsLoadPower"),
+        )
         grid = num("gridOrMeterPower")
         grid_import_w, grid_export_w = self._signed_grid(data, grid)
         battery_power_w = self._resolve_battery_power(

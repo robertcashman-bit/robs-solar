@@ -258,6 +258,16 @@ class TestSignConvention:
         assert m.battery_power_w == 158
         assert m.house_load_w == pytest.approx(255, abs=5)
 
+    def test_to_bat_flag_conflicts_with_negative_batt_uses_balance(self) -> None:
+        """Live Sunsynk often sets toBat=true while battPower is negative at low load."""
+        m = self._adapter()._parse_flow(
+            {"data": {"battPower": -150, "toBat": True, "batTo": False, "soc": 98,
+                      "pvPower": 75, "loadOrEpsPower": 0, "homeLoadPower": 0,
+                      "gridOrMeterPower": 13, "gridTo": True}}
+        )
+        assert m.battery_power_w == 150
+        assert m.house_load_w == pytest.approx(238, abs=5)
+
     def test_battery_signed_fallback_without_flags(self) -> None:
         m = self._adapter()._parse_flow(
             {"data": {"battPower": 600, "soc": 80,
