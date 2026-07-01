@@ -50,6 +50,9 @@ Key backend settings:
 | `METRICS_RETENTION_DAYS` | `90` | How long metric samples are kept |
 | `TARIFF_IMPORT_RATE` | `0.28` | Default import rate (GBP/kWh) for savings calculations |
 | `TARIFF_EXPORT_RATE` | `0.15` | Default export rate (GBP/kWh) |
+| `TARIFF_TIMEZONE` | `Europe/London` | Timezone for cheap/peak windows and TOU bands (not server UTC) |
+| `AUTO_SCHEDULE_SOC_FLOOR_PCT` | `20` | Daytime battery reserve when auto-align is enabled |
+| `PEAK_IMPORT_GUARD_ENABLED` | `true` | Auto-correct peak grid import at high SOC |
 | `SECRET_KEY` | (required) | Session signing key |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | admin | Admin user credentials |
 | `VIEWER_USERNAME` / `VIEWER_PASSWORD` | viewer | Read-only user credentials |

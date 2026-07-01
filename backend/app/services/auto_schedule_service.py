@@ -4,23 +4,28 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.base import InverterAdapter
+from app.adapters.sunsynk_tou import work_mode_from_sunsynk
 from app.config import settings
 from app.db.models import AppSettingRow
 from app.schemas.domain import (
     AutoScheduleConfigRequest,
     AutoScheduleStatus,
     DispatchWindow,
+    InverterMode,
+    InverterSettingsResponse,
+    OperatingModeRequest,
     TouBandsRequest,
     TouBandWrite,
     UserRole,
 )
+from app.services.charge_window_service import evaluate_charge_window
 from app.services.control_service import control_service
 from app.services.ev_load_detector import ev_load_detector
 from app.services.iog_schedule import bands_equivalent, compute_iog_bands
@@ -39,6 +44,9 @@ class AutoScheduleService:
         self._last_write_audit_id: int | None = None
         self._computed_bands: list[TouBandWrite] = []
         self._next_cheap_windows: list[DispatchWindow] = []
+        self._last_mode_fix_at: datetime | None = None
+
+    _MODE_FIX_COOLDOWN = timedelta(minutes=30)
 
     async def _load_config(self, db: AsyncSession) -> dict[str, Any]:
         row = await db.scalar(
@@ -112,6 +120,76 @@ class AutoScheduleService:
         self._computed_bands = bands
         return bands
 
+    async def _ensure_self_use_on_peak(
+        self,
+        db: AsyncSession,
+        adapter: InverterAdapter,
+        settings_payload: InverterSettingsResponse,
+        config: dict[str, Any],
+    ) -> str | None:
+        """Switch out of sell mode during peak when the battery should discharge.
+
+        Sunsynk inverters often revert to "Selling first" overnight; on peak rate
+        with high SOC that prevents using stored energy for the house load.
+        """
+        if self._last_mode_fix_at is not None:
+            if datetime.now(timezone.utc) - self._last_mode_fix_at < self._MODE_FIX_COOLDOWN:
+                return None
+
+        from app.schemas.domain import SystemWorkMode
+
+        if work_mode_from_sunsynk(settings_payload.sys_work_mode) != SystemWorkMode.SELLING:
+            return None
+
+        soc_floor = int(config.get("soc_floor_pct", settings.auto_schedule_soc_floor_pct))
+        try:
+            metrics = await adapter.get_live_metrics()
+        except Exception:  # noqa: BLE001
+            return None
+
+        if metrics.battery_soc_pct <= soc_floor + 5:
+            return None
+
+        offpeak_start = settings.iog_offpeak_start
+        offpeak_end = settings.iog_offpeak_end
+        planned: list[DispatchWindow] = []
+        try:
+            if octopus_client.configured():
+                dispatches = await octopus_client.get_dispatches()
+                offpeak_start = dispatches.off_peak_window.start
+                offpeak_end = dispatches.off_peak_window.end
+                planned = list(dispatches.planned)
+        except Exception:  # noqa: BLE001
+            pass
+
+        window = evaluate_charge_window(
+            grid_import_w=metrics.grid_import_w,
+            battery_soc_pct=metrics.battery_soc_pct,
+            battery_power_w=metrics.battery_power_w,
+            active_band=settings_payload.active_band,
+            offpeak_start=offpeak_start,
+            offpeak_end=offpeak_end,
+            planned=planned,
+            now=metrics.timestamp,
+        )
+        if window.cheap_now:
+            return None
+
+        result = await control_service.set_operating_mode(
+            db,
+            adapter,
+            username="auto-scheduler",
+            role=UserRole.ADMIN,
+            request=OperatingModeRequest(mode=InverterMode.SELF_USE),
+        )
+        if not result.success:
+            logger.warning("Auto-align mode fix failed: %s", result.message)
+            return None
+        self._last_mode_fix_at = datetime.now(timezone.utc)
+        audit = result.audit_id
+        logger.info("Auto-align switched inverter to self-use on peak (audit #%s)", audit)
+        return f"Switched to self-use (audit #{audit})"
+
     async def run_once(
         self,
         db: AsyncSession,
@@ -167,34 +245,41 @@ class AutoScheduleService:
         if bands_equivalent(desired, current):
             self._last_run_message = "Schedule already aligned — no write needed"
             logger.info("Auto-align: schedule already aligned, no write needed")
-            return await self.get_status(db)
-
-        logger.info(
-            "Auto-align writing TOU bands: %s",
-            ", ".join(
-                f"slot{b.slot}@{b.start} cap{b.target_soc_pct} "
-                f"grid{'On' if b.grid_charge_enabled else 'Off'}"
-                for b in desired
-            ),
-        )
-        result = await control_service.set_tou_bands(
-            db,
-            adapter,
-            username="auto-scheduler",
-            role=UserRole.ADMIN,
-            request=TouBandsRequest(bands=desired),
-        )
-        if result.success:
-            self._last_write_audit_id = result.audit_id
-            self._last_run_message = f"Schedule updated (audit #{result.audit_id})"
-            logger.info(
-                "Auto-align wrote schedule (audit #%s, verified=%s)",
-                result.audit_id,
-                getattr(result, "verified", None),
-            )
         else:
-            self._last_run_message = result.message
-            logger.error("Auto-align write failed: %s", result.message)
+            logger.info(
+                "Auto-align writing TOU bands: %s",
+                ", ".join(
+                    f"slot{b.slot}@{b.start} cap{b.target_soc_pct} "
+                    f"grid{'On' if b.grid_charge_enabled else 'Off'}"
+                    for b in desired
+                ),
+            )
+            result = await control_service.set_tou_bands(
+                db,
+                adapter,
+                username="auto-scheduler",
+                role=UserRole.ADMIN,
+                request=TouBandsRequest(bands=desired),
+            )
+            if result.success:
+                self._last_write_audit_id = result.audit_id
+                self._last_run_message = f"Schedule updated (audit #{result.audit_id})"
+                logger.info(
+                    "Auto-align wrote schedule (audit #%s, verified=%s)",
+                    result.audit_id,
+                    getattr(result, "verified", None),
+                )
+            else:
+                self._last_run_message = result.message
+                logger.error("Auto-align write failed: %s", result.message)
+
+        mode_note = await self._ensure_self_use_on_peak(db, adapter, settings_payload, config)
+        if mode_note:
+            if self._last_run_message:
+                self._last_run_message = f"{self._last_run_message}; {mode_note}"
+            else:
+                self._last_run_message = mode_note
+
         return await self.get_status(db)
 
 

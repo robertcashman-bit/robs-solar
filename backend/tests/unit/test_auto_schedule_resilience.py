@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -10,6 +11,7 @@ from app.db.session import SessionLocal
 from app.schemas.domain import (
     AdapterError,
     AutoScheduleConfigRequest,
+    InverterMode,
     InverterSettingsResponse,
     TouBandWrite,
 )
@@ -101,3 +103,85 @@ async def test_config_survives_restart() -> None:
 
     assert status.enabled is True
     assert status.soc_floor_pct == 25
+
+
+@pytest.mark.asyncio
+async def test_switches_to_self_use_when_selling_on_peak(monkeypatch) -> None:
+    from datetime import datetime, timezone
+
+    from app.schemas.domain import (
+        InverterSettingsResponse,
+        InverterStatus,
+        LiveMetrics,
+        TouBand,
+    )
+
+    monkeypatch.setattr(
+        "app.services.auto_schedule_service.safety_settings_service.effective_read_only",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "app.services.auto_schedule_service.safety_settings_service.effective_enable_live_writes",
+        lambda: True,
+    )
+
+    service = AutoScheduleService()
+    service._last_mode_fix_at = None
+
+    settings_payload = InverterSettingsResponse(
+        inverter_sn="SIM",
+        write_allowed=True,
+        sys_work_mode="2",
+        sys_work_mode_label="Selling first",
+        bands=[],
+        active_band=TouBand(
+            slot=2, start="05:30", end="23:30", target_soc_pct=20,
+            grid_charge_enabled=False, power_w=8000,
+        ),
+        active_band_slot=2,
+    )
+
+    metrics = LiveMetrics(
+        pv_power_w=50.0,
+        battery_soc_pct=96.0,
+        battery_power_w=200.0,
+        house_load_w=400.0,
+        grid_import_w=0.0,
+        grid_export_w=0.0,
+        inverter_mode=InverterMode.FEED_IN,
+        inverter_status=InverterStatus.ONLINE,
+        daily_pv_kwh=1.0,
+        daily_import_kwh=0.0,
+        daily_export_kwh=0.0,
+        timestamp=datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    class _Adapter:
+        async def get_inverter_settings(self):
+            return settings_payload
+
+        async def get_live_metrics(self):
+            return metrics
+
+    set_mode = AsyncMock(
+        return_value=type("R", (), {"success": True, "audit_id": 99, "message": "ok"})()
+    )
+    compute = AsyncMock(return_value=[])
+
+    with (
+        patch.object(service, "compute_bands", compute),
+        patch(
+            "app.services.auto_schedule_service.control_service.set_operating_mode",
+            set_mode,
+        ),
+        patch(
+            "app.services.auto_schedule_service.evaluate_charge_window",
+            return_value=type("W", (), {"cheap_now": False})(),
+        ),
+    ):
+        async with SessionLocal() as db:
+            await service.set_config(db, AutoScheduleConfigRequest(enabled=True, soc_floor_pct=20))
+            await service.run_once(db, _Adapter())
+
+    set_mode.assert_awaited_once()
+    assert "self-use" in service._last_run_message.lower()
