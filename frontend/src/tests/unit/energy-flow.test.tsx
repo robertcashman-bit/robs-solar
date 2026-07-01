@@ -53,4 +53,24 @@ describe("EnergyFlow", () => {
     expect(screen.getByText("Importing")).toBeInTheDocument();
     expect(screen.queryByText("Idle")).not.toBeInTheDocument();
   });
+
+  it("derives home and inverter load for low-load solar plus grid snapshot", () => {
+    render(
+      <EnergyFlow
+        metrics={{
+          ...metrics,
+          pv_power_w: 9,
+          grid_import_w: 11,
+          grid_export_w: 0,
+          house_load_w: 0,
+          battery_power_w: 0,
+          battery_soc_pct: 98,
+        }}
+      />,
+    );
+    expect(screen.getAllByText("20 W").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("11 W")).toBeInTheDocument();
+    expect(screen.getByText("Importing")).toBeInTheDocument();
+    expect(screen.getByText("Idle")).toBeInTheDocument();
+  });
 });

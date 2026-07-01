@@ -296,6 +296,14 @@ class TestSignConvention:
         assert m.grid_import_w == 13
         assert m.grid_export_w == 0
 
+    def test_low_load_solar_plus_grid_derives_house_load(self) -> None:
+        m = self._adapter()._parse_flow(
+            {"data": {"gridOrMeterPower": 11, "gridTo": True, "soc": 98,
+                      "pvPower": 9, "loadOrEpsPower": 0, "homeLoadPower": 0, "battPower": 0}}
+        )
+        assert m.grid_import_w == 11
+        assert m.house_load_w == pytest.approx(20, abs=2)
+
     def test_grid_signed_fallback(self) -> None:
         # Negative gridOrMeterPower without flags -> export (legacy behaviour)
         m = self._adapter()._parse_flow(

@@ -244,7 +244,7 @@ class SunsynkConnectAdapter(InverterAdapter):
                 return str(raw).strip().lower() in {"1", "true", "yes", "on"}
         return None
 
-    _FLOW_IDLE_W = 50.0
+    _POWER_NOISE_FLOOR_W = 5.0
 
     @staticmethod
     def _derived_house_load(
@@ -289,13 +289,13 @@ class SunsynkConnectAdapter(InverterAdapter):
         else:
             candidates.extend([abs_mag, -abs_mag])
 
-        idle = self._FLOW_IDLE_W
+        floor = self._POWER_NOISE_FLOOR_W
 
         def score(candidate: float) -> tuple[float, float]:
             derived = self._derived_house_load(pv, grid_import, grid_export, candidate)
-            if reported_load > idle:
-                return (0.0 if derived > idle else 1.0, abs(derived - reported_load))
-            return (0.0 if derived > idle else 1.0, -derived)
+            if reported_load > floor:
+                return (0.0 if derived > floor else 1.0, abs(derived - reported_load))
+            return (0.0 if derived > floor else 1.0, -derived)
 
         return min(candidates, key=score)
 
@@ -309,11 +309,11 @@ class SunsynkConnectAdapter(InverterAdapter):
         battery_power_w: float,
     ) -> float:
         """Use Sunsynk ``loadOrEpsPower`` when plausible; else derive from balance."""
-        idle = SunsynkConnectAdapter._FLOW_IDLE_W
-        if reported > idle:
+        floor = SunsynkConnectAdapter._POWER_NOISE_FLOOR_W
+        if reported > floor:
             return reported
         derived = pv + grid_import - grid_export + battery_power_w
-        if derived > idle:
+        if derived > floor:
             return derived
         return max(0.0, reported)
 

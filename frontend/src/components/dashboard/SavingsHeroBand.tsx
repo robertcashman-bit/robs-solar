@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 import type { LiveMetrics, MetricSummary } from "@/lib/schemas";
-import { gridHeroLabel } from "@/lib/energy-flow";
+import { deriveHouseLoad, gridHeroLabel, resolveBatteryPower } from "@/lib/energy-flow";
 import { formatSavings, SAVINGS_EXPLAINER } from "@/lib/money";
 import {
   ArrowDownIcon,
@@ -31,6 +31,7 @@ const toneClasses = {
 
 export function SavingsHeroBand({ metrics, summary, evCharging = false }: SavingsHeroBandProps) {
   const grid = gridHeroLabel(metrics);
+  const houseLoadW = deriveHouseLoad(metrics, resolveBatteryPower(metrics));
   const selfPct = summary?.self_consumption_pct ?? 0;
   const savingsToday = summary?.savings ?? 0;
   const currency = summary?.currency ?? "GBP";
@@ -134,7 +135,7 @@ export function SavingsHeroBand({ metrics, summary, evCharging = false }: Saving
       <div className="flex flex-wrap gap-2 text-xs">
         <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1">
           <BoltIcon size={12} className="text-amber-500" />
-          Load {Math.round(metrics.house_load_w)} W
+          Load {Math.round(houseLoadW)} W
         </span>
         <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1">
           <BatteryIcon size={12} className="text-emerald-500" />

@@ -1,0 +1,108 @@
+[
+  {
+    "id": "low_load_grid_solar",
+    "payload": {
+      "data": {
+        "pvPower": 9,
+        "soc": 98,
+        "loadOrEpsPower": 0,
+        "homeLoadPower": 0,
+        "gridOrMeterPower": 11,
+        "gridTo": true,
+        "toGrid": false,
+        "battPower": 0
+      }
+    },
+    "expected": {
+      "pv_power_w": 9,
+      "grid_import_w": 11,
+      "grid_export_w": 0,
+      "battery_power_w": 0,
+      "house_load_w": 20
+    }
+  },
+  {
+    "id": "low_load_with_discharge",
+    "payload": {
+      "data": {
+        "pvPower": 75,
+        "soc": 98,
+        "loadOrEpsPower": 0,
+        "homeLoadPower": 0,
+        "gridOrMeterPower": 13,
+        "gridTo": true,
+        "toBat": true,
+        "batTo": false,
+        "battPower": -150
+      }
+    },
+    "expected": {
+      "pv_power_w": 75,
+      "grid_import_w": 13,
+      "grid_export_w": 0,
+      "battery_power_w": 150,
+      "house_load_w": 238
+    }
+  },
+  {
+    "id": "reported_load_trusted",
+    "skip_balance_check": true,
+    "payload": {
+      "data": {
+        "pvPower": 30,
+        "soc": 96,
+        "loadOrEpsPower": 970,
+        "gridOrMeterPower": 20,
+        "battPower": 0,
+        "sysWorkMode": "2"
+      }
+    },
+    "expected": {
+      "pv_power_w": 30,
+      "grid_import_w": 20,
+      "grid_export_w": 0,
+      "battery_power_w": 0,
+      "house_load_w": 970
+    }
+  },
+  {
+    "id": "high_export",
+    "payload": {
+      "data": {
+        "pvPower": 4800,
+        "soc": 50,
+        "loadOrEpsPower": 2400,
+        "gridOrMeterPower": 2400,
+        "toGrid": true,
+        "battPower": 0
+      }
+    },
+    "expected": {
+      "pv_power_w": 4800,
+      "grid_import_w": 0,
+      "grid_export_w": 2400,
+      "battery_power_w": 0,
+      "house_load_w": 2400
+    }
+  },
+  {
+    "id": "small_grid_only",
+    "payload": {
+      "data": {
+        "pvPower": 75,
+        "soc": 98,
+        "loadOrEpsPower": 0,
+        "gridOrMeterPower": 13,
+        "gridTo": true,
+        "battPower": -150
+      }
+    },
+    "expected": {
+      "pv_power_w": 75,
+      "grid_import_w": 13,
+      "grid_export_w": 0,
+      "battery_power_w": 150,
+      "house_load_w": 238
+    }
+  }
+]

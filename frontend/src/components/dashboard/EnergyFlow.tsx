@@ -4,9 +4,13 @@ import type { ReactNode } from "react";
 
 import type { LiveMetrics } from "@/lib/schemas";
 import {
+  batteryDisplayState,
+  deriveHouseLoad,
+  deriveInverterOutput,
   FLOW_ANIMATION_THRESHOLD_W,
   formatPowerW,
   gridDisplayState,
+  resolveBatteryPower,
 } from "@/lib/energy-flow";
 import {
   BoltIcon,
@@ -26,27 +30,6 @@ function formatW(value: number) {
 }
 
 type Anchor = { x: number; y: number };
-
-function resolveBatteryPower(metrics: LiveMetrics): number {
-  if (metrics.battery_power_w != null) {
-    return metrics.battery_power_w;
-  }
-  return (
-    metrics.pv_power_w +
-    metrics.grid_import_w -
-    metrics.house_load_w -
-    metrics.grid_export_w
-  );
-}
-
-function resolveHouseLoad(metrics: LiveMetrics, batteryPower: number): number {
-  if (metrics.house_load_w > FLOW_ANIMATION_THRESHOLD_W) {
-    return metrics.house_load_w;
-  }
-  const derived =
-    metrics.pv_power_w + metrics.grid_import_w - metrics.grid_export_w + batteryPower;
-  return derived > FLOW_ANIMATION_THRESHOLD_W ? derived : metrics.house_load_w;
-}
 
 /** Animated connector drawn behind the nodes. Coordinates are in percent. */
 function FlowConnector({
@@ -137,16 +120,11 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
   const pvActive = metrics.pv_power_w > FLOW_ANIMATION_THRESHOLD_W;
 
   const batteryPower = resolveBatteryPower(metrics);
-  const houseLoadW = resolveHouseLoad(metrics, batteryPower);
-  const charging = batteryPower < -FLOW_ANIMATION_THRESHOLD_W;
-  const discharging = batteryPower > FLOW_ANIMATION_THRESHOLD_W;
-  const batteryFlowSub =
-    charging || discharging
-      ? `${formatW(batteryPower)} ${charging ? "Charging" : "Discharging"}`
-      : "Idle";
+  const houseLoadW = deriveHouseLoad(metrics, batteryPower);
+  const batteryState = batteryDisplayState(batteryPower);
 
   const loadActive = houseLoadW > FLOW_ANIMATION_THRESHOLD_W;
-  const inverterOutputW = houseLoadW + metrics.grid_export_w;
+  const inverterOutputW = deriveInverterOutput(houseLoadW, metrics.grid_export_w);
 
   const peak = Math.max(
     metrics.pv_power_w,
@@ -207,9 +185,9 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
             strength={houseLoadW / peak}
           />
           <FlowConnector
-            from={charging ? hub : battery}
-            to={charging ? battery : hub}
-            active={charging || discharging}
+            from={batteryState.charging ? hub : battery}
+            to={batteryState.charging ? battery : hub}
+            active={batteryState.animating}
             color={batteryColor}
             strength={Math.abs(batteryPower) / peak}
           />
@@ -302,9 +280,9 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
               icon={<BatteryIcon size={18} />}
               label="Battery"
               value={`${metrics.battery_soc_pct.toFixed(1)}%`}
-              sub={batteryFlowSub}
+              sub={batteryState.sublabel}
               accentVar={batteryColor}
-              active={charging || discharging}
+              active={batteryState.animating}
             />
           </div>
         </div>
