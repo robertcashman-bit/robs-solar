@@ -8,6 +8,7 @@ import {
   energyBalanceError,
   gridDisplayState,
   gridHeroLabel,
+  selfConsumptionPctFromLive,
   resolveBatteryPower,
 } from "@/lib/energy-flow";
 import type { LiveMetrics } from "@/lib/schemas";
@@ -48,6 +49,44 @@ describe("energy-flow helpers", () => {
     expect(state.sublabel).toBe("Idle");
   });
 
+  it("gridDisplayState shows Exporting surplus in self use mode", () => {
+    const state = gridDisplayState({
+      grid_import_w: 0,
+      grid_export_w: 20,
+      inverter_mode: "self_use",
+    });
+    expect(state.sublabel).toBe("Exporting surplus");
+  });
+
+  it("gridDisplayState shows Selling to grid in feed-in mode", () => {
+    const state = gridDisplayState({
+      grid_import_w: 0,
+      grid_export_w: 2500,
+      inverter_mode: "feed_in",
+    });
+    expect(state.sublabel).toBe("Selling to grid");
+  });
+
+  it("gridHeroLabel shows surplus export wording in self use mode", () => {
+    const label = gridHeroLabel({
+      grid_import_w: 0,
+      grid_export_w: 20,
+      inverter_mode: "self_use",
+    });
+    expect(label.text).toBe("Surplus export 20 W");
+    expect(label.tone).toBe("export");
+  });
+
+  it("gridHeroLabel shows selling wording in feed-in mode", () => {
+    const label = gridHeroLabel({
+      grid_import_w: 0,
+      grid_export_w: 2500,
+      inverter_mode: "feed_in",
+    });
+    expect(label.text).toBe("Selling 2500 W");
+    expect(label.tone).toBe("export");
+  });
+
   it("deriveHouseLoad resolves low load from power balance", () => {
     const metrics = {
       ...baseMetrics,
@@ -70,6 +109,10 @@ describe("energy-flow helpers", () => {
       battery_power_w: 600,
     };
     expect(deriveHouseLoad(balanced, 600)).toBe(1800);
+  });
+
+  it("selfConsumptionPctFromLive matches Today card formula", () => {
+    expect(selfConsumptionPctFromLive(baseMetrics)).toBeCloseTo(53.2, 0);
   });
 
   it("deriveInverterOutput equals home load plus export", () => {

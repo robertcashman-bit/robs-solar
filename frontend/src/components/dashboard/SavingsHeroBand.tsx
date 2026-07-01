@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 import type { LiveMetrics, MetricSummary, ChargeWindowStatus } from "@/lib/schemas";
-import { deriveHouseLoadDisplay, gridHeroLabel, resolveBatteryPower } from "@/lib/energy-flow";
+import { deriveHouseLoadDisplay, gridHeroLabel, resolveBatteryPower, selfConsumptionPctFromLive } from "@/lib/energy-flow";
 import { formatSavings, SAVINGS_EXPLAINER } from "@/lib/money";
 import {
   ArrowDownIcon,
@@ -43,7 +43,7 @@ export function SavingsHeroBand({
   const showEvBadge =
     evCharging || (Boolean(chargeWindow?.cheap_now) && metrics.grid_import_w > HIGH_GRID_DRAW_W);
   const showGridDraw = metrics.grid_import_w > HIGH_GRID_DRAW_W;
-  const selfPct = summary?.self_consumption_pct ?? 0;
+  const selfPct = selfConsumptionPctFromLive(metrics);
   const savingsToday = summary?.savings ?? 0;
   const currency = summary?.currency ?? "GBP";
   const savingsDisplay = formatSavings(savingsToday, currency);

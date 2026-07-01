@@ -20,7 +20,7 @@ from app.schemas.domain import (
     ReconciliationResponse,
     SellOpportunity,
 )
-from app.services.analytics_service import analytics_service
+from app.services.analytics_service import analytics_service, enrich_day_summary_with_live
 from app.services.battery_plan_service import battery_plan_service
 from app.services.billing_reconciliation_service import billing_reconciliation_service
 from app.services.charge_window_service import charge_window_service
@@ -66,7 +66,15 @@ async def metrics_summary(
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> MetricSummaryResponse:
-    return await analytics_service.get_summary(db, range)
+    summary = await analytics_service.get_summary(db, range)
+    if range != HistoryRange.DAY:
+        return summary
+    adapter = get_adapter()
+    try:
+        live = await adapter.get_live_metrics()
+    except AdapterError:
+        return summary
+    return await enrich_day_summary_with_live(db, summary, live)
 
 
 @router.get("/compare", response_model=MetricCompareResponse)
@@ -75,7 +83,16 @@ async def metrics_compare(
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> MetricCompareResponse:
-    return await analytics_service.get_compare(db, range_name=range)
+    compare = await analytics_service.get_compare(db, range_name=range)
+    if range != HistoryRange.DAY:
+        return compare
+    adapter = get_adapter()
+    try:
+        live = await adapter.get_live_metrics()
+        today = await enrich_day_summary_with_live(db, compare.today, live)
+    except AdapterError:
+        return compare
+    return compare.model_copy(update={"today": today})
 
 
 @router.get("/reconciliation", response_model=ReconciliationResponse)

@@ -10,6 +10,7 @@ import type {
   OctopusTariff,
   SellOpportunity,
 } from "@/lib/schemas";
+import { selfConsumptionPctFromLive } from "@/lib/energy-flow";
 import { buildSavingsInsights } from "@/lib/savings-insights";
 
 import { ArrowDownIcon, ArrowUpIcon, BoltIcon, ChartIcon } from "@/components/shared/icons";
@@ -70,11 +71,7 @@ function StatusPill({
 }
 
 function selfSufficiencyPct(metrics: LiveMetrics): number {
-  if (metrics.daily_pv_kwh <= 0) {
-    return 0;
-  }
-  const selfConsumed = Math.max(0, metrics.daily_pv_kwh - metrics.daily_export_kwh);
-  return Math.min(100, (selfConsumed / metrics.daily_pv_kwh) * 100);
+  return selfConsumptionPctFromLive(metrics);
 }
 
 export function DashboardView({

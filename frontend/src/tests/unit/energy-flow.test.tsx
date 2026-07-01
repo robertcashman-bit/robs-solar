@@ -91,6 +91,6 @@ describe("EnergyFlow", () => {
     );
     expect(screen.getByText("Minimal")).toBeInTheDocument();
     expect(screen.getByText("Surplus to grid")).toBeInTheDocument();
-    expect(screen.getByText("Exporting")).toBeInTheDocument();
+    expect(screen.getByText("Exporting surplus")).toBeInTheDocument();
   });
 });

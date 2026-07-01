@@ -12,15 +12,40 @@ export const UNDERREPORTED_SLACK_W = 500;
 /** Sunsynk load CT often reads 0 during export; allow this much balance slack. */
 export const EXPORT_IMBALANCE_TOLERANCE_W = 30;
 
+export type GridSublabel =
+  | "Importing"
+  | "Exporting"
+  | "Exporting surplus"
+  | "Selling to grid"
+  | "Idle";
+
 export type GridDisplayState = {
   importing: boolean;
   exporting: boolean;
   importAnimating: boolean;
   exportAnimating: boolean;
   value: string;
-  sublabel: "Importing" | "Exporting" | "Idle";
+  sublabel: GridSublabel;
   watts: number;
 };
+
+type GridFlowMetrics = Pick<LiveMetrics, "grid_import_w" | "grid_export_w"> & {
+  inverter_mode?: LiveMetrics["inverter_mode"];
+};
+
+function gridExportSublabel(inverterMode?: string): GridSublabel {
+  if (inverterMode === "feed_in") {
+    return "Selling to grid";
+  }
+  if (
+    inverterMode === "self_use" ||
+    inverterMode === "backup" ||
+    inverterMode === "off_grid"
+  ) {
+    return "Exporting surplus";
+  }
+  return "Exporting";
+}
 
 export type HouseLoadSource =
   | "reported"
@@ -195,9 +220,15 @@ export function energyBalanceError(metrics: LiveMetrics): number {
   return Math.abs(houseLoadW - supply);
 }
 
-export function gridDisplayState(
-  metrics: Pick<LiveMetrics, "grid_import_w" | "grid_export_w">,
-): GridDisplayState {
+export function selfConsumptionPctFromLive(metrics: LiveMetrics): number {
+  if (metrics.daily_pv_kwh <= 0) {
+    return 0;
+  }
+  const selfConsumed = Math.max(0, metrics.daily_pv_kwh - metrics.daily_export_kwh);
+  return Math.min(100, (selfConsumed / metrics.daily_pv_kwh) * 100);
+}
+
+export function gridDisplayState(metrics: GridFlowMetrics): GridDisplayState {
   const importW = metrics.grid_import_w;
   const exportW = metrics.grid_export_w;
   const importing = importW > POWER_NOISE_FLOOR_W;
@@ -212,7 +243,7 @@ export function gridDisplayState(
       importAnimating,
       exportAnimating,
       value: formatPowerW(exportW),
-      sublabel: "Exporting",
+      sublabel: gridExportSublabel(metrics.inverter_mode),
       watts: exportW,
     };
   }
@@ -239,10 +270,21 @@ export function gridDisplayState(
 }
 
 export function gridHeroLabel(
-  metrics: Pick<LiveMetrics, "grid_import_w" | "grid_export_w">,
+  metrics: GridFlowMetrics,
 ): { text: string; tone: "export" | "import" | "neutral" } {
   if (metrics.grid_export_w > POWER_NOISE_FLOOR_W) {
-    return { text: `Export ${Math.round(metrics.grid_export_w)} W`, tone: "export" };
+    const watts = Math.round(metrics.grid_export_w);
+    if (metrics.inverter_mode === "feed_in") {
+      return { text: `Selling ${watts} W`, tone: "export" };
+    }
+    if (
+      metrics.inverter_mode === "self_use" ||
+      metrics.inverter_mode === "backup" ||
+      metrics.inverter_mode === "off_grid"
+    ) {
+      return { text: `Surplus export ${watts} W`, tone: "export" };
+    }
+    return { text: `Export ${watts} W`, tone: "export" };
   }
   if (metrics.grid_import_w > POWER_NOISE_FLOOR_W) {
     return { text: `Import ${Math.round(metrics.grid_import_w)} W`, tone: "import" };

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import MetricSampleRow
 from app.schemas.domain import (
     HistoryRange,
+    LiveMetrics,
     MetricCompareDelta,
     MetricCompareResponse,
     MetricHistoryPoint,
@@ -17,6 +18,7 @@ from app.schemas.domain import (
     MetricSummaryResponse,
 )
 from app.services.octopus_client import octopus_client
+from app.services.tariff_clock import tariff_now
 from app.services.tariff_service import tariff_service
 
 _MAX_POINTS = {"day": 288, "week": 336, "month": 720}
@@ -25,7 +27,9 @@ _MAX_POINTS = {"day": 288, "week": 336, "month": 720}
 def _range_start(range_name: HistoryRange) -> datetime:
     now = datetime.now(timezone.utc)
     if range_name == HistoryRange.DAY:
-        return now - timedelta(days=1)
+        # Calendar day in tariff timezone — matches Sunsynk etoday counters.
+        local_midnight = tariff_now().replace(hour=0, minute=0, second=0, microsecond=0)
+        return local_midnight.astimezone(timezone.utc)
     if range_name == HistoryRange.WEEK:
         return now - timedelta(days=7)
     return now - timedelta(days=30)
@@ -120,6 +124,47 @@ async def _octopus_rate_overrides() -> tuple[float | None, float | None]:
         return None, None
 
 
+async def enrich_day_summary_with_live(
+    db: AsyncSession,
+    summary: MetricSummaryResponse,
+    metrics: LiveMetrics,
+) -> MetricSummaryResponse:
+    """Align day summary kWh totals with Sunsynk etoday fields from /metrics/live."""
+    pv_kwh = metrics.daily_pv_kwh
+    import_kwh = metrics.daily_import_kwh
+    export_kwh = metrics.daily_export_kwh
+    if pv_kwh <= 0 and import_kwh <= 0 and export_kwh <= 0:
+        return summary
+
+    self_consumed = max(0.0, pv_kwh - export_kwh)
+    self_consumption_pct = (self_consumed / pv_kwh * 100.0) if pv_kwh > 0 else 0.0
+
+    tariff = await tariff_service.get_tariff(db)
+    import_rate_override, export_rate_override = await _octopus_rate_overrides()
+    import_rate = import_rate_override if import_rate_override is not None else tariff.import_rate
+    export_rate = export_rate_override if export_rate_override is not None else tariff.export_rate
+
+    import_cost = import_kwh * import_rate
+    export_credit = export_kwh * export_rate
+    net_cost = import_cost - export_credit
+    estimated_without_solar = summary.consumption_kwh * import_rate
+    savings = estimated_without_solar - net_cost
+
+    return summary.model_copy(
+        update={
+            "pv_kwh": round(pv_kwh, 3),
+            "import_kwh": round(import_kwh, 3),
+            "export_kwh": round(export_kwh, 3),
+            "self_consumption_pct": round(min(100.0, self_consumption_pct), 1),
+            "import_cost": round(import_cost, 2),
+            "export_credit": round(export_credit, 2),
+            "net_cost": round(net_cost, 2),
+            "estimated_cost_without_solar": round(estimated_without_solar, 2),
+            "savings": round(savings, 2),
+        }
+    )
+
+
 class AnalyticsService:
     async def get_history(
         self,
@@ -176,8 +221,12 @@ class AnalyticsService:
     ) -> MetricCompareResponse:
         now = datetime.now(timezone.utc)
         window_days = _compare_window_days(range_name)
-        current_start = now - timedelta(days=window_days)
-        previous_start = now - timedelta(days=window_days * 2)
+        if range_name == HistoryRange.DAY:
+            current_start = _range_start(HistoryRange.DAY)
+            previous_start = current_start - timedelta(days=1)
+        else:
+            current_start = now - timedelta(days=window_days)
+            previous_start = now - timedelta(days=window_days * 2)
 
         result = await db.execute(
             select(MetricSampleRow)

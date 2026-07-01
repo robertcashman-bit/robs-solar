@@ -119,6 +119,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {user.username}
                 <span className="text-[var(--muted)]">· {user.role}</span>
               </span>
+              {typeof window !== "undefined" ? (
+                <span
+                  className="hidden text-[0.65rem] text-[var(--muted)] lg:inline"
+                  title="Use the same URL on phone and desktop for matching figures"
+                >
+                  {window.location.host}
+                </span>
+              ) : null}
 
               <button type="button" onClick={toggleTheme} className="solar-btn-ghost text-xs sm:text-sm">
                 {theme === "dark" ? "Light" : "Dark"}

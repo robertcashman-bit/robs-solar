@@ -22,8 +22,6 @@ function liveWebSocketUrl(): string {
   return `${proto}//${window.location.host}${apiBase.replace(/\/$/, "")}/ws/live`;
 }
 
-const WS_URL = liveWebSocketUrl();
-
 type UseLiveMetricsOptions = {
   enabled?: boolean;
   pollIntervalMs?: number;
@@ -61,7 +59,16 @@ export function useLiveMetrics({ enabled = true, pollIntervalMs = 5000 }: UseLiv
     };
 
     try {
-      const ws = new WebSocket(WS_URL);
+      const wsUrl = liveWebSocketUrl();
+      if (!wsUrl) {
+        startPolling();
+        return () => {
+          if (pollTimer) {
+            window.clearInterval(pollTimer);
+          }
+        };
+      }
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       ws.onopen = () => setConnected(true);
       ws.onmessage = (event) => {
