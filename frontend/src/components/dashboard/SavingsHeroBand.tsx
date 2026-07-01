@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import type { LiveMetrics, MetricSummary } from "@/lib/schemas";
+import { gridHeroLabel } from "@/lib/energy-flow";
 import { formatSavings, SAVINGS_EXPLAINER } from "@/lib/money";
 import {
   ArrowDownIcon,
@@ -19,16 +20,6 @@ type SavingsHeroBandProps = {
   evCharging?: boolean;
 };
 
-function gridLabel(metrics: LiveMetrics) {
-  if (metrics.grid_export_w > 100) {
-    return { text: `Export ${Math.round(metrics.grid_export_w)} W`, tone: "export" as const };
-  }
-  if (metrics.grid_import_w > 100) {
-    return { text: `Import ${Math.round(metrics.grid_import_w)} W`, tone: "import" as const };
-  }
-  return { text: "Grid idle", tone: "neutral" as const };
-}
-
 const toneClasses = {
   export: "from-violet-500/20 to-violet-600/5 border-violet-400/30 text-violet-700 dark:text-violet-300",
   import: "from-rose-500/20 to-rose-600/5 border-rose-400/30 text-rose-700 dark:text-rose-300",
@@ -39,7 +30,7 @@ const toneClasses = {
 };
 
 export function SavingsHeroBand({ metrics, summary, evCharging = false }: SavingsHeroBandProps) {
-  const grid = gridLabel(metrics);
+  const grid = gridHeroLabel(metrics);
   const selfPct = summary?.self_consumption_pct ?? 0;
   const savingsToday = summary?.savings ?? 0;
   const currency = summary?.currency ?? "GBP";

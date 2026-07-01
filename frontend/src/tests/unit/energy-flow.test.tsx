@@ -35,4 +35,22 @@ describe("EnergyFlow", () => {
     render(<EnergyFlow metrics={metrics} />);
     expect(screen.getByText("2,300 W")).toBeInTheDocument();
   });
+
+  it("shows small grid import instead of 0 W Idle", () => {
+    render(
+      <EnergyFlow
+        metrics={{
+          ...metrics,
+          grid_import_w: 13,
+          grid_export_w: 0,
+          house_load_w: 250,
+          battery_power_w: 150,
+          pv_power_w: 75,
+        }}
+      />,
+    );
+    expect(screen.getByText("13 W")).toBeInTheDocument();
+    expect(screen.getByText("Importing")).toBeInTheDocument();
+    expect(screen.queryByText("Idle")).not.toBeInTheDocument();
+  });
 });

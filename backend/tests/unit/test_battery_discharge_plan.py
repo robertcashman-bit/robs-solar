@@ -288,6 +288,14 @@ class TestSignConvention:
         )
         assert exp.grid_export_w == 2400 and exp.grid_import_w == 0
 
+    def test_small_grid_import_with_grid_to_flag(self) -> None:
+        m = self._adapter()._parse_flow(
+            {"data": {"gridOrMeterPower": 13, "gridTo": True, "soc": 98,
+                      "pvPower": 75, "loadOrEpsPower": 0, "battPower": -150}}
+        )
+        assert m.grid_import_w == 13
+        assert m.grid_export_w == 0
+
     def test_grid_signed_fallback(self) -> None:
         # Negative gridOrMeterPower without flags -> export (legacy behaviour)
         m = self._adapter()._parse_flow(

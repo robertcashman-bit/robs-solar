@@ -4,6 +4,11 @@ import type { ReactNode } from "react";
 
 import type { LiveMetrics } from "@/lib/schemas";
 import {
+  FLOW_ANIMATION_THRESHOLD_W,
+  formatPowerW,
+  gridDisplayState,
+} from "@/lib/energy-flow";
+import {
   BoltIcon,
   BatteryIcon,
   HomeIcon,
@@ -17,10 +22,8 @@ type EnergyFlowProps = {
 };
 
 function formatW(value: number) {
-  return `${Math.round(Math.abs(value)).toLocaleString()} W`;
+  return formatPowerW(value);
 }
-
-const FLOW_THRESHOLD = 50;
 
 type Anchor = { x: number; y: number };
 
@@ -37,12 +40,12 @@ function resolveBatteryPower(metrics: LiveMetrics): number {
 }
 
 function resolveHouseLoad(metrics: LiveMetrics, batteryPower: number): number {
-  if (metrics.house_load_w > FLOW_THRESHOLD) {
+  if (metrics.house_load_w > FLOW_ANIMATION_THRESHOLD_W) {
     return metrics.house_load_w;
   }
   const derived =
     metrics.pv_power_w + metrics.grid_import_w - metrics.grid_export_w + batteryPower;
-  return derived > FLOW_THRESHOLD ? derived : metrics.house_load_w;
+  return derived > FLOW_ANIMATION_THRESHOLD_W ? derived : metrics.house_load_w;
 }
 
 /** Animated connector drawn behind the nodes. Coordinates are in percent. */
@@ -130,20 +133,19 @@ function FlowNode({
 }
 
 export function EnergyFlow({ metrics }: EnergyFlowProps) {
-  const pvActive = metrics.pv_power_w > FLOW_THRESHOLD;
-  const importActive = metrics.grid_import_w > FLOW_THRESHOLD;
-  const exportActive = metrics.grid_export_w > FLOW_THRESHOLD;
+  const gridState = gridDisplayState(metrics);
+  const pvActive = metrics.pv_power_w > FLOW_ANIMATION_THRESHOLD_W;
 
   const batteryPower = resolveBatteryPower(metrics);
   const houseLoadW = resolveHouseLoad(metrics, batteryPower);
-  const charging = batteryPower < -FLOW_THRESHOLD;
-  const discharging = batteryPower > FLOW_THRESHOLD;
+  const charging = batteryPower < -FLOW_ANIMATION_THRESHOLD_W;
+  const discharging = batteryPower > FLOW_ANIMATION_THRESHOLD_W;
   const batteryFlowSub =
     charging || discharging
       ? `${formatW(batteryPower)} ${charging ? "Charging" : "Discharging"}`
       : "Idle";
 
-  const loadActive = houseLoadW > FLOW_THRESHOLD;
+  const loadActive = houseLoadW > FLOW_ANIMATION_THRESHOLD_W;
   const inverterOutputW = houseLoadW + metrics.grid_export_w;
 
   const peak = Math.max(
@@ -160,7 +162,7 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
   const solar: Anchor = { x: 50, y: 15 };
   const home: Anchor = { x: 84, y: 50 };
   const battery: Anchor = { x: 50, y: 85 };
-  const grid: Anchor = { x: 16, y: 50 };
+  const gridAnchor: Anchor = { x: 16, y: 50 };
 
   const pvColor = "var(--accent-pv)";
   const loadColor = "var(--accent-load)";
@@ -212,10 +214,10 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
             strength={Math.abs(batteryPower) / peak}
           />
           <FlowConnector
-            from={exportActive ? hub : grid}
-            to={exportActive ? grid : hub}
-            active={importActive || exportActive}
-            color={exportActive ? exportColor : importColor}
+            from={gridState.exportAnimating ? hub : gridAnchor}
+            to={gridState.exportAnimating ? gridAnchor : hub}
+            active={gridState.importAnimating || gridState.exportAnimating}
+            color={gridState.exportAnimating ? exportColor : importColor}
             strength={Math.max(metrics.grid_import_w, metrics.grid_export_w) / peak}
           />
         </svg>
@@ -237,18 +239,16 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
           </div>
           <div className="col-start-1 row-start-2 flex items-center justify-center">
             <FlowNode
-              icon={importActive ? <ArrowDownIcon size={18} /> : <ArrowUpIcon size={18} />}
+              icon={gridState.importing ? <ArrowDownIcon size={18} /> : <ArrowUpIcon size={18} />}
               label="Grid"
-              value={
-                exportActive
-                  ? formatW(metrics.grid_export_w)
-                  : importActive
-                    ? formatW(metrics.grid_import_w)
-                    : "0 W"
+              value={gridState.value}
+              sub={gridState.sublabel}
+              accentVar={
+                gridState.exporting && gridState.watts === metrics.grid_export_w
+                  ? exportColor
+                  : importColor
               }
-              sub={exportActive ? "Exporting" : importActive ? "Importing" : "Idle"}
-              accentVar={exportActive ? exportColor : importColor}
-              active={importActive || exportActive}
+              active={gridState.importAnimating || gridState.exportAnimating}
             />
           </div>
 
