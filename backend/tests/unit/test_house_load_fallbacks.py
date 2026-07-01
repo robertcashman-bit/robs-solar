@@ -99,6 +99,12 @@ def test_resolve_house_load_source_labels() -> None:
     watts, source = SunsynkConnectAdapter._resolve_house_load(
         1800, pv=4200, grid_import=0, grid_export=2400, battery_power_w=600
     )
+    assert watts == pytest.approx(2400)
+    assert source == HouseLoadSource.DERIVED
+
+    watts, source = SunsynkConnectAdapter._resolve_house_load(
+        1800, pv=1800, grid_import=0, grid_export=0, battery_power_w=0
+    )
     assert watts == pytest.approx(1800)
     assert source == HouseLoadSource.REPORTED
 
