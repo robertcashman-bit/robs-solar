@@ -44,11 +44,6 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
       <body className="min-h-full flex flex-col">
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{})}`,
-          }}
-        />
         <div className="app-bg" aria-hidden="true">
           <span className="app-bg-orb app-bg-orb-1" />
           <span className="app-bg-orb app-bg-orb-2" />

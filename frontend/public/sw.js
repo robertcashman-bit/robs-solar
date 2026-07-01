@@ -1,16 +1,30 @@
-const CACHE_VERSION = "robs-solar-v2";
+const CACHE_VERSION = "robs-solar-v3";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      await self.clients.claim();
+      const clients = await self.clients.matchAll({ type: "window" });
+      for (const client of clients) {
+        client.postMessage({ type: "SW_ACTIVATED", version: CACHE_VERSION });
+      }
+    })(),
+  );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    event.waitUntil(self.skipWaiting());
+  }
 });
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  // Never intercept API traffic — stale metrics caused iPhone/desktop mismatches.
+  // Never intercept API traffic — stale metrics caused device mismatches.
   if (url.pathname.startsWith("/backend")) {
     return;
   }
