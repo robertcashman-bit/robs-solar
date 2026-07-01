@@ -31,6 +31,7 @@ export const liveMetricsSchema = z.object({
   daily_battery_charge_kwh: z.number().nullable().optional(),
   daily_battery_discharge_kwh: z.number().nullable().optional(),
   system_work_mode: z.string().nullable().optional(),
+  grid_meter_connected: z.boolean().nullable().optional(),
 });
 
 export const connectivitySchema = z.object({
@@ -304,6 +305,18 @@ export const octopusTariffSchema = z.object({
 export type OctopusConfigStatus = z.infer<typeof octopusConfigStatusSchema>;
 export type OctopusDiscoverResult = z.infer<typeof octopusDiscoverResultSchema>;
 export type OctopusTariff = z.infer<typeof octopusTariffSchema>;
+
+export const octopusMeterPowerSchema = z.object({
+  configured: z.boolean(),
+  average_power_w: z.number().nullable().optional(),
+  consumption_kwh: z.number().nullable().optional(),
+  interval_start: z.string().nullable().optional(),
+  interval_end: z.string().nullable().optional(),
+  is_current_interval: z.boolean().optional(),
+  message: z.string().optional(),
+});
+
+export type OctopusMeterPower = z.infer<typeof octopusMeterPowerSchema>;
 
 export const dispatchWindowSchema = z.object({
   start: z.string(),

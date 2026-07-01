@@ -89,6 +89,8 @@ class LiveMetrics(BaseModel):
     house_load_source: HouseLoadSource = HouseLoadSource.REPORTED
     house_load_reported_w: float = Field(default=0.0, ge=0)
     house_load_at: Optional[datetime] = None
+    # Sunsynk /flow: False when grid CT data is not reaching the cloud API
+    grid_meter_connected: Optional[bool] = None
 
 
 class ConnectivityStatus(BaseModel):
@@ -528,6 +530,18 @@ class ReconciliationResponse(BaseModel):
     currency: str = "GBP"
     intervals: list[ReconciliationInterval] = Field(default_factory=list)
     configured: bool = False
+    message: str = ""
+
+
+class OctopusMeterPower(BaseModel):
+    """Smart meter draw estimated from the latest Octopus half-hourly interval."""
+
+    configured: bool = False
+    average_power_w: Optional[float] = Field(default=None, ge=0)
+    consumption_kwh: Optional[float] = Field(default=None, ge=0)
+    interval_start: Optional[datetime] = None
+    interval_end: Optional[datetime] = None
+    is_current_interval: bool = False
     message: str = ""
 
 

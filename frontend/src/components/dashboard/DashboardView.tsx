@@ -8,6 +8,7 @@ import type {
   MetricSummary,
   OctopusRatePlan,
   OctopusTariff,
+  OctopusMeterPower,
   SellOpportunity,
 } from "@/lib/schemas";
 import { selfConsumptionPctFromLive } from "@/lib/energy-flow";
@@ -41,6 +42,7 @@ type DashboardViewProps = {
   error: string | null;
   readOnly: boolean;
   octopusTariff?: OctopusTariff | null;
+  octopusMeter?: OctopusMeterPower | null;
   agilePricePence?: number | null;
   evCharging?: boolean;
   chargeWindow?: ChargeWindowStatus | null;
@@ -85,6 +87,7 @@ export function DashboardView({
   error,
   readOnly,
   octopusTariff = null,
+  octopusMeter = null,
   agilePricePence = null,
   evCharging = false,
   chargeWindow = null,
@@ -200,7 +203,7 @@ export function DashboardView({
       <QuickActionsStrip />
       <SavingsInsightsPanel insights={insights} />
 
-      <EnergyFlow metrics={metrics} />
+      <EnergyFlow metrics={metrics} octopusMeter={octopusMeter} />
 
       <SavingsCard summary={summary} live={metrics} />
 

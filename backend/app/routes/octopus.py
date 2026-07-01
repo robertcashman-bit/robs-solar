@@ -12,6 +12,7 @@ from app.schemas.domain import (
     OctopusConfigStatus,
     OctopusDiscoverRequest,
     OctopusDiscoverResult,
+    OctopusMeterPower,
     OctopusRatePlan,
 )
 from app.services.audit_service import audit_service
@@ -83,6 +84,11 @@ async def octopus_consumption(_: SessionData = Depends(require_viewer)) -> dict:
             detail="Octopus not configured",
         )
     return {"results": await octopus_client.get_consumption()}
+
+
+@router.get("/meter-power", response_model=OctopusMeterPower)
+async def octopus_meter_power(_: SessionData = Depends(require_viewer)) -> OctopusMeterPower:
+    return await octopus_client.get_meter_power_estimate()
 
 
 @router.get("/dispatches")

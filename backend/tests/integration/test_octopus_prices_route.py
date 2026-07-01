@@ -122,3 +122,31 @@ async def test_discover_maps_connection_error_to_502(client: AsyncClient, monkey
         headers={"X-CSRF-Token": data["csrf_token"]},
     )
     assert response.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_meter_power_returns_estimate(client: AsyncClient, monkeypatch) -> None:
+    from datetime import datetime, timezone
+
+    from app.schemas.domain import OctopusMeterPower
+
+    await login(client, "viewer", "viewer-pass")
+
+    async def fake_estimate() -> OctopusMeterPower:
+        start = datetime(2026, 7, 1, 19, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 7, 1, 19, 30, tzinfo=timezone.utc)
+        return OctopusMeterPower(
+            configured=True,
+            average_power_w=376.0,
+            consumption_kwh=0.188,
+            interval_start=start,
+            interval_end=end,
+            is_current_interval=True,
+        )
+
+    monkeypatch.setattr(octopus_client, "get_meter_power_estimate", fake_estimate)
+    response = await client.get("/octopus/meter-power")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configured"] is True
+    assert body["average_power_w"] == pytest.approx(376.0)

@@ -1,4 +1,4 @@
-import type { LiveMetrics } from "@/lib/schemas";
+import type { LiveMetrics, OctopusMeterPower } from "@/lib/schemas";
 
 /** Below this wattage, treat power flow as idle (CT/meter jitter). */
 export const POWER_NOISE_FLOOR_W = 5;
@@ -135,6 +135,32 @@ export function loadSourceBadge(
     return "Typical load when drawing";
   }
   return null;
+}
+
+function formatIntervalClock(iso: string): string {
+  const date = Date.parse(iso);
+  if (Number.isNaN(date)) {
+    return iso;
+  }
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+/** Octopus half-hourly smart meter estimate for dashboard display. */
+export function octopusMeterPowerDisplay(
+  meter: OctopusMeterPower | null | undefined,
+): { headline: string; detail: string } | null {
+  if (!meter?.configured || meter.average_power_w == null) {
+    return null;
+  }
+  const start = meter.interval_start ? formatIntervalClock(meter.interval_start) : null;
+  const end = meter.interval_end ? formatIntervalClock(meter.interval_end) : null;
+  const slot = start && end ? `${start}–${end}` : "latest half hour";
+  const phase = meter.is_current_interval ? "in progress" : "last completed";
+  const kwh = meter.consumption_kwh?.toFixed(3) ?? "—";
+  return {
+    headline: `${Math.round(meter.average_power_w).toLocaleString()} W average`,
+    detail: `Smart meter · ${kwh} kWh · ${slot} (${phase}) · updates every 30 min`,
+  };
 }
 
 export function balanceDerivedLoad(metrics: LiveMetrics, batteryPowerW: number): number {

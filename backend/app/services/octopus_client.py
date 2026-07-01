@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
-from app.schemas.domain import DispatchResponse, DispatchWindow, OctopusRatePlan, OffPeakWindow
+from app.schemas.domain import DispatchResponse, DispatchWindow, OctopusMeterPower, OctopusRatePlan, OffPeakWindow
 
 OCTOPUS_BASE = "https://api.octopus.energy/v1"
 KRAKEN_GRAPHQL = "https://api.octopus.energy/v1/graphql/"
@@ -111,6 +111,56 @@ def _pick_meter_serial(meters: list[dict[str, Any]]) -> str:
         if serial:
             return serial
     return ""
+
+
+def parse_consumption_interval(raw: dict[str, Any]) -> tuple[datetime, datetime, float] | None:
+    start_raw = raw.get("interval_start")
+    end_raw = raw.get("interval_end")
+    if not start_raw or not end_raw:
+        return None
+    try:
+        start = datetime.fromisoformat(str(start_raw).replace("Z", "+00:00"))
+        end = datetime.fromisoformat(str(end_raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    try:
+        kwh = float(raw.get("consumption") or 0)
+    except (TypeError, ValueError):
+        kwh = 0.0
+    return start, end, kwh
+
+
+def consumption_average_power_w(kwh: float, start: datetime, end: datetime) -> float:
+    hours = (end - start).total_seconds() / 3600.0
+    if hours <= 0:
+        return 0.0
+    return round(kwh / hours * 1000.0, 1)
+
+
+def pick_consumption_interval_for_display(
+    raw_intervals: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+) -> tuple[datetime, datetime, float, bool] | None:
+    """Prefer the in-progress half hour; else the most recent completed interval."""
+    if now is None:
+        now = datetime.now(timezone.utc)
+    parsed: list[tuple[datetime, datetime, float]] = []
+    for raw in raw_intervals:
+        interval = parse_consumption_interval(raw)
+        if interval is not None:
+            parsed.append(interval)
+    if not parsed:
+        return None
+    parsed.sort(key=lambda row: row[0], reverse=True)
+    for start, end, kwh in parsed:
+        if start <= now < end:
+            return start, end, kwh, True
+    for start, end, kwh in parsed:
+        if end <= now:
+            return start, end, kwh, False
+    start, end, kwh = parsed[0]
+    return start, end, kwh, start <= now < end
 
 
 class OctopusClient:
@@ -491,6 +541,42 @@ class OctopusClient:
             return response.json().get("results", [])
 
         return await self._get_cached("consumption", 600, fetch)
+
+    async def get_meter_power_estimate(self) -> OctopusMeterPower:
+        if not self.configured():
+            return OctopusMeterPower(configured=False, message="Octopus API not configured")
+        if not self._creds.mpan or not self._creds.meter_serial:
+            return OctopusMeterPower(
+                configured=False,
+                message="Meter MPAN or serial not configured — use Settings → Octopus",
+            )
+
+        async def fetch() -> OctopusMeterPower:
+            url = (
+                f"/electricity-meter-points/{self._creds.mpan}/"
+                f"meters/{self._creds.meter_serial}/consumption/"
+            )
+            response = await self._client.get(url, params={"page_size": 4})
+            response.raise_for_status()
+            raw_intervals = response.json().get("results", [])
+            picked = pick_consumption_interval_for_display(raw_intervals)
+            if picked is None:
+                return OctopusMeterPower(
+                    configured=True,
+                    message="No meter readings available yet from Octopus",
+                )
+            start, end, kwh, is_current = picked
+            return OctopusMeterPower(
+                configured=True,
+                average_power_w=consumption_average_power_w(kwh, start, end),
+                consumption_kwh=round(kwh, 4),
+                interval_start=start,
+                interval_end=end,
+                is_current_interval=is_current,
+                message="",
+            )
+
+        return await self._get_cached("meter_power", 120, fetch)
 
     async def get_account(self) -> dict[str, Any]:
         if not self.configured() or not self._creds.account_number:

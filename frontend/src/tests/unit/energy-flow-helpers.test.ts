@@ -7,6 +7,7 @@ import {
   deriveInverterOutput,
   deriveInverterOutputDisplay,
   loadSourceBadge,
+  octopusMeterPowerDisplay,
   energyBalanceError,
   gridDisplayState,
   gridHeroLabel,
@@ -163,6 +164,21 @@ describe("energy-flow helpers", () => {
     };
     const display = deriveHouseLoadDisplay(metrics, 1);
     expect(loadSourceBadge(metrics, display)).toBe("Load estimated from balance");
+  });
+
+  it("octopusMeterPowerDisplay formats half-hour average", () => {
+    const display = octopusMeterPowerDisplay({
+      configured: true,
+      average_power_w: 376,
+      consumption_kwh: 0.188,
+      interval_start: "2026-07-01T19:00:00Z",
+      interval_end: "2026-07-01T19:30:00Z",
+      is_current_interval: true,
+      message: "",
+    });
+    expect(display?.headline).toBe("376 W average");
+    expect(display?.detail).toContain("Smart meter");
+    expect(display?.detail).toContain("in progress");
   });
 
   it("energyBalanceError is near zero for consistent metrics", () => {

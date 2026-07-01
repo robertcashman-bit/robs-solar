@@ -17,6 +17,7 @@ import {
   healthResponseSchema,
   metricSummarySchema,
   metricCompareSchema,
+  octopusMeterPowerSchema,
   octopusRatePlanSchema,
   octopusTariffSchema,
   evStatusSchema,
@@ -25,6 +26,7 @@ import {
   type ConnectivityStatus,
   type MetricCompare,
   type MetricSummary,
+  type OctopusMeterPower,
   type OctopusRatePlan,
   type OctopusTariff,
   type SellOpportunity,
@@ -49,6 +51,7 @@ export default function DashboardPage() {
   const [polling, setPolling] = useState(true);
   const [agilePricePence, setAgilePricePence] = useState<number | null>(null);
   const [octopusTariff, setOctopusTariff] = useState<OctopusTariff | null>(null);
+  const [octopusMeter, setOctopusMeter] = useState<OctopusMeterPower | null>(null);
   const [evCharging, setEvCharging] = useState(false);
   const [chargeWindow, setChargeWindow] = useState<ChargeWindowStatus | null>(null);
   const [ratePlan, setRatePlan] = useState<OctopusRatePlan | null>(null);
@@ -109,6 +112,12 @@ export default function DashboardPage() {
         setChargeWindow(cw);
       } catch {
         setChargeWindow(null);
+      }
+      try {
+        const meter = octopusMeterPowerSchema.parse(await apiClient.get("/octopus/meter-power"));
+        setOctopusMeter(meter);
+      } catch {
+        setOctopusMeter(null);
       }
       try {
         const plan = octopusRatePlanSchema.parse(await apiClient.get("/octopus/rate-plan"));
@@ -261,6 +270,7 @@ export default function DashboardPage() {
           error={null}
           readOnly={readOnly}
           octopusTariff={octopusTariff}
+          octopusMeter={octopusMeter}
           agilePricePence={agilePricePence}
           evCharging={evCharging}
           chargeWindow={chargeWindow}

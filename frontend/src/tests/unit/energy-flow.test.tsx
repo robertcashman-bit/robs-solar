@@ -115,6 +115,55 @@ describe("EnergyFlow", () => {
     expect(screen.getByText(/Load estimated from balance/i)).toBeInTheDocument();
   });
 
+  it("warns when Sunsynk grid meter is not connected in cloud feed", () => {
+    render(
+      <EnergyFlow
+        metrics={{
+          ...metrics,
+          pv_power_w: 17,
+          grid_import_w: 0,
+          grid_export_w: 0,
+          house_load_w: 30,
+          house_load_source: "derived" as const,
+          house_load_reported_w: 0,
+          battery_power_w: 13,
+          battery_soc_pct: 98,
+          grid_meter_connected: false,
+        }}
+      />,
+    );
+    expect(screen.getByText(/not receiving live grid meter data/i)).toBeInTheDocument();
+    expect(screen.getByText(/smart meter measures whole-home draw/i)).toBeInTheDocument();
+  });
+
+  it("shows Octopus smart meter half-hour average when available", () => {
+    render(
+      <EnergyFlow
+        metrics={{
+          ...metrics,
+          pv_power_w: 17,
+          grid_import_w: 0,
+          grid_export_w: 0,
+          house_load_w: 30,
+          house_load_source: "derived" as const,
+          battery_power_w: 13,
+          battery_soc_pct: 98,
+        }}
+        octopusMeter={{
+          configured: true,
+          average_power_w: 376,
+          consumption_kwh: 0.188,
+          interval_start: "2026-07-01T19:00:00Z",
+          interval_end: "2026-07-01T19:30:00Z",
+          is_current_interval: true,
+          message: "",
+        }}
+      />,
+    );
+    expect(screen.getByText(/Smart meter \(Octopus\): 376 W average/i)).toBeInTheDocument();
+    expect(screen.getByText(/updates every 30 min/i)).toBeInTheDocument();
+  });
+
   it("shows kW-scale grid and home when a heavy load draws", () => {
     render(
       <EnergyFlow
