@@ -50,6 +50,7 @@ from app.schemas.domain import (
     UnsupportedWriteError,
     work_mode_to_inverter_mode,
 )
+from app.services.effective_load import finalize_live_metrics
 from app.services.effective_load import resolve_house_load as _resolve_house_load_shared
 from app.services.tariff_clock import tariff_now, tariff_zone
 
@@ -627,7 +628,7 @@ class SunsynkConnectAdapter(InverterAdapter):
             latest_load_at=latest_load_at,
             recent_typical=recent_typical,
         )
-        return metrics
+        return finalize_live_metrics(metrics)
 
     async def get_connectivity(self) -> ConnectivityStatus:
         if not settings.sunsynk_username or not settings.sunsynk_password:

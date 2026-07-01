@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from app.adapters.base import InverterAdapter
 from app.schemas.domain import LiveMetrics
+from app.services.effective_load import finalize_live_metrics
 
 _CACHE_TTL_SECONDS = 8.0
 
@@ -29,9 +30,9 @@ class LiveMetricsCache:
         if cached is not None:
             return cached
         metrics = await adapter.get_live_metrics()
-        self._metrics = metrics
+        self._metrics = finalize_live_metrics(metrics)
         self._fetched_at = datetime.now(timezone.utc)
-        return metrics
+        return self._metrics
 
 
 live_metrics_cache = LiveMetricsCache()

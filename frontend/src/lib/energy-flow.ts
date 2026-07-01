@@ -3,6 +3,9 @@ import type { LiveMetrics } from "@/lib/schemas";
 /** Below this wattage, treat power flow as idle (CT/meter jitter). */
 export const POWER_NOISE_FLOOR_W = 5;
 
+/** Show live watts on the diagram above this threshold (lower than noise floor). */
+export const DISPLAY_WATTS_FLOOR_W = 1;
+
 /** Above this wattage, animate flow connectors and node glow. */
 export const FLOW_ANIMATION_THRESHOLD_W = 50;
 
@@ -174,6 +177,20 @@ export function deriveHouseLoadDisplay(
     }
   }
 
+  if (derived > DISPLAY_WATTS_FLOOR_W && reported <= POWER_NOISE_FLOOR_W) {
+    return {
+      watts: derived,
+      value: formatPowerW(derived),
+      sublabel: houseLoadSublabel(
+        metrics,
+        reported > POWER_NOISE_FLOOR_W &&
+          metrics.grid_import_w > reported + UNDERREPORTED_SLACK_W,
+      ) ?? "Estimated from balance",
+      isMinimal: false,
+      source: "derived",
+    };
+  }
+
   if (derived > POWER_NOISE_FLOOR_W) {
     return {
       watts: derived,
@@ -198,6 +215,20 @@ export function deriveHouseLoadDisplay(
 
 export function deriveInverterOutput(houseLoadW: number, gridExportW: number): number {
   return houseLoadW + gridExportW;
+}
+
+/** Inverter throughput from balance when load/export CT reads are near zero. */
+export function deriveInverterOutputDisplay(
+  metrics: LiveMetrics,
+  houseLoadW: number,
+  batteryPowerW: number,
+): number {
+  const fromLoad = houseLoadW + metrics.grid_export_w;
+  const fromSupply = Math.max(
+    0,
+    metrics.pv_power_w + metrics.grid_import_w + batteryPowerW - metrics.grid_export_w,
+  );
+  return Math.max(fromLoad, fromSupply);
 }
 
 export function batteryDisplayState(batteryPowerW: number): BatteryDisplayState {
@@ -231,8 +262,8 @@ export function selfConsumptionPctFromLive(metrics: LiveMetrics): number {
 export function gridDisplayState(metrics: GridFlowMetrics): GridDisplayState {
   const importW = metrics.grid_import_w;
   const exportW = metrics.grid_export_w;
-  const importing = importW > POWER_NOISE_FLOOR_W;
-  const exporting = exportW > POWER_NOISE_FLOOR_W;
+  const importing = importW > DISPLAY_WATTS_FLOOR_W;
+  const exporting = exportW > DISPLAY_WATTS_FLOOR_W;
   const importAnimating = importW > FLOW_ANIMATION_THRESHOLD_W;
   const exportAnimating = exportW > FLOW_ANIMATION_THRESHOLD_W;
 
@@ -272,7 +303,7 @@ export function gridDisplayState(metrics: GridFlowMetrics): GridDisplayState {
 export function gridHeroLabel(
   metrics: GridFlowMetrics,
 ): { text: string; tone: "export" | "import" | "neutral" } {
-  if (metrics.grid_export_w > POWER_NOISE_FLOOR_W) {
+  if (metrics.grid_export_w > DISPLAY_WATTS_FLOOR_W) {
     const watts = Math.round(metrics.grid_export_w);
     if (metrics.inverter_mode === "feed_in") {
       return { text: `Selling ${watts} W`, tone: "export" };
@@ -286,7 +317,7 @@ export function gridHeroLabel(
     }
     return { text: `Export ${watts} W`, tone: "export" };
   }
-  if (metrics.grid_import_w > POWER_NOISE_FLOOR_W) {
+  if (metrics.grid_import_w > DISPLAY_WATTS_FLOOR_W) {
     return { text: `Import ${Math.round(metrics.grid_import_w)} W`, tone: "import" };
   }
   return { text: "Grid idle", tone: "neutral" };

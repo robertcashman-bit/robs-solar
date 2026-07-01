@@ -6,7 +6,7 @@ import type { LiveMetrics } from "@/lib/schemas";
 import {
   batteryDisplayState,
   deriveHouseLoadDisplay,
-  deriveInverterOutput,
+  deriveInverterOutputDisplay,
   FLOW_ANIMATION_THRESHOLD_W,
   formatPowerW,
   gridDisplayState,
@@ -127,7 +127,7 @@ export function EnergyFlow({ metrics }: EnergyFlowProps) {
   const loadActive =
     houseLoad.watts > FLOW_ANIMATION_THRESHOLD_W ||
     (houseLoad.isMinimal && metrics.pv_power_w > POWER_NOISE_FLOOR_W);
-  const inverterOutputW = deriveInverterOutput(houseLoad.watts, metrics.grid_export_w);
+  const inverterOutputW = deriveInverterOutputDisplay(metrics, houseLoad.watts, batteryPower);
 
   const peak = Math.max(
     metrics.pv_power_w,

@@ -24,6 +24,7 @@ from app.services.analytics_service import analytics_service, enrich_day_summary
 from app.services.battery_plan_service import battery_plan_service
 from app.services.billing_reconciliation_service import billing_reconciliation_service
 from app.services.charge_window_service import charge_window_service
+from app.services.effective_load import finalize_live_metrics
 from app.services.ev_load_detector import ev_load_detector, sync_ev_detector
 from app.services.live_metrics_cache import live_metrics_cache
 from app.services.peak_import_guard_service import peak_import_guard_service
@@ -43,7 +44,7 @@ async def live_metrics(_: SessionData = Depends(require_viewer)) -> LiveMetrics:
             detail=str(exc),
         ) from exc
     await sync_ev_detector(metrics)
-    return metrics
+    return finalize_live_metrics(metrics)
 
 
 @router.get("/connectivity", response_model=ConnectivityStatus)

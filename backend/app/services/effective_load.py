@@ -49,3 +49,22 @@ def effective_load_w(metrics: LiveMetrics, *, in_cheap_window: bool = False) -> 
     if in_cheap_window and metrics.grid_import_w > load:
         return metrics.grid_import_w
     return load
+
+
+def finalize_live_metrics(metrics: LiveMetrics) -> LiveMetrics:
+    """Ensure house load and source reflect the power balance when the CT reads zero."""
+    battery = metrics.battery_power_w or 0.0
+    derived = derived_house_load(
+        pv=metrics.pv_power_w,
+        grid_import=metrics.grid_import_w,
+        grid_export=metrics.grid_export_w,
+        battery_power_w=battery,
+    )
+    if metrics.house_load_w > POWER_NOISE_FLOOR_W or derived <= 0:
+        return metrics
+    return metrics.model_copy(
+        update={
+            "house_load_w": round(derived, 1),
+            "house_load_source": HouseLoadSource.DERIVED,
+        }
+    )

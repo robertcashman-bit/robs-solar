@@ -5,6 +5,7 @@ import {
   deriveHouseLoad,
   deriveHouseLoadDisplay,
   deriveInverterOutput,
+  deriveInverterOutputDisplay,
   energyBalanceError,
   gridDisplayState,
   gridHeroLabel,
@@ -43,8 +44,8 @@ describe("energy-flow helpers", () => {
     expect(label.tone).toBe("import");
   });
 
-  it("gridDisplayState treats sub-noise grid as idle", () => {
-    const state = gridDisplayState({ grid_import_w: 3, grid_export_w: 0 });
+  it("gridDisplayState treats sub-display floor grid as idle", () => {
+    const state = gridDisplayState({ grid_import_w: 0.5, grid_export_w: 0 });
     expect(state.value).toBe("0 W");
     expect(state.sublabel).toBe("Idle");
   });
@@ -118,6 +119,34 @@ describe("energy-flow helpers", () => {
   it("deriveInverterOutput equals home load plus export", () => {
     expect(deriveInverterOutput(20, 0)).toBe(20);
     expect(deriveInverterOutput(1800, 500)).toBe(2300);
+  });
+
+  it("deriveInverterOutputDisplay uses supply balance when load CT is zero", () => {
+    const metrics = {
+      ...baseMetrics,
+      pv_power_w: 12,
+      grid_import_w: 13,
+      grid_export_w: 0,
+      house_load_w: 0,
+      battery_power_w: 0,
+    };
+    expect(deriveInverterOutputDisplay(metrics, 0, 0)).toBe(25);
+  });
+
+  it("deriveHouseLoadDisplay shows derived load when CT reads zero", () => {
+    const metrics = {
+      ...baseMetrics,
+      pv_power_w: 12,
+      grid_import_w: 13,
+      grid_export_w: 0,
+      house_load_w: 0,
+      house_load_source: "minimal" as const,
+      battery_power_w: 0,
+    };
+    const display = deriveHouseLoadDisplay(metrics, 0);
+    expect(display.value).toBe("25 W");
+    expect(display.isMinimal).toBe(false);
+    expect(display.source).toBe("derived");
   });
 
   it("energyBalanceError is near zero for consistent metrics", () => {
