@@ -14,6 +14,7 @@ from app.config import settings
 from app.schemas.domain import (
     DispatchResponse,
     DispatchWindow,
+    OctopusLiveDemand,
     OctopusMeterPower,
     OctopusRatePlan,
     OffPeakWindow,
@@ -38,6 +39,8 @@ class OctopusCredentials:
     import_tariff_code: str = ""
     export_tariff_code: str = ""
     product_code: str = DEFAULT_AGILE_PRODUCT
+    # HAN device (Octopus Home Mini) id for live smartMeterTelemetry, if present.
+    device_id: str = ""
 
     @property
     def agile_tariff_code(self) -> str:
@@ -167,6 +170,29 @@ def pick_consumption_interval_for_display(
             return start, end, kwh, False
     start, end, kwh = parsed[0]
     return start, end, kwh, start <= now < end
+
+
+def sum_consumption_since_midnight(
+    raw_intervals: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+) -> float:
+    """Sum import kWh from half-hourly meter intervals since local calendar midnight."""
+    from app.services.tariff_clock import tariff_now
+
+    local_now = now.astimezone(tariff_now().tzinfo) if now is not None else tariff_now()
+    local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    range_start = local_midnight.astimezone(timezone.utc)
+    total = 0.0
+    for raw in raw_intervals:
+        interval = parse_consumption_interval(raw)
+        if interval is None:
+            continue
+        _start, end, kwh = interval
+        if end <= range_start or kwh <= 0:
+            continue
+        total += kwh
+    return round(total, 3)
 
 
 class OctopusClient:
@@ -318,6 +344,138 @@ class OctopusClient:
             )
 
         return await self._get_cached("dispatches", 300, fetch)
+
+    async def get_smart_device_ids(self) -> dict[str, str]:
+        """Discover HAN device (Octopus Home Mini) ids for the account.
+
+        Returns a mapping like {"electricity": "<deviceId>"}. Empty when no
+        Home Mini is bridging the meter's live feed to Octopus.
+        """
+        if not self.configured() or not self._creds.account_number:
+            return {}
+
+        async def fetch() -> dict[str, str]:
+            token = await self._obtain_kraken_token()
+            query = """
+            query SmartDevices($accountNumber: String!) {
+              account(accountNumber: $accountNumber) {
+                electricityAgreements(active: true) {
+                  meterPoint {
+                    meters(includeInactive: false) {
+                      smartDevices { deviceId }
+                    }
+                  }
+                }
+              }
+            }
+            """
+            response = await self._graphql_client.post(
+                KRAKEN_GRAPHQL,
+                json={
+                    "query": query,
+                    "variables": {"accountNumber": self._creds.account_number},
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            response.raise_for_status()
+            body = response.json()
+            if body.get("errors"):
+                raise ValueError(
+                    body["errors"][0].get("message", "Smart device query failed")
+                )
+            data = body.get("data") or {}
+            account = data.get("account") or {}
+            device_id = ""
+            for agreement in account.get("electricityAgreements") or []:
+                meter_point = agreement.get("meterPoint") or {}
+                for meter in meter_point.get("meters") or []:
+                    for device in meter.get("smartDevices") or []:
+                        candidate = device.get("deviceId")
+                        if candidate:
+                            device_id = candidate
+                            break
+                    if device_id:
+                        break
+                if device_id:
+                    break
+            return {"electricity": device_id} if device_id else {}
+
+        return await self._get_cached("smart_device_ids", 3600, fetch)
+
+    async def get_live_demand(self) -> OctopusLiveDemand:
+        """Latest near-live whole-home power (W) from the Home Mini, if present."""
+        if not self.configured():
+            return OctopusLiveDemand(available=False)
+
+        device_id = self._creds.device_id
+        if not device_id:
+            try:
+                device_id = (await self.get_smart_device_ids()).get("electricity", "")
+            except Exception:
+                device_id = ""
+            if device_id:
+                self._creds.device_id = device_id
+        if not device_id:
+            return OctopusLiveDemand(available=False)
+
+        async def fetch() -> OctopusLiveDemand:
+            token = await self._obtain_kraken_token()
+            now = datetime.now(timezone.utc)
+            start = (now - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+            query = """
+            query LiveTelemetry($deviceId: String!, $start: DateTime!, $end: DateTime!) {
+              smartMeterTelemetry(
+                deviceId: $deviceId
+                grouping: TEN_SECONDS
+                start: $start
+                end: $end
+              ) {
+                readAt
+                demand
+              }
+            }
+            """
+            response = await self._graphql_client.post(
+                KRAKEN_GRAPHQL,
+                json={
+                    "query": query,
+                    "variables": {"deviceId": device_id, "start": start, "end": end},
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            response.raise_for_status()
+            body = response.json()
+            if body.get("errors"):
+                raise ValueError(
+                    body["errors"][0].get("message", "Live telemetry query failed")
+                )
+            rows = (body.get("data") or {}).get("smartMeterTelemetry") or []
+            latest = None
+            for row in rows:
+                if row.get("demand") is None or not row.get("readAt"):
+                    continue
+                if latest is None or str(row["readAt"]) > str(latest["readAt"]):
+                    latest = row
+            if latest is None:
+                return OctopusLiveDemand(available=False)
+            try:
+                demand_w = round(float(latest["demand"]), 1)
+            except (TypeError, ValueError):
+                return OctopusLiveDemand(available=False)
+            try:
+                read_at = datetime.fromisoformat(
+                    str(latest["readAt"]).replace("Z", "+00:00")
+                )
+            except ValueError:
+                read_at = None
+            return OctopusLiveDemand(
+                available=True,
+                demand_w=max(0.0, demand_w),
+                read_at=read_at,
+            )
+
+        return await self._get_cached("live_demand", 10, fetch)
 
     def configured(self) -> bool:
         return bool(self._creds.api_key)
@@ -548,9 +706,8 @@ class OctopusClient:
 
         return await self._get_cached("consumption", 600, fetch)
 
-    async def get_meter_power_estimate(self) -> OctopusMeterPower:
-        if not self.configured():
-            return OctopusMeterPower(configured=False, message="Octopus API not configured")
+    async def _settled_meter_power(self) -> OctopusMeterPower:
+        """30-minute settled meter reading from the REST consumption endpoint."""
         if not self._creds.mpan or not self._creds.meter_serial:
             return OctopusMeterPower(
                 configured=False,
@@ -562,7 +719,7 @@ class OctopusClient:
                 f"/electricity-meter-points/{self._creds.mpan}/"
                 f"meters/{self._creds.meter_serial}/consumption/"
             )
-            response = await self._client.get(url, params={"page_size": 4})
+            response = await self._client.get(url, params={"page_size": 48})
             response.raise_for_status()
             raw_intervals = response.json().get("results", [])
             picked = pick_consumption_interval_for_display(raw_intervals)
@@ -579,10 +736,33 @@ class OctopusClient:
                 interval_start=start,
                 interval_end=end,
                 is_current_interval=is_current,
+                daily_import_kwh=sum_consumption_since_midnight(raw_intervals),
                 message="",
             )
 
         return await self._get_cached("meter_power", 120, fetch)
+
+    async def get_meter_power_estimate(self) -> OctopusMeterPower:
+        if not self.configured():
+            return OctopusMeterPower(configured=False, message="Octopus API not configured")
+
+        settled = await self._settled_meter_power()
+
+        # Layer near-live Home Mini demand on top (10s cache), if available.
+        try:
+            live = await self.get_live_demand()
+        except Exception:
+            live = None
+        if live is not None and live.available and live.demand_w is not None:
+            return settled.model_copy(
+                update={
+                    "configured": True,
+                    "live_available": True,
+                    "live_demand_w": live.demand_w,
+                    "live_read_at": live.read_at,
+                }
+            )
+        return settled
 
     async def get_account(self) -> dict[str, Any]:
         if not self.configured() or not self._creds.account_number:

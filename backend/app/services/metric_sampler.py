@@ -86,12 +86,23 @@ async def prune_old_samples() -> None:
 
 async def _sampler_loop() -> None:
     prune_counter = 0
+    savings_counter = 0
     while True:
         await sample_once()
         prune_counter += 1
+        savings_counter += 1
         if prune_counter >= 60:
             await prune_old_samples()
             prune_counter = 0
+        if savings_counter >= 120:
+            try:
+                async with SessionLocal() as db:
+                    from app.services.daily_savings_service import daily_savings_service
+
+                    await daily_savings_service.upsert_today(db)
+            except Exception as exc:
+                logger.warning("Daily savings rollup failed: %s", exc)
+            savings_counter = 0
         await asyncio.sleep(settings.metrics_sample_interval_seconds)
 
 

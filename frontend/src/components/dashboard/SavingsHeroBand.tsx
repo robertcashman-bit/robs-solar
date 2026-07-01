@@ -160,13 +160,40 @@ export function SavingsHeroBand({
         <article
           className={`hero-kpi relative min-w-[72%] shrink-0 snap-start overflow-hidden rounded-2xl border bg-gradient-to-br p-4 sm:min-w-0 ${toneClasses.meter}`}
         >
-          <p className="text-[0.65rem] font-semibold uppercase tracking-wider opacity-80">Smart meter</p>
+          <p className="flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-wider opacity-80">
+            Electricity meter
+            {octopusDisplay?.isLive ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[0.6rem] font-bold text-emerald-700 dark:text-emerald-300">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                Live
+              </span>
+            ) : null}
+          </p>
           {octopusDisplay ? (
             <>
               <p className="mt-1 text-2xl font-bold tabular-nums">
-                {Math.round(octopusMeter!.average_power_w!).toLocaleString()} W
+                {(octopusDisplay.isLive
+                  ? (octopusDisplay.liveW as number)
+                  : (octopusDisplay.averageW as number)
+                ).toLocaleString()}{" "}
+                W
               </p>
-              <p className="mt-0.5 text-xs opacity-75">30-min average · Octopus</p>
+              <p className="mt-0.5 text-xs font-medium opacity-90">
+                {octopusDisplay.isLive ? (
+                  <>
+                    Live whole-home draw · updates ~10s
+                    {octopusDisplay.averageHeadline
+                      ? ` · ${octopusDisplay.averageHeadline}`
+                      : ""}
+                  </>
+                ) : (
+                  <>
+                    Meter read {octopusDisplay.slotKwh} this half-hour
+                    {octopusDisplay.dailyKwh ? ` · ${octopusDisplay.dailyKwh}` : ""}
+                  </>
+                )}
+              </p>
+              <p className="mt-0.5 text-xs opacity-75">{octopusDisplay.detail}</p>
             </>
           ) : octopusMeterLoading ? (
             <>
@@ -200,13 +227,41 @@ export function SavingsHeroBand({
       {meterLimited ? (
         <p className="rounded-lg border border-amber-400/35 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-900 dark:text-amber-200">
           {meterLimitedWarningHeadline(metrics)}{" "}
-          {octopusDisplay ? (
+          {octopusDisplay?.isLive ? (
             <>
-              Your smart meter reads about{" "}
+              Your electricity meter is drawing{" "}
               <span className="font-semibold tabular-nums">
-                {Math.round(octopusMeter!.average_power_w!).toLocaleString()} W
+                {(octopusDisplay.liveW as number).toLocaleString()} W
               </span>{" "}
-              (30-min average) while the inverter shows only what passes through its sensors (~
+              right now
+              {octopusDisplay.averageHeadline ? (
+                <>
+                  {" "}
+                  (<span className="font-semibold tabular-nums">
+                    {octopusDisplay.averageHeadline}
+                  </span>{" "}
+                  over the half-hour)
+                </>
+              ) : null}{" "}
+              while the inverter shows only what passes through its sensors (~
+              {Math.round(houseLoad.watts).toLocaleString()} W now).
+            </>
+          ) : octopusDisplay ? (
+            <>
+              Your electricity meter reported{" "}
+              <span className="font-semibold tabular-nums">{octopusDisplay.slotKwh}</span> in the
+              latest half-hour (~
+              <span className="font-semibold tabular-nums">
+                {(octopusDisplay.averageW as number).toLocaleString()} W
+              </span>
+              average)
+              {octopusDisplay.dailyKwh ? (
+                <>
+                  {" "}
+                  and <span className="font-semibold">{octopusDisplay.dailyKwh}</span>
+                </>
+              ) : null}{" "}
+              while the inverter shows only what passes through its sensors (~
               {Math.round(houseLoad.watts).toLocaleString()} W now).
             </>
           ) : (

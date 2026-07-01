@@ -30,6 +30,7 @@ const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
   { value: "day", label: "Day" },
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
+  { value: "year", label: "Year" },
 ];
 
 const CHART_COLORS = {

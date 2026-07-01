@@ -187,7 +187,7 @@ export type UserInfo = z.infer<typeof userInfoSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
 export type CapabilitiesResponse = z.infer<typeof capabilitiesResponseSchema>;
 
-export const historyRangeSchema = z.enum(["day", "week", "month"]);
+export const historyRangeSchema = z.enum(["day", "week", "month", "year"]);
 
 export const metricHistoryPointSchema = z.object({
   timestamp: z.string(),
@@ -197,11 +197,51 @@ export const metricHistoryPointSchema = z.object({
   grid_import_w: z.number(),
   grid_export_w: z.number(),
   battery_soh_pct: z.number().nullable().optional(),
+  battery_power_w: z.number().nullable().optional(),
 });
 
 export const metricHistorySchema = z.object({
   range: historyRangeSchema,
   points: z.array(metricHistoryPointSchema),
+});
+
+export const savingsBreakdownLineSchema = z.object({
+  label: z.string(),
+  amount: z.number(),
+  detail: z.string().optional(),
+});
+
+export const savingsBreakdownSchema = z.object({
+  lines: z.array(savingsBreakdownLineSchema).optional(),
+  import_kwh: z.number().optional(),
+  export_kwh: z.number().optional(),
+  import_rate_gbp: z.number().optional(),
+  export_rate_gbp: z.number().optional(),
+  standing_charge_gbp: z.number().optional(),
+  include_standing_charge: z.boolean().optional(),
+  cheap_import_kwh: z.number().optional(),
+  peak_import_kwh: z.number().optional(),
+  cheap_import_cost: z.number().optional(),
+  peak_import_cost: z.number().optional(),
+  peak_import_avoided_kwh: z.number().optional(),
+  peak_import_avoided_value: z.number().optional(),
+  cheap_rate_charging_cost: z.number().optional(),
+  battery_charge_kwh: z.number().optional(),
+  battery_discharge_kwh: z.number().optional(),
+});
+
+export const optimisationScoreComponentSchema = z.object({
+  label: z.string(),
+  max_points: z.number(),
+  points: z.number(),
+  detail: z.string().optional(),
+});
+
+export const optimisationScoreSchema = z.object({
+  total: z.number(),
+  components: z.array(optimisationScoreComponentSchema).optional(),
+  lost_points_reasons: z.array(z.string()).optional(),
+  missed_saving_gbp: z.number().optional(),
 });
 
 export const metricSummarySchema = z.object({
@@ -217,6 +257,10 @@ export const metricSummarySchema = z.object({
   estimated_cost_without_solar: z.number(),
   savings: z.number(),
   currency: z.string(),
+  standing_charge: z.number().optional(),
+  breakdown: savingsBreakdownSchema.nullable().optional(),
+  optimisation_score: optimisationScoreSchema.nullable().optional(),
+  system_status: z.string().optional(),
 });
 
 export const metricCompareDeltaSchema = z.object({
@@ -240,6 +284,90 @@ export const tariffSettingsSchema = z.object({
   import_rate: z.number().min(0).max(10),
   export_rate: z.number().min(0).max(10),
   currency: z.string().length(3),
+  night_import_rate: z.number().min(0).max(10).nullable().optional(),
+  standing_charge_gbp: z.number().min(0).max(10).optional(),
+  include_standing_charge: z.boolean().optional(),
+  off_peak_start: z.string().optional(),
+  off_peak_end: z.string().optional(),
+  peak_start: z.string().optional(),
+  peak_end: z.string().optional(),
+  battery_capacity_kwh: z.number().min(0).max(100).optional(),
+  battery_minimum_reserve_pct: z.number().min(0).max(100).optional(),
+  maximum_charge_pct: z.number().min(0).max(100).optional(),
+  warning_import_threshold_w: z.number().min(0).max(10000).optional(),
+  warning_battery_soc_threshold_pct: z.number().min(0).max(100).optional(),
+});
+
+export const systemWarningSchema = z.object({
+  id: z.string(),
+  severity: z.enum(["green", "amber", "red"]),
+  title: z.string(),
+  message: z.string(),
+  category: z.string(),
+});
+
+export const systemWarningsResponseSchema = z.object({
+  warnings: z.array(systemWarningSchema),
+  status_headline: z.string().optional(),
+});
+
+export const recommendationSchema = z.object({
+  id: z.number(),
+  date: z.string(),
+  recommendation_type: z.string(),
+  title: z.string(),
+  current_setting: z.string(),
+  proposed_setting: z.string(),
+  reason: z.string(),
+  estimated_extra_saving_gbp: z.number(),
+  risk_level: z.enum(["low", "medium", "high"]),
+  status: z.enum(["pending", "applied", "dismissed", "manual"]),
+  manual_instructions: z.string().optional(),
+  rollback_value: z.string().optional(),
+  calculation_detail: z.string().optional(),
+  can_auto_apply: z.boolean().optional(),
+});
+
+export const recommendationsResponseSchema = z.object({
+  recommendations: z.array(recommendationSchema),
+});
+
+export const optimisationModeSchema = z.object({
+  mode: z.enum(["read_only", "confirm", "auto"]),
+  allow_auto_charge_window_changes: z.boolean(),
+  allow_auto_discharge_window_changes: z.boolean(),
+  allow_auto_reserve_changes: z.boolean(),
+  allow_auto_grid_charge_changes: z.boolean(),
+});
+
+export const dailySavingsPointSchema = z.object({
+  date: z.string(),
+  savings_gbp: z.number(),
+  net_cost_gbp: z.number(),
+  estimated_no_solar_gbp: z.number(),
+  optimisation_score: z.number().optional(),
+  pv_kwh: z.number().optional(),
+  import_kwh: z.number().optional(),
+});
+
+export const savingsHistorySchema = z.object({
+  range: historyRangeSchema,
+  points: z.array(dailySavingsPointSchema),
+  total_savings_gbp: z.number(),
+  projected_annual_gbp: z.number(),
+  year_to_date_gbp: z.number(),
+});
+
+export const forecastStrategySchema = z.object({
+  date: z.string(),
+  solar_level: z.string(),
+  overnight_charge_target_pct: z.number(),
+  daytime_reserve_pct: z.number(),
+  fill_battery_overnight: z.boolean(),
+  prioritise_self_consumption: z.boolean(),
+  headline: z.string(),
+  detail: z.string(),
+  predicted_solar_kwh: z.number().optional(),
 });
 
 export const touBandSchema = z.object({
@@ -279,6 +407,8 @@ export const octopusConfigStatusSchema = z.object({
   mpan: z.string(),
   meter_serial: z.string(),
   region: z.string(),
+  device_id: z.string().optional(),
+  live_available: z.boolean().optional(),
   configured: z.boolean(),
 });
 
@@ -316,6 +446,10 @@ export const octopusMeterPowerSchema = z.object({
   interval_start: z.string().nullable().optional(),
   interval_end: z.string().nullable().optional(),
   is_current_interval: z.boolean().optional(),
+  daily_import_kwh: z.number().nullable().optional(),
+  live_available: z.boolean().optional(),
+  live_demand_w: z.number().nullable().optional(),
+  live_read_at: z.string().nullable().optional(),
   message: z.string().optional(),
 });
 
@@ -557,3 +691,10 @@ export type HistoryRange = z.infer<typeof historyRangeSchema>;
 export type MetricHistory = z.infer<typeof metricHistorySchema>;
 export type MetricSummary = z.infer<typeof metricSummarySchema>;
 export type TariffSettings = z.infer<typeof tariffSettingsSchema>;
+export type SystemWarning = z.infer<typeof systemWarningSchema>;
+export type SystemWarningsResponse = z.infer<typeof systemWarningsResponseSchema>;
+export type OptimisationRecommendation = z.infer<typeof recommendationSchema>;
+export type OptimisationModeSettings = z.infer<typeof optimisationModeSchema>;
+export type OptimisationScore = z.infer<typeof optimisationScoreSchema>;
+export type SavingsHistory = z.infer<typeof savingsHistorySchema>;
+export type ForecastStrategy = z.infer<typeof forecastStrategySchema>;

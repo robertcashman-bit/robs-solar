@@ -31,6 +31,7 @@ import {
 } from "@/lib/schemas";
 import { useLiveMetrics } from "@/lib/use-live-metrics";
 import { useOctopusMeter } from "@/lib/use-octopus-meter";
+import { useOptimisationDashboard } from "@/lib/use-optimisation-dashboard";
 import type { CompareRange } from "@/lib/money";
 
 export default function DashboardPage() {
@@ -45,6 +46,11 @@ export default function DashboardPage() {
     error: octopusMeterError,
     refresh: refreshOctopusMeter,
   } = useOctopusMeter({ enabled: Boolean(user) });
+  const {
+    warnings,
+    recommendations,
+    refresh: refreshOptimisation,
+  } = useOptimisationDashboard({ enabled: Boolean(user) });
   const [connectivity, setConnectivity] = useState<ConnectivityStatus | null>(null);
   const [summary, setSummary] = useState<MetricSummary | null>(null);
   const [compare, setCompare] = useState<MetricCompare | null>(null);
@@ -153,8 +159,13 @@ export default function DashboardPage() {
   );
 
   const refresh = useCallback(async () => {
-    await Promise.all([refreshMetrics(), refreshMeta(), refreshOctopusMeter()]);
-  }, [refreshMetrics, refreshMeta, refreshOctopusMeter]);
+    await Promise.all([
+      refreshMetrics(),
+      refreshMeta(),
+      refreshOctopusMeter(),
+      refreshOptimisation(),
+    ]);
+  }, [refreshMetrics, refreshMeta, refreshOctopusMeter, refreshOptimisation]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -277,6 +288,9 @@ export default function DashboardPage() {
           ratePlan={ratePlan}
           sellOpportunity={sellOpportunity}
           canControl={canWrite(user)}
+          warnings={warnings}
+          recommendations={recommendations}
+          onOptimisationRefresh={() => void refreshOptimisation()}
           onRefresh={refresh}
         />
       </div>

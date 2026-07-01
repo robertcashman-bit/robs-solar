@@ -303,6 +303,7 @@ class HistoryRange(str, Enum):
     DAY = "day"
     WEEK = "week"
     MONTH = "month"
+    YEAR = "year"
 
 
 class MetricHistoryPoint(BaseModel):
@@ -313,11 +314,37 @@ class MetricHistoryPoint(BaseModel):
     grid_import_w: float
     grid_export_w: float
     battery_soh_pct: Optional[float] = None
+    battery_power_w: Optional[float] = None
 
 
 class MetricHistoryResponse(BaseModel):
     range: HistoryRange
     points: list[MetricHistoryPoint]
+
+
+class SavingsBreakdownLine(BaseModel):
+    label: str
+    amount: float
+    detail: str = ""
+
+
+class SavingsBreakdown(BaseModel):
+    lines: list[SavingsBreakdownLine] = Field(default_factory=list)
+    import_kwh: float = 0.0
+    export_kwh: float = 0.0
+    import_rate_gbp: float = 0.0
+    export_rate_gbp: float = 0.0
+    standing_charge_gbp: float = 0.0
+    include_standing_charge: bool = False
+    cheap_import_kwh: float = 0.0
+    peak_import_kwh: float = 0.0
+    cheap_import_cost: float = 0.0
+    peak_import_cost: float = 0.0
+    peak_import_avoided_kwh: float = 0.0
+    peak_import_avoided_value: float = 0.0
+    cheap_rate_charging_cost: float = 0.0
+    battery_charge_kwh: float = 0.0
+    battery_discharge_kwh: float = 0.0
 
 
 class MetricSummaryResponse(BaseModel):
@@ -333,6 +360,10 @@ class MetricSummaryResponse(BaseModel):
     estimated_cost_without_solar: float
     savings: float
     currency: str
+    standing_charge: float = 0.0
+    breakdown: Optional[SavingsBreakdown] = None
+    optimisation_score: Optional["OptimisationScore"] = None
+    system_status: str = ""
 
 
 class MetricCompareDelta(BaseModel):
@@ -354,6 +385,149 @@ class TariffSettings(BaseModel):
     import_rate: float = Field(ge=0, le=10)
     export_rate: float = Field(ge=0, le=10)
     currency: str = Field(min_length=3, max_length=3)
+    night_import_rate: Optional[float] = Field(default=None, ge=0, le=10)
+    standing_charge_gbp: float = Field(default=0.0, ge=0, le=10)
+    include_standing_charge: bool = False
+    off_peak_start: str = Field(default="23:30", max_length=5)
+    off_peak_end: str = Field(default="05:30", max_length=5)
+    peak_start: str = Field(default="07:00", max_length=5)
+    peak_end: str = Field(default="23:00", max_length=5)
+    battery_capacity_kwh: float = Field(default=10.0, ge=0, le=100)
+    battery_minimum_reserve_pct: int = Field(default=20, ge=0, le=100)
+    maximum_charge_pct: int = Field(default=100, ge=0, le=100)
+    warning_import_threshold_w: int = Field(default=300, ge=0, le=10000)
+    warning_battery_soc_threshold_pct: int = Field(default=95, ge=0, le=100)
+
+
+class OptimisationMode(str, Enum):
+    READ_ONLY = "read_only"
+    CONFIRM = "confirm"
+    AUTO = "auto"
+
+
+class OptimisationModeSettings(BaseModel):
+    mode: OptimisationMode = OptimisationMode.READ_ONLY
+    allow_auto_charge_window_changes: bool = False
+    allow_auto_discharge_window_changes: bool = False
+    allow_auto_reserve_changes: bool = False
+    allow_auto_grid_charge_changes: bool = False
+
+
+class OptimisationScoreComponent(BaseModel):
+    label: str
+    max_points: int
+    points: int
+    detail: str = ""
+
+
+class OptimisationScore(BaseModel):
+    total: int = Field(ge=0, le=100)
+    components: list[OptimisationScoreComponent] = Field(default_factory=list)
+    lost_points_reasons: list[str] = Field(default_factory=list)
+    missed_saving_gbp: float = 0.0
+
+
+class SystemWarningSeverity(str, Enum):
+    GREEN = "green"
+    AMBER = "amber"
+    RED = "red"
+
+
+class SystemWarning(BaseModel):
+    id: str
+    severity: SystemWarningSeverity
+    title: str
+    message: str
+    category: str
+
+
+class SystemWarningsResponse(BaseModel):
+    warnings: list[SystemWarning] = Field(default_factory=list)
+    status_headline: str = ""
+
+
+class RecommendationType(str, Enum):
+    CHARGE_WINDOW = "charge_window"
+    DISCHARGE_WINDOW = "discharge_window"
+    MIN_RESERVE = "min_reserve"
+    MAX_CHARGE = "max_charge"
+    GRID_CHARGE = "grid_charge"
+    DISCHARGE_PRIORITY = "discharge_priority"
+    EXPORT_PRIORITY = "export_priority"
+
+
+class RecommendationRisk(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class RecommendationStatus(str, Enum):
+    PENDING = "pending"
+    APPLIED = "applied"
+    DISMISSED = "dismissed"
+    MANUAL = "manual"
+
+
+class OptimisationRecommendation(BaseModel):
+    id: int
+    date: str
+    recommendation_type: RecommendationType
+    title: str
+    current_setting: str
+    proposed_setting: str
+    reason: str
+    estimated_extra_saving_gbp: float = 0.0
+    risk_level: RecommendationRisk = RecommendationRisk.LOW
+    status: RecommendationStatus = RecommendationStatus.PENDING
+    manual_instructions: str = ""
+    rollback_value: str = ""
+    calculation_detail: str = ""
+    can_auto_apply: bool = False
+    created_at: Optional[datetime] = None
+    applied_at: Optional[datetime] = None
+    dismissed_at: Optional[datetime] = None
+
+
+class RecommendationsResponse(BaseModel):
+    recommendations: list[OptimisationRecommendation] = Field(default_factory=list)
+
+
+class RecommendationApplyResult(BaseModel):
+    success: bool
+    message: str
+    manual_instructions: str = ""
+    audit_id: Optional[int] = None
+
+
+class DailySavingsPoint(BaseModel):
+    date: str
+    savings_gbp: float
+    net_cost_gbp: float
+    estimated_no_solar_gbp: float
+    optimisation_score: int = 0
+    pv_kwh: float = 0.0
+    import_kwh: float = 0.0
+
+
+class SavingsHistoryResponse(BaseModel):
+    range: HistoryRange
+    points: list[DailySavingsPoint] = Field(default_factory=list)
+    total_savings_gbp: float = 0.0
+    projected_annual_gbp: float = 0.0
+    year_to_date_gbp: float = 0.0
+
+
+class ForecastStrategy(BaseModel):
+    date: str
+    solar_level: str = "medium"
+    overnight_charge_target_pct: int = 100
+    daytime_reserve_pct: int = 20
+    fill_battery_overnight: bool = True
+    prioritise_self_consumption: bool = True
+    headline: str = ""
+    detail: str = ""
+    predicted_solar_kwh: float = 0.0
 
 
 class OctopusConfig(BaseModel):
@@ -364,6 +538,7 @@ class OctopusConfig(BaseModel):
     mpan: str = Field(default="", max_length=21)
     meter_serial: str = Field(default="", max_length=32)
     region: str = Field(default="C", max_length=1)
+    device_id: str = Field(default="", max_length=64)
 
 
 class OctopusConfigStatus(BaseModel):
@@ -374,6 +549,8 @@ class OctopusConfigStatus(BaseModel):
     mpan: str = ""
     meter_serial: str = ""
     region: str = "C"
+    device_id: str = ""
+    live_available: bool = False
     configured: bool = False
 
 
@@ -537,8 +714,16 @@ class ReconciliationResponse(BaseModel):
     message: str = ""
 
 
+class OctopusLiveDemand(BaseModel):
+    """Near-live whole-home power (W) from an Octopus Home Mini, if present."""
+
+    available: bool = False
+    demand_w: Optional[float] = Field(default=None, ge=0)
+    read_at: Optional[datetime] = None
+
+
 class OctopusMeterPower(BaseModel):
-    """Smart meter draw estimated from the latest Octopus half-hourly interval."""
+    """Smart meter reading from Octopus half-hourly consumption intervals."""
 
     configured: bool = False
     average_power_w: Optional[float] = Field(default=None, ge=0)
@@ -546,6 +731,11 @@ class OctopusMeterPower(BaseModel):
     interval_start: Optional[datetime] = None
     interval_end: Optional[datetime] = None
     is_current_interval: bool = False
+    daily_import_kwh: Optional[float] = Field(default=None, ge=0)
+    # Live Home Mini fields (populated only when a HAN bridge device is active).
+    live_available: bool = False
+    live_demand_w: Optional[float] = Field(default=None, ge=0)
+    live_read_at: Optional[datetime] = None
     message: str = ""
 
 

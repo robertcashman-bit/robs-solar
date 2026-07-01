@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     octopus_account_number: str = ""
     octopus_mpan: str = ""
     octopus_meter_serial: str = ""
+    octopus_device_id: str = ""
     octopus_tariff: str = "AGILE"
     octopus_region: str = "C"
 

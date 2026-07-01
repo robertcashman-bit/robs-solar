@@ -137,15 +137,16 @@ export function EnergyFlow({ metrics, octopusMeter = null }: EnergyFlowProps) {
   const octopusMeterDisplay = octopusMeterPowerDisplay(octopusMeter);
   const meterLimited = isInverterMeterLimited(metrics, octopusMeter, houseLoad.watts);
   const gridCtOnly = metrics.grid_meter_connected !== true && meterLimited;
+  const meterSubLabel = octopusMeterDisplay
+    ? octopusMeterDisplay.isLive
+      ? `Meter live ${(octopusMeterDisplay.liveW as number).toLocaleString()} W`
+      : `Meter avg ${octopusMeterDisplay.headline.replace(" average", "")}`
+    : null;
   const homeSub =
-    octopusMeterDisplay && !loadBadge
-      ? [houseLoad.sublabel, `Meter avg ${octopusMeterDisplay.headline.replace(" average", "")}`]
-          .filter(Boolean)
-          .join(" · ")
+    meterSubLabel && !loadBadge
+      ? [houseLoad.sublabel, meterSubLabel].filter(Boolean).join(" · ")
       : loadBadge
-        ? octopusMeterDisplay
-          ? `Meter avg ${octopusMeterDisplay.headline.replace(" average", "")}`
-          : undefined
+        ? (meterSubLabel ?? undefined)
         : houseLoad.sublabel;
   const gridSub = gridCtOnly
     ? `${gridState.sublabel} · Inverter CT only`
@@ -196,8 +197,20 @@ export function EnergyFlow({ metrics, octopusMeter = null }: EnergyFlowProps) {
 
       {octopusMeterDisplay ? (
         <div className="mt-3 rounded-lg border border-sky-400/35 bg-sky-500/10 px-3 py-2 text-sm text-sky-950 dark:text-sky-100">
-          <p className="font-semibold tabular-nums">
-            Smart meter (Octopus): {octopusMeterDisplay.headline}
+          <p className="flex items-center gap-1.5 font-semibold tabular-nums">
+            {octopusMeterDisplay.isLive ? (
+              <>
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[0.65rem] font-bold text-emerald-700 dark:text-emerald-300">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                  Live
+                </span>
+                Electricity meter: {octopusMeterDisplay.headline}
+              </>
+            ) : (
+              <>
+                Electricity meter: {octopusMeterDisplay.slotKwh} ({octopusMeterDisplay.headline})
+              </>
+            )}
           </p>
           <p className="mt-0.5 opacity-85">{octopusMeterDisplay.detail}</p>
         </div>

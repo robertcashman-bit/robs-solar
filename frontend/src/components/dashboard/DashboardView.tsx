@@ -9,7 +9,9 @@ import type {
   OctopusRatePlan,
   OctopusTariff,
   OctopusMeterPower,
+  OptimisationRecommendation,
   SellOpportunity,
+  SystemWarningsResponse,
 } from "@/lib/schemas";
 import { selfConsumptionPctFromLive } from "@/lib/energy-flow";
 import { buildSavingsInsights } from "@/lib/savings-insights";
@@ -28,6 +30,9 @@ import { SavingsHeroBand } from "./SavingsHeroBand";
 import { SavingsInsightsPanel } from "./SavingsInsightsPanel";
 import { SavingsCard } from "./SavingsCard";
 import { AiAdviceCard } from "./AiAdviceCard";
+import { OptimisationScoreCard } from "./OptimisationScoreCard";
+import { RecommendationsPanel } from "./RecommendationsPanel";
+import { WarningsPanel } from "./WarningsPanel";
 import { TodayCompareStrip } from "./TodayCompareStrip";
 import type { CompareRange } from "@/lib/money";
 
@@ -51,6 +56,9 @@ type DashboardViewProps = {
   ratePlan?: OctopusRatePlan | null;
   sellOpportunity?: SellOpportunity | null;
   canControl?: boolean;
+  warnings?: SystemWarningsResponse | null;
+  recommendations?: OptimisationRecommendation[];
+  onOptimisationRefresh?: () => void;
   onRefresh?: () => void | Promise<void>;
 };
 
@@ -98,6 +106,9 @@ export function DashboardView({
   ratePlan = null,
   sellOpportunity = null,
   canControl = false,
+  warnings = null,
+  recommendations = [],
+  onOptimisationRefresh,
   onRefresh,
 }: DashboardViewProps) {
   const insights = useMemo(
@@ -200,6 +211,23 @@ export function DashboardView({
         octopusMeter={octopusMeter}
         octopusMeterLoading={octopusMeterLoading}
         octopusMeterError={octopusMeterError}
+      />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <OptimisationScoreCard
+          score={summary?.optimisation_score}
+          topRecommendation={recommendations[0] ?? null}
+          currency={summary?.currency}
+        />
+        <WarningsPanel
+          warnings={warnings?.warnings ?? []}
+          statusHeadline={warnings?.status_headline ?? summary?.system_status}
+        />
+      </div>
+      <RecommendationsPanel
+        recommendations={recommendations}
+        currency={summary?.currency}
+        canApply={canControl}
+        onChanged={onOptimisationRefresh}
       />
       <TodayCompareStrip
         compare={compare}

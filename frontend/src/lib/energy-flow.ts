@@ -152,6 +152,9 @@ function smartMeterAverageW(
   metrics: LiveMetrics,
   octopusMeter?: OctopusMeterPower | null,
 ): number | null {
+  if (octopusMeter?.configured && octopusMeter.live_available && octopusMeter.live_demand_w != null) {
+    return octopusMeter.live_demand_w;
+  }
   if (octopusMeter?.configured && octopusMeter.average_power_w != null) {
     return octopusMeter.average_power_w;
   }
@@ -194,11 +197,23 @@ export function meterLimitedWarningHeadline(metrics: LiveMetrics): string {
   return "Live load is estimated from the inverter only.";
 }
 
-/** Octopus half-hourly smart meter estimate for dashboard display. */
-export function octopusMeterPowerDisplay(
-  meter: OctopusMeterPower | null | undefined,
-): { headline: string; detail: string } | null {
-  if (!meter?.configured || meter.average_power_w == null) {
+/** Octopus half-hourly smart meter reading for dashboard display. */
+export function octopusMeterPowerDisplay(meter: OctopusMeterPower | null | undefined): {
+  headline: string;
+  detail: string;
+  slotKwh: string;
+  dailyKwh: string | null;
+  isLive: boolean;
+  liveW: number | null;
+  averageW: number | null;
+  averageHeadline: string | null;
+} | null {
+  if (!meter?.configured) {
+    return null;
+  }
+  const isLive = meter.live_available === true && meter.live_demand_w != null;
+  const liveW = isLive ? Math.round(meter.live_demand_w as number) : null;
+  if (!isLive && meter.average_power_w == null) {
     return null;
   }
   const start = meter.interval_start ? formatIntervalClock(meter.interval_start) : null;
@@ -206,9 +221,29 @@ export function octopusMeterPowerDisplay(
   const slot = start && end ? `${start}–${end}` : "latest half hour";
   const phase = meter.is_current_interval ? "in progress" : "last completed";
   const kwh = meter.consumption_kwh?.toFixed(3) ?? "—";
+  const daily =
+    meter.daily_import_kwh != null ? `${meter.daily_import_kwh.toFixed(1)} kWh today` : null;
+  const averageW = meter.average_power_w != null ? Math.round(meter.average_power_w) : null;
+  const averageHeadline = averageW != null ? `${averageW.toLocaleString()} W average` : null;
+  const headline = isLive
+    ? `${(liveW as number).toLocaleString()} W now`
+    : (averageHeadline as string);
+  const settledDetail =
+    averageW != null
+      ? `${averageW.toLocaleString()} W avg · ${kwh} kWh · ${slot} (${phase})`
+      : `${kwh} kWh · ${slot} (${phase})`;
+  const detail = isLive
+    ? `Live whole-home draw · ${settledDetail}${daily ? ` · ${daily}` : ""}`
+    : `Electricity meter · ${kwh} kWh · ${slot} (${phase})${daily ? ` · ${daily}` : ""}`;
   return {
-    headline: `${Math.round(meter.average_power_w).toLocaleString()} W average`,
-    detail: `Smart meter · ${kwh} kWh · ${slot} (${phase}) · updates every 30 min`,
+    headline,
+    slotKwh: `${kwh} kWh`,
+    dailyKwh: daily,
+    isLive,
+    liveW,
+    averageW,
+    averageHeadline,
+    detail,
   };
 }
 

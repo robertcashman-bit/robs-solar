@@ -11,6 +11,7 @@ import { OctopusSettingsForm } from "@/components/settings/OctopusSettingsForm";
 import { InstallerAccessPanel } from "@/components/settings/InstallerAccessPanel";
 import { TariffSettingsForm } from "@/components/settings/TariffSettingsForm";
 import { NotificationSettingsForm } from "@/components/settings/NotificationSettingsForm";
+import { OptimisationModePanel } from "@/components/settings/OptimisationModePanel";
 import { RemoteAccessPanel } from "@/components/settings/RemoteAccessPanel";
 import { SafetySettingsPanel } from "@/components/settings/SafetySettingsPanel";
 import { apiClient } from "@/lib/api-client";
@@ -27,6 +28,8 @@ import {
   safetySettingsSchema,
   type NotificationSettingsStatus,
   type SafetySettings,
+  optimisationModeSchema,
+  type OptimisationModeSettings,
   type TariffSettings,
 } from "@/lib/schemas";
 
@@ -59,6 +62,7 @@ export default function SettingsPage() {
   );
   const [safety, setSafety] = useState<SafetySettings | null>(null);
   const [notifications, setNotifications] = useState<NotificationSettingsStatus | null>(null);
+  const [optimisationMode, setOptimisationMode] = useState<OptimisationModeSettings | null>(null);
   const [auditPreview, setAuditPreview] = useState<string[]>([]);
 
   useEffect(() => {
@@ -84,11 +88,12 @@ export default function SettingsPage() {
           setInverterAccess(inverterSettingsSchema.parse(inverterData));
         }
         if (canWrite(user)) {
-          const [auditData, octopusData, safetyData, notifyData] = await Promise.all([
+          const [auditData, octopusData, safetyData, notifyData, optModeData] = await Promise.all([
             apiClient.get("/audit?limit=20"),
             apiClient.get("/octopus/settings").catch(() => null),
             apiClient.get("/config/safety").catch(() => null),
             apiClient.get("/settings/notifications").catch(() => null),
+            apiClient.get("/optimisation/mode").catch(() => null),
           ]);
           setAuditPreview(
             auditListSchema.parse(auditData).entries.map(
@@ -103,6 +108,9 @@ export default function SettingsPage() {
           }
           if (notifyData) {
             setNotifications(notificationSettingsStatusSchema.parse(notifyData));
+          }
+          if (optModeData) {
+            setOptimisationMode(optimisationModeSchema.parse(optModeData));
           }
         }
       } catch (fetchError) {
@@ -293,6 +301,10 @@ export default function SettingsPage() {
               setCapabilities(capabilitiesResponseSchema.parse(capsData));
             }}
           />
+        ) : null}
+
+        {canWrite(user) && optimisationMode ? (
+          <OptimisationModePanel initial={optimisationMode} readOnly={!canWrite(user)} />
         ) : null}
 
         {canWrite(user) ? (

@@ -102,15 +102,36 @@ export function SavingsCard({ summary, live = null, loading, compact = false }: 
             "linear-gradient(135deg, color-mix(in srgb, var(--accent-battery) 12%, var(--surface-elevated)), var(--surface-elevated))",
         }}
       >
-        <p className="solar-eyebrow">Estimated savings</p>
+        <p className="solar-eyebrow">Today&apos;s estimated saving</p>
         <p className={`mt-1 text-4xl font-bold tracking-tight tabular-nums sm:text-5xl ${savingsDisplay.className}`}>
           {savingsDisplay.amount}
         </p>
-        <p className="mt-2 text-sm font-medium text-[var(--foreground)]">{savingsDisplay.headline}</p>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          vs {formatCurrency(summary.estimated_cost_without_solar, summary.currency)} without solar
+        <p className="mt-2 text-sm font-medium text-[var(--foreground)]">
+          Actual cost {formatCurrency(summary.net_cost, summary.currency)} · No-solar est.{" "}
+          {formatCurrency(summary.estimated_cost_without_solar, summary.currency)}
         </p>
-        <p className="mt-2 text-xs text-[var(--muted)]">{SAVINGS_EXPLAINER}</p>
+        {summary.system_status ? (
+          <p className="mt-1 text-sm text-[var(--muted)]">{summary.system_status}</p>
+        ) : (
+          <p className="mt-1 text-sm text-[var(--muted)]">{savingsDisplay.headline}</p>
+        )}
+        <details className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+          <summary className="cursor-pointer text-xs font-semibold text-[var(--foreground)]">
+            How this was calculated
+          </summary>
+          <ul className="mt-2 space-y-1 text-xs text-[var(--muted)]">
+            {(summary.breakdown?.lines ?? []).map((line) => (
+              <li key={line.label}>
+                <span className="font-medium text-[var(--foreground)]">{line.label}:</span>{" "}
+                {formatCurrency(line.amount, summary.currency)}
+                {line.detail ? ` — ${line.detail}` : ""}
+              </li>
+            ))}
+            {(!summary.breakdown?.lines || summary.breakdown.lines.length === 0) && (
+              <li>{SAVINGS_EXPLAINER}</li>
+            )}
+          </ul>
+        </details>
       </div>
 
       <div className={`mt-4 grid gap-3 ${compact ? "grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
@@ -175,6 +196,39 @@ export function SavingsCard({ summary, live = null, loading, compact = false }: 
             <dt className="text-[var(--muted)]">Grid export</dt>
             <dd className="font-semibold tabular-nums">{exportKwh.toFixed(1)} kWh</dd>
           </div>
+          {summary.breakdown?.battery_charge_kwh != null ? (
+            <div className="flex justify-between gap-4">
+              <dt className="text-[var(--muted)]">Battery charged</dt>
+              <dd className="font-semibold tabular-nums">
+                {summary.breakdown.battery_charge_kwh.toFixed(1)} kWh
+              </dd>
+            </div>
+          ) : null}
+          {summary.breakdown?.battery_discharge_kwh != null ? (
+            <div className="flex justify-between gap-4">
+              <dt className="text-[var(--muted)]">Battery discharged</dt>
+              <dd className="font-semibold tabular-nums">
+                {summary.breakdown.battery_discharge_kwh.toFixed(1)} kWh
+              </dd>
+            </div>
+          ) : null}
+          {summary.breakdown?.cheap_rate_charging_cost != null ? (
+            <div className="flex justify-between gap-4">
+              <dt className="text-[var(--muted)]">Cheap-rate charging cost</dt>
+              <dd className="font-semibold tabular-nums">
+                {formatCurrency(summary.breakdown.cheap_rate_charging_cost, summary.currency)}
+              </dd>
+            </div>
+          ) : null}
+          {summary.breakdown?.peak_import_avoided_value != null &&
+          summary.breakdown.peak_import_avoided_value > 0 ? (
+            <div className="flex justify-between gap-4">
+              <dt className="text-[var(--muted)]">Peak import avoided (est.)</dt>
+              <dd className="font-semibold tabular-nums">
+                {formatCurrency(summary.breakdown.peak_import_avoided_value, summary.currency)}
+              </dd>
+            </div>
+          ) : null}
         </dl>
       ) : null}
     </section>

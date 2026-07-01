@@ -17,22 +17,30 @@ from app.schemas.domain import (
     MetricHistoryResponse,
     MetricSummaryResponse,
 )
+from app.services.analytics_helpers import integrate_kwh, range_start, split_import_kwh
 from app.services.octopus_client import octopus_client
-from app.services.tariff_clock import tariff_now
+from app.services.optimisation_score_service import compute_optimisation_score
+from app.services.savings_calculation import SavingsInputs, compute_savings
+from app.services.system_warnings_service import system_warnings_service
 from app.services.tariff_service import tariff_service
 
-_MAX_POINTS = {"day": 288, "week": 336, "month": 720}
+_MAX_POINTS = {"day": 288, "week": 336, "month": 720, "year": 876}
 
 
 def _range_start(range_name: HistoryRange) -> datetime:
-    now = datetime.now(timezone.utc)
-    if range_name == HistoryRange.DAY:
-        # Calendar day in tariff timezone — matches Sunsynk etoday counters.
-        local_midnight = tariff_now().replace(hour=0, minute=0, second=0, microsecond=0)
-        return local_midnight.astimezone(timezone.utc)
-    if range_name == HistoryRange.WEEK:
-        return now - timedelta(days=7)
-    return now - timedelta(days=30)
+    return range_start(range_name)
+
+
+def _integrate_kwh(rows: list[MetricSampleRow], field: str) -> float:
+    return integrate_kwh(rows, field)
+
+
+def _split_import_kwh(
+    rows: list[MetricSampleRow],
+    off_peak_start: str,
+    off_peak_end: str,
+) -> tuple[float, float]:
+    return split_import_kwh(rows, off_peak_start, off_peak_end)
 
 
 def _compare_window_days(range_name: HistoryRange) -> int:
@@ -40,7 +48,9 @@ def _compare_window_days(range_name: HistoryRange) -> int:
         return 1
     if range_name == HistoryRange.WEEK:
         return 7
-    return 30
+    if range_name == HistoryRange.MONTH:
+        return 30
+    return 365
 
 
 def _downsample(rows: list[MetricSampleRow], max_points: int) -> list[MetricSampleRow]:
@@ -49,20 +59,6 @@ def _downsample(rows: list[MetricSampleRow], max_points: int) -> list[MetricSamp
     step = len(rows) / max_points
     indices = [int(i * step) for i in range(max_points)]
     return [rows[i] for i in indices]
-
-
-def _integrate_kwh(rows: list[MetricSampleRow], field: str) -> float:
-    if len(rows) < 2:
-        return 0.0
-    total_wh = 0.0
-    for prev, curr in zip(rows, rows[1:]):
-        dt_hours = (curr.timestamp - prev.timestamp).total_seconds() / 3600.0
-        if dt_hours <= 0:
-            continue
-        p1 = getattr(prev, field)
-        p2 = getattr(curr, field)
-        total_wh += (p1 + p2) / 2.0 * dt_hours
-    return total_wh / 1000.0
 
 
 async def _summary_from_rows(
@@ -82,14 +78,32 @@ async def _summary_from_rows(
     self_consumption_pct = (self_consumed / pv_kwh * 100.0) if pv_kwh > 0 else 0.0
 
     tariff = await tariff_service.get_tariff(db)
-    import_rate = import_rate_override if import_rate_override is not None else tariff.import_rate
-    export_rate = export_rate_override if export_rate_override is not None else tariff.export_rate
 
-    import_cost = import_kwh * import_rate
-    export_credit = export_kwh * export_rate
-    net_cost = import_cost - export_credit
-    estimated_without_solar = consumption_kwh * import_rate
-    savings = estimated_without_solar - net_cost
+    cheap_import, peak_import = _split_import_kwh(
+        rows, tariff.off_peak_start, tariff.off_peak_end
+    )
+    battery_charge = rows[-1].daily_battery_charge_kwh if rows else 0.0
+    battery_discharge = rows[-1].daily_battery_discharge_kwh if rows else 0.0
+    battery_charge = battery_charge or 0.0
+    battery_discharge = battery_discharge or 0.0
+    peak_avoided = min(battery_discharge, peak_import) if battery_discharge else 0.0
+
+    result = compute_savings(
+        SavingsInputs(
+            consumption_kwh=consumption_kwh,
+            import_kwh=import_kwh,
+            export_kwh=export_kwh,
+            pv_kwh=pv_kwh,
+            cheap_import_kwh=cheap_import,
+            peak_import_kwh=peak_import,
+            battery_charge_kwh=battery_charge,
+            battery_discharge_kwh=battery_discharge,
+            peak_import_avoided_kwh=peak_avoided,
+        ),
+        tariff,
+        import_rate_override=import_rate_override,
+        export_rate_override=export_rate_override,
+    )
 
     return MetricSummaryResponse(
         range=range_name,
@@ -98,12 +112,14 @@ async def _summary_from_rows(
         import_kwh=round(import_kwh, 3),
         export_kwh=round(export_kwh, 3),
         self_consumption_pct=round(min(100.0, self_consumption_pct), 1),
-        import_cost=round(import_cost, 2),
-        export_credit=round(export_credit, 2),
-        net_cost=round(net_cost, 2),
-        estimated_cost_without_solar=round(estimated_without_solar, 2),
-        savings=round(savings, 2),
+        import_cost=result.import_cost,
+        export_credit=result.export_credit,
+        net_cost=result.net_cost,
+        estimated_cost_without_solar=result.estimated_without_solar,
+        savings=result.savings,
         currency=tariff.currency,
+        standing_charge=result.standing_charge,
+        breakdown=result.breakdown,
     )
 
 
@@ -141,14 +157,20 @@ async def enrich_day_summary_with_live(
 
     tariff = await tariff_service.get_tariff(db)
     import_rate_override, export_rate_override = await _octopus_rate_overrides()
-    import_rate = import_rate_override if import_rate_override is not None else tariff.import_rate
-    export_rate = export_rate_override if export_rate_override is not None else tariff.export_rate
 
-    import_cost = import_kwh * import_rate
-    export_credit = export_kwh * export_rate
-    net_cost = import_cost - export_credit
-    estimated_without_solar = summary.consumption_kwh * import_rate
-    savings = estimated_without_solar - net_cost
+    result = compute_savings(
+        SavingsInputs(
+            consumption_kwh=summary.consumption_kwh,
+            import_kwh=import_kwh,
+            export_kwh=export_kwh,
+            pv_kwh=pv_kwh,
+            battery_charge_kwh=metrics.daily_battery_charge_kwh or 0.0,
+            battery_discharge_kwh=metrics.daily_battery_discharge_kwh or 0.0,
+        ),
+        tariff,
+        import_rate_override=import_rate_override,
+        export_rate_override=export_rate_override,
+    )
 
     return summary.model_copy(
         update={
@@ -156,11 +178,13 @@ async def enrich_day_summary_with_live(
             "import_kwh": round(import_kwh, 3),
             "export_kwh": round(export_kwh, 3),
             "self_consumption_pct": round(min(100.0, self_consumption_pct), 1),
-            "import_cost": round(import_cost, 2),
-            "export_credit": round(export_credit, 2),
-            "net_cost": round(net_cost, 2),
-            "estimated_cost_without_solar": round(estimated_without_solar, 2),
-            "savings": round(savings, 2),
+            "import_cost": result.import_cost,
+            "export_credit": result.export_credit,
+            "net_cost": result.net_cost,
+            "estimated_cost_without_solar": result.estimated_without_solar,
+            "savings": result.savings,
+            "standing_charge": result.standing_charge,
+            "breakdown": result.breakdown,
         }
     )
 
@@ -188,6 +212,7 @@ class AnalyticsService:
                 grid_import_w=row.grid_import_w,
                 grid_export_w=row.grid_export_w,
                 battery_soh_pct=row.battery_soh_pct,
+                battery_power_w=row.battery_power_w,
             )
             for row in rows
         ]
@@ -214,6 +239,28 @@ class AnalyticsService:
             range_name=range_name,
             import_rate_override=import_rate_override,
             export_rate_override=export_rate_override,
+        )
+
+    async def get_enriched_summary(
+        self,
+        db: AsyncSession,
+        range_name: HistoryRange,
+    ) -> MetricSummaryResponse:
+        summary = await self.get_summary(db, range_name)
+        warnings_resp = await system_warnings_service.evaluate(db)
+        score = compute_optimisation_score(
+            import_kwh=summary.import_kwh,
+            export_kwh=summary.export_kwh,
+            pv_kwh=summary.pv_kwh,
+            self_consumption_pct=summary.self_consumption_pct,
+            breakdown=summary.breakdown,
+            warnings=warnings_resp.warnings,
+        )
+        return summary.model_copy(
+            update={
+                "optimisation_score": score,
+                "system_status": warnings_resp.status_headline,
+            }
         )
 
     async def get_compare(

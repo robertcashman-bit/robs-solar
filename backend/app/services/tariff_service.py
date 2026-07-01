@@ -18,6 +18,11 @@ class TariffService:
             import_rate=settings.tariff_import_rate,
             export_rate=settings.tariff_export_rate,
             currency=settings.tariff_currency,
+            night_import_rate=settings.iog_offpeak_rate_gbp,
+            off_peak_start=settings.iog_offpeak_start,
+            off_peak_end=settings.iog_offpeak_end,
+            battery_capacity_kwh=settings.battery_capacity_kwh,
+            battery_minimum_reserve_pct=settings.auto_schedule_soc_floor_pct,
         )
 
     async def get_tariff(self, db: AsyncSession) -> TariffSettings:

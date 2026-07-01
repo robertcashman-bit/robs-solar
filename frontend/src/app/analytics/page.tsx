@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { PeriodComparisonPanel } from "@/components/analytics/PeriodComparisonPanel";
 import { ReconciliationCard } from "@/components/analytics/ReconciliationCard";
 import { AnalyticsCharts } from "@/components/analytics/AnalyticsCharts";
+import { SavingsHistoryCharts } from "@/components/analytics/SavingsHistoryCharts";
 import { SavingsCard } from "@/components/dashboard/SavingsCard";
 import { AppShell } from "@/components/shared/AppShell";
 import { ErrorBanner } from "@/components/shared/Banners";
@@ -22,6 +23,8 @@ import {
   type MetricSummary,
   reconciliationSchema,
   type Reconciliation,
+  savingsHistorySchema,
+  type SavingsHistory,
 } from "@/lib/schemas";
 
 export default function AnalyticsPage() {
@@ -33,6 +36,7 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reconciliation, setReconciliation] = useState<Reconciliation | null>(null);
+  const [savingsHistory, setSavingsHistory] = useState<SavingsHistory | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -44,10 +48,11 @@ export default function AnalyticsPage() {
       setError(null);
       try {
         const parsedRange = historyRangeSchema.parse(range);
-        const [historyData, summaryData, reconciliationData] = await Promise.all([
+        const [historyData, summaryData, reconciliationData, savingsData] = await Promise.all([
           apiClient.get(`/metrics/history?range=${parsedRange}`),
           apiClient.get(`/metrics/summary?range=${parsedRange}`),
           apiClient.get(`/metrics/reconciliation?range=${parsedRange}`).catch(() => null),
+          apiClient.get(`/metrics/savings-history?range=${parsedRange}`).catch(() => null),
         ]);
         if (!active) {
           return;
@@ -58,6 +63,11 @@ export default function AnalyticsPage() {
           setReconciliation(reconciliationSchema.parse(reconciliationData));
         } else {
           setReconciliation(null);
+        }
+        if (savingsData) {
+          setSavingsHistory(savingsHistorySchema.parse(savingsData));
+        } else {
+          setSavingsHistory(null);
         }
       } catch (fetchError) {
         if (!active) {
@@ -100,6 +110,11 @@ export default function AnalyticsPage() {
         <SavingsCard summary={summary} loading={loading} />
         <PeriodComparisonPanel loading={loading} />
         <ReconciliationCard data={reconciliation} range={range} loading={loading} />
+        <SavingsHistoryCharts
+          savingsHistory={savingsHistory}
+          metricHistory={history}
+          currency={summary?.currency}
+        />
         <AnalyticsCharts
           history={history}
           summary={summary}

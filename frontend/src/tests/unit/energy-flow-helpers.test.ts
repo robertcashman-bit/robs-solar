@@ -241,8 +241,40 @@ describe("energy-flow helpers", () => {
       message: "",
     });
     expect(display?.headline).toBe("376 W average");
-    expect(display?.detail).toContain("Smart meter");
+    expect(display?.isLive).toBe(false);
+    expect(display?.detail).toContain("Electricity meter");
     expect(display?.detail).toContain("in progress");
+  });
+
+  it("octopusMeterPowerDisplay prefers live watts when available", () => {
+    const display = octopusMeterPowerDisplay({
+      configured: true,
+      average_power_w: 300,
+      consumption_kwh: 0.15,
+      interval_start: "2026-07-01T19:00:00Z",
+      interval_end: "2026-07-01T19:30:00Z",
+      is_current_interval: true,
+      live_available: true,
+      live_demand_w: 376,
+      message: "",
+    });
+    expect(display?.isLive).toBe(true);
+    expect(display?.headline).toBe("376 W now");
+    expect(display?.liveW).toBe(376);
+    expect(display?.averageHeadline).toBe("300 W average");
+    expect(display?.detail).toContain("Live whole-home draw");
+  });
+
+  it("octopusMeterPowerDisplay falls back to 30-min average when live absent", () => {
+    const display = octopusMeterPowerDisplay({
+      configured: true,
+      average_power_w: 300,
+      consumption_kwh: 0.15,
+      live_available: false,
+      message: "",
+    });
+    expect(display?.isLive).toBe(false);
+    expect(display?.headline).toBe("300 W average");
   });
 
   it("energyBalanceError is near zero for consistent metrics", () => {

@@ -11,25 +11,32 @@ from app.schemas.domain import (
     ChargeWindowStatus,
     ConnectivityStatus,
     EvStatusResponse,
+    ForecastStrategy,
     HistoryRange,
     LiveMetrics,
     MetricCompareResponse,
     MetricHistoryResponse,
     MetricSummaryResponse,
+    OptimisationScore,
     PeakImportGuardStatus,
     ReconciliationResponse,
+    SavingsHistoryResponse,
     SellOpportunity,
+    SystemWarningsResponse,
 )
 from app.services.analytics_service import analytics_service, enrich_day_summary_with_live
 from app.services.battery_plan_service import battery_plan_service
 from app.services.billing_reconciliation_service import billing_reconciliation_service
 from app.services.charge_window_service import charge_window_service
+from app.services.daily_savings_service import daily_savings_service
 from app.services.effective_load import finalize_live_metrics
 from app.services.ev_load_detector import ev_load_detector, sync_ev_detector
+from app.services.forecast_strategy_service import forecast_strategy_service
 from app.services.live_metrics_cache import live_metrics_cache
 from app.services.octopus_client import octopus_client
 from app.services.peak_import_guard_service import peak_import_guard_service
 from app.services.sell_advisor_service import sell_advisor_service
+from app.services.system_warnings_service import system_warnings_service
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -87,7 +94,7 @@ async def metrics_summary(
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> MetricSummaryResponse:
-    summary = await analytics_service.get_summary(db, range)
+    summary = await analytics_service.get_enriched_summary(db, range)
     if range != HistoryRange.DAY:
         return summary
     adapter = get_adapter()
@@ -97,7 +104,63 @@ async def metrics_summary(
             live = await live_metrics_cache.get(adapter)
         except AdapterError:
             return summary
-    return await enrich_day_summary_with_live(db, summary, live)
+    enriched = await enrich_day_summary_with_live(db, summary, live)
+    warnings_resp = await system_warnings_service.evaluate(db, adapter=adapter)
+    from app.services.optimisation_score_service import compute_optimisation_score
+
+    score = compute_optimisation_score(
+        import_kwh=enriched.import_kwh,
+        export_kwh=enriched.export_kwh,
+        pv_kwh=enriched.pv_kwh,
+        self_consumption_pct=enriched.self_consumption_pct,
+        breakdown=enriched.breakdown,
+        warnings=warnings_resp.warnings,
+    )
+    return enriched.model_copy(
+        update={
+            "optimisation_score": score,
+            "system_status": warnings_resp.status_headline,
+        }
+    )
+
+
+@router.get("/warnings", response_model=SystemWarningsResponse)
+async def metrics_warnings(
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> SystemWarningsResponse:
+    return await system_warnings_service.evaluate(db)
+
+
+@router.get("/optimisation-score", response_model=OptimisationScore)
+async def metrics_optimisation_score(
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> OptimisationScore:
+    summary = await analytics_service.get_enriched_summary(db, HistoryRange.DAY)
+    if summary.optimisation_score is None:
+        from app.schemas.domain import OptimisationScore as OS
+
+        return OS(total=0)
+    return summary.optimisation_score
+
+
+@router.get("/savings-history", response_model=SavingsHistoryResponse)
+async def metrics_savings_history(
+    range: HistoryRange = HistoryRange.MONTH,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> SavingsHistoryResponse:
+    return await daily_savings_service.get_history(db, range)
+
+
+@router.get("/forecast-strategy", response_model=ForecastStrategy)
+async def metrics_forecast_strategy(
+    solar_level: str = "medium",
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> ForecastStrategy:
+    return await forecast_strategy_service.get_strategy(db, solar_level=solar_level)
 
 
 @router.get("/compare", response_model=MetricCompareResponse)

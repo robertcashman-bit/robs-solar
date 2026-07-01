@@ -78,3 +78,50 @@ class AlertRow(Base):
     category: Mapped[str] = mapped_column(String(32), nullable=False)
     message: Mapped[str] = mapped_column(String(512), nullable=False)
     acknowledged: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+
+class DailySavingsRow(Base):
+    __tablename__ = "daily_savings"
+    __table_args__ = (Index("ix_daily_savings_date", "date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[str] = mapped_column(String(10), nullable=False, unique=True)
+    solar_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    house_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    import_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    export_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    battery_charge_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    battery_discharge_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    actual_cost_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    estimated_no_solar_cost_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    estimated_saving_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    export_credit_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    standing_charge_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    optimisation_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    warnings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    recommendations_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class OptimisationRecommendationRow(Base):
+    __tablename__ = "optimisation_recommendations"
+    __table_args__ = (Index("ix_opt_recs_date", "date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[str] = mapped_column(String(10), nullable=False)
+    recommendation_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    current_setting: Mapped[str] = mapped_column(String(256), nullable=False)
+    proposed_setting: Mapped[str] = mapped_column(String(256), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    estimated_extra_saving_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    risk_level: Mapped[str] = mapped_column(String(16), nullable=False, default="low")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    manual_instructions: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    rollback_value: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    calculation_detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    can_auto_apply: Mapped[bool] = mapped_column(default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    dismissed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

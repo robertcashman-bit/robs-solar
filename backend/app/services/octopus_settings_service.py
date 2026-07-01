@@ -29,6 +29,7 @@ class OctopusSettingsService:
             account_number=settings.octopus_account_number,
             mpan=settings.octopus_mpan,
             meter_serial=settings.octopus_meter_serial,
+            device_id=settings.octopus_device_id,
             region=(settings.octopus_region or "C").upper(),
         )
 
@@ -53,6 +54,7 @@ class OctopusSettingsService:
             account_number=config.account_number or env.account_number,
             mpan=config.mpan or env.mpan,
             meter_serial=config.meter_serial or env.meter_serial,
+            device_id=config.device_id or env.device_id,
             region=(config.region or env.region or "C").upper(),
         )
 
@@ -68,20 +70,36 @@ class OctopusSettingsService:
     async def _auto_discover_meter(self, config: OctopusConfig) -> OctopusConfig:
         if not config.api_key or not config.account_number:
             return config
-        if config.mpan and config.meter_serial:
-            return config
-        try:
-            discovered = await octopus_client.discover(config.api_key, config.account_number)
-        except Exception as exc:
-            logger.warning("Octopus auto-discover failed: %s", exc)
-            return config
-        return config.model_copy(
-            update={
-                "mpan": config.mpan or discovered.get("mpan", ""),
-                "meter_serial": config.meter_serial or discovered.get("meter_serial", ""),
-                "region": (discovered.get("region") or config.region or "C").upper(),
-            }
-        )
+        if not (config.mpan and config.meter_serial):
+            try:
+                discovered = await octopus_client.discover(
+                    config.api_key, config.account_number
+                )
+                config = config.model_copy(
+                    update={
+                        "mpan": config.mpan or discovered.get("mpan", ""),
+                        "meter_serial": config.meter_serial
+                        or discovered.get("meter_serial", ""),
+                        "region": (
+                            discovered.get("region") or config.region or "C"
+                        ).upper(),
+                    }
+                )
+            except Exception as exc:
+                logger.warning("Octopus auto-discover failed: %s", exc)
+        # Discover the Home Mini HAN device id (enables live telemetry).
+        if not config.device_id:
+            # get_smart_device_ids() reads the client's credentials, so apply first.
+            self._apply(config)
+            try:
+                devices = await octopus_client.get_smart_device_ids()
+                if devices.get("electricity"):
+                    config = config.model_copy(
+                        update={"device_id": devices["electricity"]}
+                    )
+            except Exception as exc:
+                logger.warning("Octopus Home Mini discovery failed: %s", exc)
+        return config
 
     async def get_status(self, db: AsyncSession) -> OctopusConfigStatus:
         config = await self.get_config(db)
@@ -91,14 +109,20 @@ class OctopusSettingsService:
             mpan=config.mpan,
             meter_serial=config.meter_serial,
             region=config.region,
+            device_id=config.device_id,
+            live_available=bool(config.device_id),
             configured=bool(config.api_key),
         )
 
     async def set_config(self, db: AsyncSession, config: OctopusConfig) -> OctopusConfigStatus:
         # An empty api_key on update means "keep the existing key".
-        if not config.api_key:
+        if not config.api_key or not config.device_id:
             current = await self.get_config(db)
-            config.api_key = current.api_key
+            if not config.api_key:
+                config.api_key = current.api_key
+            # Preserve auto-discovered device id when the client omits it.
+            if not config.device_id:
+                config.device_id = current.device_id
         config.region = (config.region or "C").upper()
 
         await self._save_config(db, config)
@@ -122,6 +146,7 @@ class OctopusSettingsService:
                 mpan=config.mpan,
                 meter_serial=config.meter_serial,
                 region=config.region,
+                device_id=config.device_id,
             )
         )
 

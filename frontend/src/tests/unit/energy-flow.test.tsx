@@ -232,8 +232,39 @@ describe("EnergyFlow", () => {
         }}
       />,
     );
-    expect(screen.getByText(/Smart meter \(Octopus\): 376 W average/i)).toBeInTheDocument();
-    expect(screen.getByText(/updates every 30 min/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Electricity meter: 0.188 kWh \(376 W average\)/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a Live badge and live watts on the meter banner when Home Mini present", () => {
+    render(
+      <EnergyFlow
+        metrics={{
+          ...metrics,
+          pv_power_w: 17,
+          grid_import_w: 0,
+          grid_export_w: 0,
+          house_load_w: 30,
+          house_load_source: "derived" as const,
+          battery_power_w: 13,
+          battery_soc_pct: 98,
+        }}
+        octopusMeter={{
+          configured: true,
+          average_power_w: 300,
+          consumption_kwh: 0.15,
+          interval_start: "2026-07-01T19:00:00Z",
+          interval_end: "2026-07-01T19:30:00Z",
+          is_current_interval: true,
+          live_available: true,
+          live_demand_w: 376,
+          message: "",
+        }}
+      />,
+    );
+    expect(screen.getByText(/Electricity meter: 376 W now/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Live").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows kW-scale grid and home when a heavy load draws", () => {
