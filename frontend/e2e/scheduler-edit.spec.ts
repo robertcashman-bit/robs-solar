@@ -27,7 +27,9 @@ test("admin can edit a TOU band and write it to the inverter", async ({ page }) 
 
 test("viewer does not see the schedule editor", async ({ page }) => {
   await loginAsViewer(page);
-  await gotoWhenAuthed(page, "/scheduler");
-  await expect(page.getByRole("heading", { name: "Time-of-use scheduler" })).toBeVisible();
+  await page.goto("/scheduler");
+  await expect(page.getByRole("heading", { name: "Time-of-use scheduler" })).toBeVisible({
+    timeout: 15_000,
+  });
   await expect(page.getByRole("heading", { name: "Edit schedule" })).toHaveCount(0);
 });

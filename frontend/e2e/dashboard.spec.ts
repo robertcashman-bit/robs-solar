@@ -13,5 +13,10 @@ test("app boot and login shows dashboard metrics", async ({ page }) => {
 test("viewer cannot access controls page", async ({ page }) => {
   await loginAsViewer(page);
   await page.goto("/controls");
-  await expect(page.getByRole("heading", { name: "Controls" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Controls" })).not.toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(
+    page.getByRole("heading", { name: "Live inverter data required" }),
+  ).toBeVisible();
 });

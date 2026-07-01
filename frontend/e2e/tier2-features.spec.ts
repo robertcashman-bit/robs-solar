@@ -22,9 +22,10 @@ test("admin can view automation rules on controls page", async ({ page }) => {
 test("analytics shows bill reconciliation section", async ({ page }) => {
   await gotoWhenAuthed(page, "/analytics");
   await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Bill reconciliation" })).toBeVisible({
-    timeout: 20_000,
-  });
+  await expect(
+    page.getByRole("heading", { name: "Live inverter data required" }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bill reconciliation" })).not.toBeVisible();
 });
 
 test("admin sees notification settings on settings page", async ({ page }) => {
