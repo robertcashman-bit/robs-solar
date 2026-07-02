@@ -23,6 +23,7 @@ dependencies = [
   "pymodbus>=3.7,<4",
   "apscheduler>=3.10,<4",
   "openai>=1.50,<2",
+  "eval_type_backport>=0.2,<1",
 ]
 
 [project.optional-dependencies]

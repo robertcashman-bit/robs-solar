@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
+import { useAuth } from "@/lib/auth-context";
 import {
   quickFileConfigStatusSchema,
   quickFileSyncResultSchema,
@@ -14,6 +15,7 @@ type QuickFileSettingsPanelProps = {
 };
 
 export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPanelProps) {
+  const { user, loading: authLoading } = useAuth();
   const [status, setStatus] = useState<QuickFileConfigStatus | null>(null);
   const [accountNumber, setAccountNumber] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -22,8 +24,14 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"save" | "test" | "sync" | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
 
   const load = useCallback(async () => {
+    if (!user) {
+      return;
+    }
+    setLoadingStatus(true);
+    setError(null);
     try {
       const data = await apiClient.get<unknown>("/finance/integrations/quickfile/status");
       const parsed = quickFileConfigStatusSchema.parse(data);
@@ -32,14 +40,23 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
       setApplicationId(parsed.application_id);
       setKeyAlreadySet(parsed.api_key_set);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load QuickFile status");
+      setStatus(null);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load QuickFile status. Restart the backend if you recently updated the app.",
+      );
+    } finally {
+      setLoadingStatus(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timer);
-  }, [load]);
+    if (authLoading) {
+      return;
+    }
+    void load();
+  }, [authLoading, load]);
 
   async function saveSettings() {
     setError(null);
@@ -102,24 +119,26 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
     }
   }
 
+  const configured = status?.configured ?? false;
+
   return (
     <section className="solar-card space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-semibold">QuickFile</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Sync business bank balances and unpaid invoice debtors from QuickFile. Use the same
-            account number, API key, and application ID as Custody Note.
+            Sync business bank balances and unpaid invoice debtors from QuickFile. Credentials are
+            pulled automatically from Custody Note when you run the setup script.
           </p>
         </div>
         <span
           className={`rounded-full px-3 py-1 text-xs font-medium ${
-            status?.configured
+            configured
               ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
               : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
           }`}
         >
-          {status?.configured ? "Configured" : "Not configured"}
+          {loadingStatus ? "Loading…" : configured ? "Configured" : "Not configured"}
         </span>
       </div>
 
@@ -147,7 +166,7 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
             className="solar-input w-full"
             value={accountNumber}
             onChange={(e) => setAccountNumber(e.target.value)}
-            disabled={readOnly}
+            disabled={readOnly || loadingStatus}
             autoComplete="off"
           />
         </label>
@@ -157,7 +176,7 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
             className="solar-input w-full"
             value={applicationId}
             onChange={(e) => setApplicationId(e.target.value)}
-            disabled={readOnly}
+            disabled={readOnly || loadingStatus}
             autoComplete="off"
           />
         </label>
@@ -170,7 +189,7 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            disabled={readOnly}
+            disabled={readOnly || loadingStatus}
             autoComplete="off"
           />
         </label>
@@ -181,7 +200,7 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
           <button
             type="button"
             className="solar-btn-secondary"
-            disabled={busy !== null}
+            disabled={busy !== null || loadingStatus}
             onClick={() => void saveSettings()}
           >
             {busy === "save" ? "Saving…" : "Save settings"}
@@ -189,7 +208,7 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
           <button
             type="button"
             className="solar-btn-secondary"
-            disabled={busy !== null}
+            disabled={busy !== null || loadingStatus}
             onClick={() => void testConnection()}
           >
             {busy === "test" ? "Testing…" : "Test connection"}
@@ -197,7 +216,7 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
           <button
             type="button"
             className="solar-btn-primary"
-            disabled={busy !== null}
+            disabled={busy !== null || loadingStatus || !configured}
             onClick={() => void syncNow()}
           >
             {busy === "sync" ? "Syncing…" : "Sync now"}
