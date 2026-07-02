@@ -8,7 +8,9 @@ export async function expectFinanceOverviewAfterLogin(page: Page) {
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible({
     timeout: LOGIN_TIMEOUT,
   });
-  await expect(page.getByText("Balances")).toBeVisible({ timeout: LOGIN_TIMEOUT });
+  await expect(page.getByRole("heading", { name: "Balances" })).toBeVisible({
+    timeout: LOGIN_TIMEOUT,
+  });
 }
 
 /** Energy dashboard is ready when live metrics or the simulator block panel is visible. */
