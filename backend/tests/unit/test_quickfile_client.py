@@ -6,10 +6,33 @@ import pytest
 
 from app.integrations.quickfile_client import (
     QuickFileError,
+    _bank_accounts_search_parameters,
+    _client_search_parameters,
+    _invoice_search_parameters,
     build_quickfile_auth,
     parse_quickfile_response,
 )
 from app.schemas.finance import QuickFileConfig
+
+
+def test_bank_accounts_search_parameters_include_required_fields() -> None:
+    params = _bank_accounts_search_parameters()
+    assert params["OrderResultsBy"] == "Position"
+    assert "CURRENT" in params["AccountTypes"]["AccountType"]
+    assert "CREDITCARD" in params["AccountTypes"]["AccountType"]
+
+
+def test_client_search_parameters_include_ordering() -> None:
+    params = _client_search_parameters(return_count=1)
+    assert params["OrderResultsBy"] == "CompanyName"
+    assert params["OrderDirection"] == "ASC"
+
+
+def test_invoice_search_parameters_use_status_not_invoice_status() -> None:
+    params = _invoice_search_parameters(return_count=50, status="UNPAID")
+    assert params["Status"] == "UNPAID"
+    assert "InvoiceStatus" not in params
+    assert params["OrderResultsBy"] == "InvoiceNumber"
 
 
 def test_build_quickfile_auth_md5() -> None:

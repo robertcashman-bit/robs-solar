@@ -17,6 +17,54 @@ logger = logging.getLogger(__name__)
 QF_HOST = "api.quickfile.co.uk"
 QF_BASE = f"https://{QF_HOST}"
 
+# QuickFile bank/getaccounts requires both fields in SearchParameters.
+_BANK_ACCOUNT_TYPES = [
+    "CURRENT",
+    "PETTY",
+    "BUILDINGSOC",
+    "LOAN",
+    "MERCHANT",
+    "EQUITY",
+    "CREDITCARD",
+    "RESERVE",
+]
+
+
+def _bank_accounts_search_parameters() -> dict[str, Any]:
+    return {
+        "OrderResultsBy": "Position",
+        "AccountTypes": {"AccountType": _BANK_ACCOUNT_TYPES},
+        "ShowHidden": False,
+        "GetOpenBankingConsents": False,
+    }
+
+
+def _client_search_parameters(*, return_count: int, offset: int = 0) -> dict[str, Any]:
+    return {
+        "ReturnCount": return_count,
+        "Offset": offset,
+        "OrderResultsBy": "CompanyName",
+        "OrderDirection": "ASC",
+    }
+
+
+def _invoice_search_parameters(
+    *,
+    return_count: int,
+    offset: int = 0,
+    status: str | None = None,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "ReturnCount": return_count,
+        "Offset": offset,
+        "OrderResultsBy": "InvoiceNumber",
+        "OrderDirection": "DESC",
+        "InvoiceType": "INVOICE",
+    }
+    if status:
+        params["Status"] = status
+    return params
+
 
 class QuickFileError(Exception):
     """QuickFile API returned an error."""
@@ -151,20 +199,16 @@ class QuickFileClient:
     async def test_connection(self) -> dict[str, Any]:
         body = await self.request(
             "/1_2/client/search",
-            {
-                "SearchParameters": {
-                    "ReturnCount": 1,
-                    "Offset": 0,
-                    "OrderResultsBy": "ClientID",
-                    "OrderDirection": "ASC",
-                }
-            },
+            {"SearchParameters": _client_search_parameters(return_count=1)},
         )
         records = _extract_records(body)
         return {"ok": True, "sample_count": len(records)}
 
     async def fetch_bank_accounts(self) -> list[dict[str, Any]]:
-        body = await self.request("/1_2/bank/getaccounts", {"SearchParameters": {}})
+        body = await self.request(
+            "/1_2/bank/getaccounts",
+            {"SearchParameters": _bank_accounts_search_parameters()},
+        )
         accounts = _extract_records(body)
         if not accounts and isinstance(body.get("BankAccounts"), dict):
             grouped = body["BankAccounts"]
@@ -210,12 +254,10 @@ class QuickFileClient:
         body = await self.request(
             "/1_2/invoice/search",
             {
-                "SearchParameters": {
-                    "ReturnCount": 200,
-                    "Offset": 0,
-                    "InvoiceType": "INVOICE",
-                    "InvoiceStatus": "UNPAID",
-                }
+                "SearchParameters": _invoice_search_parameters(
+                    return_count=200,
+                    status="UNPAID",
+                )
             },
         )
         total = 0.0
