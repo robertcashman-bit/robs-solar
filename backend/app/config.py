@@ -132,6 +132,11 @@ class Settings(BaseSettings):
     ai_enabled: bool = False
     ai_timeout_seconds: float = 30.0
 
+    # QuickFile (business finance sync — same credentials as Custody Note)
+    quickfile_account_number: str = ""
+    quickfile_api_key: str = ""
+    quickfile_application_id: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

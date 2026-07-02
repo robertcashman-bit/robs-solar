@@ -6,7 +6,6 @@ from app.integrations.base import (
     BaseFinanceProvider,
     ManualFinanceProvider,
     OpenBankingProvider,
-    QuickFileProvider,
     TeslaProvider,
 )
 
@@ -16,7 +15,6 @@ class IntegrationRegistry:
         self._providers: dict[str, BaseFinanceProvider] = {
             "manual": ManualFinanceProvider(),
             "open_banking": OpenBankingProvider(),
-            "quickfile": QuickFileProvider(),
             "tesla": TeslaProvider(),
         }
 
@@ -27,7 +25,7 @@ class IntegrationRegistry:
         return [
             {"id": "manual", "label": "Manual entry", "status": "active"},
             {"id": "open_banking", "label": "Open Banking", "status": "coming_soon"},
-            {"id": "quickfile", "label": "QuickFile", "status": "coming_soon"},
+            {"id": "quickfile", "label": "QuickFile", "status": "inactive"},
             {"id": "octopus", "label": "Octopus Energy", "status": "active"},
             {"id": "sunsynk", "label": "Sunsynk Connect", "status": "active"},
             {"id": "tesla", "label": "Tesla", "status": "coming_soon"},

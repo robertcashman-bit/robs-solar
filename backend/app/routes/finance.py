@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import require_admin, require_viewer
 from app.auth.sessions import SessionData
 from app.db.session import get_db
+from app.integrations.base import IntegrationNotConfiguredError
+from app.integrations.quickfile_provider import QuickFileProvider
 from app.integrations.registry import integration_registry
 from app.middleware.rate_limit import enforce_write_rate_limit
 from app.schemas.finance import (
@@ -30,6 +32,9 @@ from app.schemas.finance import (
     MonthlyBudgetLineUpdate,
     PersonalFinanceSnapshot,
     PersonalFinanceSnapshotCreate,
+    QuickFileConfig,
+    QuickFileConfigStatus,
+    QuickFileSyncResult,
 )
 from app.services.finance.debt_strategy_service import recommend_debt_strategy
 from app.services.finance.finance_accounts_service import finance_accounts_service
@@ -39,6 +44,8 @@ from app.services.finance.finance_insights_service import finance_insights_servi
 from app.services.finance.finance_liabilities_service import finance_liabilities_service
 from app.services.finance.finance_overview_service import finance_overview_service
 from app.services.finance.finance_reports_service import finance_reports_service
+from app.services.finance.quickfile_sync_service import quickfile_sync_service
+from app.services.quickfile_settings_service import quickfile_settings_service
 
 router = APIRouter(prefix="/finance", tags=["finance"])
 
@@ -288,5 +295,60 @@ async def get_reports(
 @router.get("/integrations")
 async def list_integrations(
     _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, str]]:
-    return integration_registry.list_providers()
+    providers = integration_registry.list_providers()
+    qf_status = await quickfile_settings_service.get_status(db)
+    for provider in providers:
+        if provider["id"] == "quickfile":
+            provider["status"] = "active" if qf_status.configured else "inactive"
+    return providers
+
+
+@router.get("/integrations/quickfile/status", response_model=QuickFileConfigStatus)
+async def quickfile_status(
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> QuickFileConfigStatus:
+    return await quickfile_settings_service.get_status(db)
+
+
+@router.put("/integrations/quickfile/settings", response_model=QuickFileConfigStatus)
+async def quickfile_save_settings(
+    request: Request,
+    body: QuickFileConfig,
+    session: SessionData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> QuickFileConfigStatus:
+    await enforce_write_rate_limit(request)
+    return await quickfile_settings_service.set_config(db, body)
+
+
+@router.post("/integrations/quickfile/test")
+async def quickfile_test_connection(
+    request: Request,
+    session: SessionData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    await enforce_write_rate_limit(request)
+    config = await quickfile_settings_service.get_config(db)
+    provider = QuickFileProvider(config)
+    try:
+        result = await provider.test_connection()
+    except IntegrationNotConfiguredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
+
+
+@router.post("/integrations/quickfile/sync", response_model=QuickFileSyncResult)
+async def quickfile_sync(
+    request: Request,
+    session: SessionData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> QuickFileSyncResult:
+    await enforce_write_rate_limit(request)
+    config = await quickfile_settings_service.get_config(db)
+    try:
+        return await quickfile_sync_service.sync(db, config)
+    except IntegrationNotConfiguredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

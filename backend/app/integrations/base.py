@@ -44,18 +44,6 @@ class OpenBankingProvider(BaseFinanceProvider):
         raise IntegrationNotConfiguredError("Open Banking is not configured.")
 
 
-class QuickFileProvider(BaseFinanceProvider):
-    name = "quickfile"
-
-    async def sync_accounts(self) -> list[dict[str, Any]]:
-        raise IntegrationNotConfiguredError(
-            "QuickFile API is not configured. Add QUICKFILE credentials in Settings when available."
-        )
-
-    async def sync_transactions(self, *, since: str | None = None) -> list[dict[str, Any]]:
-        raise IntegrationNotConfiguredError("QuickFile API is not configured.")
-
-
 class TeslaProvider(BaseFinanceProvider):
     name = "tesla"
 

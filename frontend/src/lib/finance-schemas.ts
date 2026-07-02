@@ -169,6 +169,20 @@ export const financeReportsSchema = z.object({
   energy_savings_vs_forecast: z.string(),
 });
 
+export const quickFileConfigStatusSchema = z.object({
+  account_number: z.string(),
+  api_key_set: z.boolean(),
+  application_id: z.string(),
+  configured: z.boolean(),
+  last_sync_at: z.string().nullable().optional(),
+});
+
+export const quickFileSyncResultSchema = z.object({
+  accounts_synced: z.number(),
+  debtors_gbp: z.number(),
+  message: z.string(),
+});
+
 export type FinanceOverview = z.infer<typeof financeOverviewSchema>;
 export type FinanceAccount = z.infer<typeof financeAccountSchema>;
 export type FinanceLiability = z.infer<typeof financeLiabilitySchema>;
@@ -179,3 +193,5 @@ export type MonthlyBudgetLine = z.infer<typeof monthlyBudgetLineSchema>;
 export type CashflowForecast = z.infer<typeof cashflowForecastSchema>;
 export type DebtStrategy = z.infer<typeof debtStrategySchema>;
 export type FinanceReports = z.infer<typeof financeReportsSchema>;
+export type QuickFileConfigStatus = z.infer<typeof quickFileConfigStatusSchema>;
+export type QuickFileSyncResult = z.infer<typeof quickFileSyncResultSchema>;

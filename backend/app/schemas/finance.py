@@ -313,3 +313,23 @@ class FinanceReportsResponse(BaseModel):
     debt_reduction_gbp: float
     energy_savings_gbp: float
     energy_savings_vs_forecast: str = ""
+
+
+class QuickFileConfig(BaseModel):
+    account_number: str = ""
+    api_key: str = ""
+    application_id: str = ""
+
+
+class QuickFileConfigStatus(BaseModel):
+    account_number: str = ""
+    api_key_set: bool = False
+    application_id: str = ""
+    configured: bool = False
+    last_sync_at: str | None = None
+
+
+class QuickFileSyncResult(BaseModel):
+    accounts_synced: int
+    debtors_gbp: float
+    message: str

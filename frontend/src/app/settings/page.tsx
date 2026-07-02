@@ -162,7 +162,7 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        {settingsTab === "finance" ? <FinanceSettingsPanel /> : null}
+        {settingsTab === "finance" ? <FinanceSettingsPanel readOnly={!canWrite(user)} /> : null}
 
         {settingsTab === "energy" ? (
           <>

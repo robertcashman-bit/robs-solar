@@ -71,3 +71,9 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      - key: QUICKFILE_ACCOUNT_NUMBER
+        sync: false
+      - key: QUICKFILE_API_KEY
+        sync: false
+      - key: QUICKFILE_APPLICATION_ID
+        sync: false
