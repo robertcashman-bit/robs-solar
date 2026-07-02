@@ -8,6 +8,7 @@ import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { SettingsIcon, ShieldIcon } from "@/components/shared/icons";
+import { FinanceSettingsPanel } from "@/components/settings/FinanceSettingsPanel";
 import { OctopusSettingsForm } from "@/components/settings/OctopusSettingsForm";
 import { InstallerAccessPanel } from "@/components/settings/InstallerAccessPanel";
 import { TariffSettingsForm } from "@/components/settings/TariffSettingsForm";
@@ -52,6 +53,7 @@ function StatusBadge({ enabled, label }: { enabled: boolean; label: string }) {
 export default function SettingsPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const [settingsTab, setSettingsTab] = useState<"finance" | "energy">("finance");
   const [error, setError] = useState<string | null>(null);
   const [capabilities, setCapabilities] = useState<ReturnType<
     typeof capabilitiesResponseSchema.parse
@@ -143,6 +145,27 @@ export default function SettingsPage() {
 
         {error ? <ErrorBanner message={error} /> : null}
 
+        <div className="flex gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1">
+          <button
+            type="button"
+            className={`rounded-lg px-4 py-2 text-sm font-medium ${settingsTab === "finance" ? "bg-emerald-500 text-white" : ""}`}
+            onClick={() => setSettingsTab("finance")}
+          >
+            Finance
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-4 py-2 text-sm font-medium ${settingsTab === "energy" ? "bg-amber-500 text-white" : ""}`}
+            onClick={() => setSettingsTab("energy")}
+          >
+            Energy / Solar
+          </button>
+        </div>
+
+        {settingsTab === "finance" ? <FinanceSettingsPanel /> : null}
+
+        {settingsTab === "energy" ? (
+          <>
         {inverterAccess && !inverterAccess.write_allowed ? (
           <InstallerAccessPanel plantName={inverterAccess.plant_name || "Greenacre"} />
         ) : null}
@@ -364,7 +387,7 @@ export default function SettingsPage() {
         ) : null}
 
         {auditPreview.length ? (
-          <section className="solar-card">
+          <section id="audit" className="solar-card">
             <h3 className="solar-section-title">Recent Modbus / control log</h3>
             <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto font-mono text-xs text-[var(--muted)]">
               {auditPreview.map((line) => (
@@ -372,6 +395,8 @@ export default function SettingsPage() {
               ))}
             </ul>
           </section>
+        ) : null}
+          </>
         ) : null}
       </div>
     </AppShell>

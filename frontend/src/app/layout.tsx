@@ -15,12 +15,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rob's Solar — Inverter Control",
-  description: "Secure monitoring and control for Sunsynk solar systems",
+  title: "Rob's Finance — Personal & Business Dashboard",
+  description: "Personal and business finance tracking with Energy / Solar monitoring",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    title: "Rob's Solar",
+    title: "Rob's Finance",
     statusBarStyle: "black-translucent",
   },
 };

@@ -82,7 +82,7 @@ export function SavingsHeroBand({
             <p className="mt-1 max-w-xl text-xs text-[var(--muted)]">{SAVINGS_EXPLAINER}</p>
           ) : null}
         </div>
-        <Link href="/analytics" className="solar-btn-ghost text-xs sm:text-sm">
+        <Link href="/energy/analytics" className="solar-btn-ghost text-xs sm:text-sm">
           Full analytics →
         </Link>
         {showEvBadge ? (

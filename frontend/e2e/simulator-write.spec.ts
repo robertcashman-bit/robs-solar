@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { gotoWhenAuthed } from "./helpers";
 
 test("simulator export limit write appears in audit log", async ({ page }) => {
-  await gotoWhenAuthed(page, "/controls");
+  await gotoWhenAuthed(page, "/energy/controls");
   await expect(page.getByRole("heading", { name: "Controls" })).toBeVisible();
 
   await page.getByLabel("Export limit (W)").fill("2500");

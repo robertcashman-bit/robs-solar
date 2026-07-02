@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import SchedulerPage from "@/app/scheduler/page";
+import SchedulerPage from "@/app/(energy)/energy/scheduler/page";
 
 const authState = {
   user: { username: "admin", role: "admin" } as { username: string; role: string } | null,
@@ -15,7 +15,7 @@ vi.mock("@/lib/auth-context", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
-  usePathname: () => "/scheduler",
+  usePathname: () => "/energy/scheduler",
 }));
 
 const settingsResponse = {

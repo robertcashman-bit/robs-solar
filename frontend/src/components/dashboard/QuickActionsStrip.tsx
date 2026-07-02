@@ -6,25 +6,25 @@ import { GaugeIcon, ChartIcon, SunIcon } from "@/components/shared/icons";
 
 const actions = [
   {
-    href: "/scheduler",
+    href: "/energy/scheduler",
     label: "Overnight charge",
     desc: "Schedule cheap-period charging",
     icon: GaugeIcon,
   },
   {
-    href: "/octopus",
+    href: "/energy/octopus",
     label: "Agile prices",
     desc: "Find cheapest half-hours",
     icon: ChartIcon,
   },
   {
-    href: "/forecast",
+    href: "/energy/forecast",
     label: "Solar forecast",
     desc: "Skip grid charge if sunny",
     icon: SunIcon,
   },
   {
-    href: "/controls",
+    href: "/energy/controls",
     label: "Battery limits",
     desc: "Charge / discharge caps",
     icon: GaugeIcon,

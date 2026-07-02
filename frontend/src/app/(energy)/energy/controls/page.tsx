@@ -75,7 +75,7 @@ export default function ControlsPage() {
         {lastAuditId ? (
           <p className="text-sm text-emerald-700 dark:text-emerald-400">
             Last write recorded in{" "}
-            <Link href="/audit" className="underline">
+            <Link href="/settings#audit" className="underline">
               audit log #{lastAuditId}
             </Link>
             .

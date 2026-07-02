@@ -1,7 +1,7 @@
 {
-  "name": "Rob's Solar",
-  "short_name": "Rob's Solar",
-  "description": "Sunsynk inverter control centre for Greenacre",
+  "name": "Rob's Finance",
+  "short_name": "Rob's Finance",
+  "description": "Personal and business finance dashboard with Energy / Solar monitoring",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0c0f14",

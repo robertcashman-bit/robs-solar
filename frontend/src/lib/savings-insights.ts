@@ -74,7 +74,7 @@ export function buildSavingsInsights(
       title: "Importing while solar is generating",
       body: `${Math.round(metrics.grid_import_w)} W from grid despite ${Math.round(metrics.pv_power_w)} W PV. Check load timing or battery mode.`,
       actionLabel: "Review controls",
-      actionHref: "/controls",
+      actionHref: "/energy/controls",
     });
   }
 
@@ -91,7 +91,7 @@ export function buildSavingsInsights(
       title: "Agile market dip",
       body: `Wholesale Agile is ${agileP.toFixed(1)}p/kWh — well below your bill rate. Worth checking if grid charging makes sense.`,
       actionLabel: "View Octopus",
-      actionHref: "/octopus",
+      actionHref: "/energy/octopus",
     });
   }
 
@@ -101,7 +101,7 @@ export function buildSavingsInsights(
       severity: "neutral",
       title: "High Agile market period",
       body: `Agile wholesale is ${agileP.toFixed(1)}p/kWh — exporting surplus may earn more than usual.`,
-      actionHref: "/octopus",
+      actionHref: "/energy/octopus",
       actionLabel: "View prices",
     });
   }
@@ -118,7 +118,7 @@ export function buildSavingsInsights(
       title: "Export earns less than import costs",
       body: `You export at ${exportP.toFixed(1)}p/kWh but import at ${importP.toFixed(1)}p/kWh. Favour battery or self-use before exporting.`,
       actionLabel: "Scheduler",
-      actionHref: "/scheduler",
+      actionHref: "/energy/scheduler",
     });
   }
 
@@ -129,7 +129,7 @@ export function buildSavingsInsights(
       title: "Battery running low",
       body: `SOC is ${metrics.battery_soc_pct.toFixed(0)}% with little solar. Consider overnight grid charge if tomorrow looks cloudy.`,
       actionLabel: "Check forecast",
-      actionHref: "/forecast",
+      actionHref: "/energy/forecast",
     });
   }
 
@@ -151,7 +151,7 @@ export function buildSavingsInsights(
       title: "Exporting while home load is high",
       body: "You are exporting to grid while the house still draws significant power. Self-consumption mode may reduce import later.",
       actionLabel: "Scheduler",
-      actionHref: "/scheduler",
+      actionHref: "/energy/scheduler",
     });
   }
 

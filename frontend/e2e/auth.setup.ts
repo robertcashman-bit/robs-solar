@@ -7,7 +7,7 @@ setup("authenticate as admin", async ({ page }) => {
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill("change-me-admin");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Live inverter data required" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible({
     timeout: 60_000,
   });
   await page.context().storageState({ path: authFile });

@@ -10,6 +10,36 @@ export function formatCurrencyAmount(value: number, currency: string): string {
   return `${currencySymbol(currency)}${Math.abs(value).toFixed(2)}`;
 }
 
+export function formatGbp(value: number | null | undefined, decimals = 2): string {
+  if (value == null || Number.isNaN(value)) {
+    return "—";
+  }
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value);
+}
+
+export function formatPercent(value: number | null | undefined, decimals = 1): string {
+  if (value == null || Number.isNaN(value)) {
+    return "—";
+  }
+  return `${value.toFixed(decimals)}%`;
+}
+
+export function formatMonthLabel(month: string): string {
+  const [year, mon] = month.split("-");
+  const date = new Date(Number(year), Number(mon) - 1, 1);
+  return date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
+export function currentMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export type SavingsFormat = {
   amount: string;
   headline: string;

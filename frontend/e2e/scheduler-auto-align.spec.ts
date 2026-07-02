@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { gotoWhenAuthed } from "./helpers";
 
 test("admin sees auto-align panel on scheduler page", async ({ page }) => {
-  await gotoWhenAuthed(page, "/scheduler");
+  await gotoWhenAuthed(page, "/energy/scheduler");
   await expect(page.getByRole("heading", { name: "Time-of-use scheduler" })).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Auto-align battery to IOG windows" }),

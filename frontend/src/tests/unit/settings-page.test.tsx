@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import SettingsPage from "@/app/settings/page";
@@ -45,8 +46,10 @@ vi.mock("@/lib/api-client", () => ({
 
 describe("SettingsPage", () => {
   it("shows adapter mode and live writes disabled", async () => {
+    const user = userEvent.setup();
     render(<SettingsPage />);
     expect(await screen.findByText("Safety & configuration")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Energy / Solar" }));
     expect(screen.getByText("Remote access")).toBeInTheDocument();
     expect(screen.getAllByText("simulator").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Simulated data")).toBeInTheDocument();

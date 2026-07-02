@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { loginAsViewer, gotoWhenAuthed } from "./helpers";
 
 test("admin can edit a TOU band and write it to the inverter", async ({ page }) => {
-  await gotoWhenAuthed(page, "/scheduler");
+  await gotoWhenAuthed(page, "/energy/scheduler");
 
   await expect(page.getByRole("heading", { name: "Time-of-use scheduler" })).toBeVisible();
 
@@ -30,7 +30,7 @@ test.describe("viewer access", () => {
 
   test("viewer does not see the schedule editor", async ({ page }) => {
     await loginAsViewer(page);
-    await page.goto("/scheduler");
+    await page.goto("/energy/scheduler");
     await expect(page.getByRole("heading", { name: "Time-of-use scheduler" })).toBeVisible({
       timeout: 15_000,
     });

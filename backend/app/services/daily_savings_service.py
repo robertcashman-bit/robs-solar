@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DailySavingsRow
+from app.db.models import DailySavingsRow, EnergyDailySnapshotRow, MetricSampleRow
 from app.schemas.domain import (
     DailySavingsPoint,
     HistoryRange,
@@ -63,7 +63,68 @@ class DailySavingsService:
                 setattr(row, key, value)
         await db.commit()
         await db.refresh(row)
+        await self._upsert_energy_snapshot(db, today, summary, warnings_json)
         return row
+
+    async def _upsert_energy_snapshot(
+        self,
+        db: AsyncSession,
+        today: str,
+        summary,
+        warnings_json: str,
+    ) -> None:
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        warnings = json.loads(warnings_json or "[]")
+        peak_discharge_ok = True
+        for w in warnings:
+            text = (
+                f"{w.get('title', '')} {w.get('message', '')}"
+                if isinstance(w, dict)
+                else str(w)
+            )
+            if "discharg" in text.lower() or "peak" in text.lower():
+                peak_discharge_ok = False
+                break
+
+        day_start = tariff_now().replace(hour=0, minute=0, second=0, microsecond=0)
+        samples = await db.scalars(
+            select(MetricSampleRow).where(MetricSampleRow.timestamp >= day_start)
+        )
+        sample_list = list(samples.all())
+        avg_soc = (
+            sum(s.battery_soc_pct for s in sample_list) / len(sample_list)
+            if sample_list
+            else 0.0
+        )
+
+        payload = {
+            "pv_kwh": summary.pv_kwh,
+            "import_kwh": summary.import_kwh,
+            "export_kwh": summary.export_kwh,
+            "battery_charge_kwh": (
+                summary.breakdown.battery_charge_kwh if summary.breakdown else 0.0
+            ),
+            "battery_discharge_kwh": (
+                summary.breakdown.battery_discharge_kwh if summary.breakdown else 0.0
+            ),
+            "avg_soc_pct": round(avg_soc, 1),
+            "savings_gbp": summary.savings,
+            "export_credit_gbp": summary.export_credit,
+            "peak_discharge_ok": peak_discharge_ok,
+            "alerts_json": warnings_json,
+        }
+
+        snap = await db.scalar(
+            select(EnergyDailySnapshotRow).where(EnergyDailySnapshotRow.date == today)
+        )
+        if snap is None:
+            db.add(EnergyDailySnapshotRow(date=today, created_at=now, **payload))
+        else:
+            for key, value in payload.items():
+                setattr(snap, key, value)
+        await db.commit()
 
     async def get_history(
         self, db: AsyncSession, range_name: HistoryRange

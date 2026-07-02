@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { gotoWhenAuthed } from "./helpers";
+import { openEnergySettings } from "./helpers";
 
 test("admin can update tariff on settings page", async ({ page }) => {
-  await gotoWhenAuthed(page, "/settings");
+  await openEnergySettings(page);
   await expect(page.getByText("Electricity tariff")).toBeVisible();
   await page.getByRole("spinbutton", { name: "Import rate (per kWh)", exact: true }).fill("0.30");
   await page.getByRole("spinbutton", { name: "Export rate (per kWh)" }).fill("0.10");

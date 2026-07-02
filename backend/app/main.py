@@ -18,6 +18,7 @@ from app.routes import (
     config_safety,
     config_snapshots,
     controls,
+    finance,
     forecast,
     health,
     metrics,
@@ -93,6 +94,7 @@ app.include_router(tariff.router)
 app.include_router(octopus.router)
 app.include_router(recommendations.router)
 app.include_router(optimisation.router)
+app.include_router(finance.router)
 app.include_router(forecast.router)
 app.include_router(alerts.router)
 app.include_router(settings_notifications.router)

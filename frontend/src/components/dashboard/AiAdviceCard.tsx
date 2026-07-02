@@ -121,7 +121,7 @@ export function AiAdviceCard({ canControl }: AiAdviceCardProps) {
           >
             {assessing ? "Checking…" : "Get AI advice"}
           </button>
-          <Link href="/assistant" className="solar-btn-ghost text-sm">
+          <Link href="/energy/assistant" className="solar-btn-ghost text-sm">
             Full assistant →
           </Link>
         </div>

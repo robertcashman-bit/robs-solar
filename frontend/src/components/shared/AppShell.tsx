@@ -4,29 +4,28 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { EnergySubNav } from "@/components/shared/EnergySubNav";
 import {
   AlertIcon,
-  BoltIcon,
   ChartIcon,
   GaugeIcon,
   SettingsIcon,
-  ShieldIcon,
   SunIcon,
+  WalletIcon,
 } from "@/components/shared/icons";
 import { useAuth } from "@/lib/auth-context";
-import { canViewAudit, canWrite } from "@/lib/permissions";
+import { canWrite } from "@/lib/permissions";
 import { InstallAppBanner } from "@/components/shared/InstallAppBanner";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: GaugeIcon },
-  { href: "/analytics", label: "Analytics", icon: ChartIcon },
-  { href: "/octopus", label: "Octopus", icon: ChartIcon },
-  { href: "/forecast", label: "Forecast", icon: SunIcon },
-  { href: "/scheduler", label: "Scheduler", icon: GaugeIcon },
-  { href: "/controls", label: "Controls", icon: GaugeIcon, adminOnly: true },
-  { href: "/assistant", label: "Assistant", icon: BoltIcon, adminOnly: true },
-  { href: "/alerts", label: "Alerts", icon: AlertIcon },
-  { href: "/audit", label: "Audit", icon: ShieldIcon, adminOnly: true },
+  { href: "/", label: "Overview", icon: GaugeIcon },
+  { href: "/finance/personal", label: "Personal", icon: WalletIcon },
+  { href: "/finance/business", label: "Business", icon: WalletIcon },
+  { href: "/finance/debts", label: "Debts", icon: WalletIcon },
+  { href: "/finance/cash-flow", label: "Cash Flow", icon: ChartIcon },
+  { href: "/finance/budget", label: "Budget", icon: ChartIcon },
+  { href: "/finance/reports", label: "Reports", icon: ChartIcon },
+  { href: "/energy", label: "Energy", icon: SunIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -36,6 +35,16 @@ function readStoredTheme(): "dark" | "light" {
   }
   const stored = window.localStorage.getItem("theme");
   return stored === "light" ? "light" : "dark";
+}
+
+function isNavActive(pathname: string, href: string): boolean {
+  if (href === "/") {
+    return pathname === "/";
+  }
+  if (href === "/energy") {
+    return pathname === "/energy" || pathname.startsWith("/energy/");
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -58,8 +67,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg">
-            <SunIcon size={22} className="animate-pulse" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-lg">
+            <WalletIcon size={22} className="animate-pulse" />
           </div>
           <p className="text-sm text-[var(--muted)]">Loading session…</p>
         </div>
@@ -72,14 +81,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface-elevated)]/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="group flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md transition-transform group-hover:scale-105">
-              <SunIcon size={20} />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-md transition-transform group-hover:scale-105">
+              <WalletIcon size={20} />
             </div>
             <div>
-              <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[var(--solar-dark)]">
-                Rob&apos;s Solar
+              <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400">
+                Rob&apos;s Finance
               </p>
-              <h1 className="text-sm font-semibold leading-tight tracking-tight">Savings Control</h1>
+              <h1 className="text-sm font-semibold leading-tight tracking-tight">Finance Dashboard</h1>
             </div>
           </Link>
 
@@ -87,22 +96,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <nav
                 aria-label="Main navigation"
-                className="flex flex-wrap gap-0.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 shadow-sm"
+                className="flex max-w-[min(100vw-2rem,52rem)] flex-wrap gap-0.5 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 shadow-sm"
               >
                 {navItems.map((item) => {
-                  if (item.adminOnly && !canWrite(user) && !canViewAudit(user)) {
-                    return null;
-                  }
-                  const active = pathname === item.href;
+                  const active = isNavActive(pathname, item.href);
                   const Icon = item.icon;
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
                       aria-current={active ? "page" : undefined}
-                      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all sm:px-3 ${
+                      className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all sm:px-3 ${
                         active
-                          ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm"
+                          ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm"
                           : "text-[var(--muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--foreground)]"
                       }`}
                     >
@@ -114,19 +120,19 @@ export function AppShell({ children }: { children: ReactNode }) {
                 })}
               </nav>
 
+              <Link
+                href="/alerts"
+                className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)]"
+                aria-label="Alerts"
+              >
+                <AlertIcon size={16} />
+              </Link>
+
               <span className="hidden items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium shadow-sm md:inline-flex">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 {user.username}
                 <span className="text-[var(--muted)]">· {user.role}</span>
               </span>
-              {typeof window !== "undefined" ? (
-                <span
-                  className="hidden text-[0.65rem] text-[var(--muted)] lg:inline"
-                  title="Use the same URL on phone and desktop for matching figures"
-                >
-                  {window.location.host}
-                </span>
-              ) : null}
 
               <button type="button" onClick={toggleTheme} className="solar-btn-ghost text-xs sm:text-sm">
                 {theme === "dark" ? "Light" : "Dark"}
@@ -141,12 +147,16 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">
         {user ? <InstallAppBanner /> : null}
+        {user ? <EnergySubNav isAdmin={canWrite(user)} /> : null}
         {children}
       </main>
 
       <footer className="border-t border-[var(--border)] py-5 text-center">
         <p className="text-xs text-[var(--muted)]">
-          Rob&apos;s Solar — secure Sunsynk monitoring &amp; control
+          Rob&apos;s Finance — personal &amp; business tracking · Energy / Solar in{" "}
+          <Link href="/energy" className="underline">
+            Energy section
+          </Link>
         </p>
       </footer>
     </div>
