@@ -155,6 +155,8 @@ class QuickFileClient:
                 "SearchParameters": {
                     "ReturnCount": 1,
                     "Offset": 0,
+                    "OrderResultsBy": "ClientID",
+                    "OrderDirection": "ASC",
                 }
             },
         )
