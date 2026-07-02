@@ -8,7 +8,9 @@ from app.integrations.quickfile_client import (
     QuickFileError,
     _bank_accounts_search_parameters,
     _client_search_parameters,
+    _extract_records,
     _invoice_search_parameters,
+    _parse_balance_amount,
     build_quickfile_auth,
     parse_quickfile_response,
 )
@@ -33,6 +35,23 @@ def test_invoice_search_parameters_use_status_not_invoice_status() -> None:
     assert params["Status"] == "UNPAID"
     assert "InvoiceStatus" not in params
     assert params["OrderResultsBy"] == "InvoiceNumber"
+
+
+def test_parse_balance_amount_from_account_balances() -> None:
+    assert _parse_balance_amount({"NominalCode": 1207, "Amount": -5056.61}) == -5056.61
+    assert _parse_balance_amount({"Amount": 202.8}) == 202.8
+
+
+def test_extract_account_balances_records() -> None:
+    body = {
+        "AccountBalances": [
+            {"NominalCode": 1207, "Amount": -5056.61},
+            {"NominalCode": 1259, "Amount": -6884.63},
+        ]
+    }
+    records = _extract_records(body)
+    assert len(records) == 2
+    assert _parse_balance_amount(records[0]) == -5056.61
 
 
 def test_build_quickfile_auth_md5() -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.integrations.base import BaseFinanceProvider, IntegrationNotConfiguredError
-from app.integrations.quickfile_client import QuickFileClient, QuickFileError
+from app.integrations.quickfile_client import QuickFileClient, QuickFileError, _nominal_code_key
 from app.schemas.finance import FinanceAccountType, FinanceScope, QuickFileConfig
 
 
@@ -16,7 +16,7 @@ def _map_account_type(raw: str, name: str) -> FinanceAccountType:
         return FinanceAccountType.CREDIT_CARD
     if value == "LOAN" or "loan" in label:
         return FinanceAccountType.LOAN
-    if "vat" in label:
+    if value == "RESERVE" or "vat" in label:
         return FinanceAccountType.VAT_RESERVE
     if "corp" in label or "corporation tax" in label:
         return FinanceAccountType.CORP_TAX_RESERVE
@@ -26,23 +26,32 @@ def _map_account_type(raw: str, name: str) -> FinanceAccountType:
 
 
 def _nominal_code(record: dict[str, Any]) -> str:
-    return str(
+    return _nominal_code_key(
         record.get("NominalCode")
         or record.get("Nominal")
         or record.get("AccountID")
         or record.get("Id")
-        or ""
-    ).strip()
+    )
 
 
 def _account_name(record: dict[str, Any]) -> str:
     return str(
-        record.get("AccountName")
-        or record.get("Name")
+        record.get("Name")
+        or record.get("AccountName")
         or record.get("BankName")
         or record.get("Description")
         or "QuickFile account"
     ).strip()
+
+
+def _normalize_balance(account_type: FinanceAccountType, amount: float) -> float:
+    if account_type in (
+        FinanceAccountType.CREDIT_CARD,
+        FinanceAccountType.LOAN,
+        FinanceAccountType.CAPITAL_ON_TAP,
+    ):
+        return round(abs(amount), 2)
+    return round(amount, 2)
 
 
 class QuickFileProvider(BaseFinanceProvider):
@@ -77,16 +86,18 @@ class QuickFileProvider(BaseFinanceProvider):
             code = _nominal_code(record)
             if not code:
                 continue
-            account_type = record.get("AccountType") or record.get("Type") or "CURRENT"
+            account_type = (
+                record.get("BankType")
+                or record.get("AccountType")
+                or record.get("Type")
+                or "CURRENT"
+            )
             name = _account_name(record)
             balance = balances.get(code)
             if balance is None:
+                parsed = record.get("Balance") or record.get("AccountBalance")
                 try:
-                    balance = float(
-                        record.get("Balance")
-                        or record.get("AccountBalance")
-                        or 0
-                    )
+                    balance = float(parsed) if parsed is not None else 0.0
                 except (TypeError, ValueError):
                     balance = 0.0
             mapped = _map_account_type(str(account_type), name)
@@ -96,7 +107,7 @@ class QuickFileProvider(BaseFinanceProvider):
                     "account_type": mapped.value,
                     "name": name,
                     "provider": "QuickFile",
-                    "balance_gbp": round(float(balance), 2),
+                    "balance_gbp": _normalize_balance(mapped, float(balance)),
                     "external_id": code,
                     "notes": f"QuickFile nominal {code}",
                 }

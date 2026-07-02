@@ -157,7 +157,14 @@ def parse_quickfile_response(status_code: int, raw: str) -> dict[str, Any]:
 
 
 def _extract_records(body: dict[str, Any]) -> list[dict[str, Any]]:
-    for key in ("Record", "Records", "BankAccountDetails", "BankAccounts", "Account"):
+    for key in (
+        "Record",
+        "Records",
+        "AccountBalances",
+        "BankAccountDetails",
+        "BankAccounts",
+        "Account",
+    ):
         value = body.get(key)
         if value is None:
             continue
@@ -166,6 +173,24 @@ def _extract_records(body: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(value, dict):
             return [value]
     return []
+
+
+def _nominal_code_key(value: Any) -> str:
+    if value is None or value == "":
+        return ""
+    return str(int(value)) if isinstance(value, (int, float)) else str(value).strip()
+
+
+def _parse_balance_amount(record: dict[str, Any]) -> float | None:
+    for field in ("Amount", "Balance", "AccountBalance", "ClosingBalance"):
+        raw = record.get(field)
+        if raw is None or raw == "":
+            continue
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 class QuickFileClient:
@@ -210,13 +235,6 @@ class QuickFileClient:
             {"SearchParameters": _bank_accounts_search_parameters()},
         )
         accounts = _extract_records(body)
-        if not accounts and isinstance(body.get("BankAccounts"), dict):
-            grouped = body["BankAccounts"]
-            for value in grouped.values():
-                if isinstance(value, list):
-                    accounts.extend(item for item in value if isinstance(item, dict))
-                elif isinstance(value, dict):
-                    accounts.append(value)
         return accounts
 
     async def fetch_bank_balances(
@@ -224,53 +242,61 @@ class QuickFileClient:
     ) -> dict[str, float]:
         if not nominal_codes:
             return {}
+        numeric_codes: list[int | str] = []
+        for code in nominal_codes:
+            try:
+                numeric_codes.append(int(code))
+            except (TypeError, ValueError):
+                numeric_codes.append(code)
         body = await self.request(
             "/1_2/bank/getaccountbalances",
-            {"NominalCodes": {"NominalCode": nominal_codes}},
+            {"NominalCodes": {"NominalCode": numeric_codes}},
         )
         balances: dict[str, float] = {}
         for record in _extract_records(body):
-            code = str(
+            code = _nominal_code_key(
                 record.get("NominalCode")
                 or record.get("Nominal")
                 or record.get("Code")
-                or ""
-            ).strip()
+            )
             if not code:
                 continue
-            amount = (
-                record.get("Balance")
-                or record.get("AccountBalance")
-                or record.get("ClosingBalance")
-                or 0
-            )
-            try:
-                balances[code] = float(amount)
-            except (TypeError, ValueError):
-                balances[code] = 0.0
+            amount = _parse_balance_amount(record)
+            if amount is None:
+                continue
+            balances[code] = amount
         return balances
 
     async def fetch_unpaid_invoice_total(self) -> float:
-        body = await self.request(
-            "/1_2/invoice/search",
-            {
-                "SearchParameters": _invoice_search_parameters(
-                    return_count=200,
-                    status="UNPAID",
-                )
-            },
-        )
         total = 0.0
-        for record in _extract_records(body):
-            due = (
-                record.get("AmountDue")
-                or record.get("OutstandingAmount")
-                or record.get("GrossTotal")
-                or record.get("TotalAmount")
-                or 0
+        offset = 0
+        page_size = 200
+        recordset_count: int | None = None
+        while True:
+            body = await self.request(
+                "/1_2/invoice/search",
+                {
+                    "SearchParameters": _invoice_search_parameters(
+                        return_count=page_size,
+                        offset=offset,
+                        status="UNPAID",
+                    )
+                },
             )
-            try:
-                total += float(due)
-            except (TypeError, ValueError):
-                continue
+            if recordset_count is None:
+                try:
+                    recordset_count = int(body.get("RecordsetCount") or 0)
+                except (TypeError, ValueError):
+                    recordset_count = 0
+            records = _extract_records(body)
+            for record in records:
+                amount = _parse_balance_amount(record)
+                if amount is None:
+                    continue
+                total += amount
+            if len(records) < page_size:
+                break
+            offset += page_size
+            if recordset_count and offset >= recordset_count:
+                break
         return round(total, 2)
