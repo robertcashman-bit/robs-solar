@@ -30,9 +30,14 @@ def test_ev_not_detected_outside_dispatch() -> None:
     assert detector.car_charging_likely is False
 
 
+def _offpeak_now() -> datetime:
+    """Fixed UTC instant that maps to 02:00 Europe/London (inside IOG off-peak)."""
+    return datetime(2026, 1, 15, 2, 0, tzinfo=timezone.utc)
+
+
 def test_ev_detected_sustained_high_load_in_dispatch() -> None:
     detector = EvLoadDetector()
-    now = datetime.now(timezone.utc)
+    now = _offpeak_now()
     planned = [
         DispatchWindow(
             start=now - timedelta(minutes=10),
@@ -49,7 +54,7 @@ def test_ev_detected_sustained_high_load_in_dispatch() -> None:
 
 def test_ev_detected_via_grid_import_when_load_ct_low() -> None:
     detector = EvLoadDetector()
-    now = datetime.now(timezone.utc)
+    now = _offpeak_now()
     planned = [
         DispatchWindow(
             start=now - timedelta(minutes=10),
