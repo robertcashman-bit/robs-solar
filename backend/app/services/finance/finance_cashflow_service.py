@@ -16,7 +16,6 @@ from app.schemas.finance import (
     CashflowForecastResponse,
     FinanceScope,
 )
-from app.services.finance.finance_accounts_service import finance_accounts_service
 from app.services.finance.finance_liabilities_service import finance_liabilities_service
 from app.services.finance.finance_overview_service import finance_overview_service
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -73,12 +73,12 @@ class FinanceAccount(BaseModel):
     name: str
     provider: str = ""
     balance_gbp: float = 0.0
-    credit_limit_gbp: Optional[float] = None
-    interest_rate_pct: Optional[float] = None
-    minimum_payment_gbp: Optional[float] = None
+    credit_limit_gbp: float | None = None
+    interest_rate_pct: float | None = None
+    minimum_payment_gbp: float | None = None
     notes: str = ""
     source: FinanceAccountSource = FinanceAccountSource.MANUAL
-    external_id: Optional[str] = None
+    external_id: str | None = None
     is_active: bool = True
     created_at: datetime
     updated_at: datetime
@@ -90,23 +90,23 @@ class FinanceAccountCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     provider: str = ""
     balance_gbp: float = 0.0
-    credit_limit_gbp: Optional[float] = None
-    interest_rate_pct: Optional[float] = None
-    minimum_payment_gbp: Optional[float] = None
+    credit_limit_gbp: float | None = None
+    interest_rate_pct: float | None = None
+    minimum_payment_gbp: float | None = None
     notes: str = ""
     source: FinanceAccountSource = FinanceAccountSource.MANUAL
-    external_id: Optional[str] = None
+    external_id: str | None = None
 
 
 class FinanceAccountUpdate(BaseModel):
-    name: Optional[str] = None
-    provider: Optional[str] = None
-    balance_gbp: Optional[float] = None
-    credit_limit_gbp: Optional[float] = None
-    interest_rate_pct: Optional[float] = None
-    minimum_payment_gbp: Optional[float] = None
-    notes: Optional[str] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    provider: str | None = None
+    balance_gbp: float | None = None
+    credit_limit_gbp: float | None = None
+    interest_rate_pct: float | None = None
+    minimum_payment_gbp: float | None = None
+    notes: str | None = None
+    is_active: bool | None = None
 
 
 class FinanceLiability(BaseModel):
@@ -118,8 +118,8 @@ class FinanceLiability(BaseModel):
     interest_rate_pct: float
     minimum_payment_gbp: float
     overpayment_gbp: float = 0.0
-    payment_day: Optional[int] = None
-    account_id: Optional[int] = None
+    payment_day: int | None = None
+    account_id: int | None = None
     notes: str = ""
     is_active: bool = True
     created_at: datetime
@@ -134,20 +134,20 @@ class FinanceLiabilityCreate(BaseModel):
     interest_rate_pct: float = Field(ge=0, le=100)
     minimum_payment_gbp: float = Field(ge=0)
     overpayment_gbp: float = Field(default=0, ge=0)
-    payment_day: Optional[int] = Field(default=None, ge=1, le=31)
-    account_id: Optional[int] = None
+    payment_day: int | None = Field(default=None, ge=1, le=31)
+    account_id: int | None = None
     notes: str = ""
 
 
 class FinanceLiabilityUpdate(BaseModel):
-    name: Optional[str] = None
-    balance_gbp: Optional[float] = Field(default=None, ge=0)
-    interest_rate_pct: Optional[float] = Field(default=None, ge=0, le=100)
-    minimum_payment_gbp: Optional[float] = Field(default=None, ge=0)
-    overpayment_gbp: Optional[float] = Field(default=None, ge=0)
-    payment_day: Optional[int] = Field(default=None, ge=1, le=31)
-    notes: Optional[str] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    balance_gbp: float | None = Field(default=None, ge=0)
+    interest_rate_pct: float | None = Field(default=None, ge=0, le=100)
+    minimum_payment_gbp: float | None = Field(default=None, ge=0)
+    overpayment_gbp: float | None = Field(default=None, ge=0)
+    payment_day: int | None = Field(default=None, ge=1, le=31)
+    notes: str | None = None
+    is_active: bool | None = None
 
 
 class PersonalFinanceSnapshot(BaseModel):
@@ -224,9 +224,9 @@ class MonthlyBudgetLineCreate(BaseModel):
 
 
 class MonthlyBudgetLineUpdate(BaseModel):
-    budgeted_gbp: Optional[float] = Field(default=None, ge=0)
-    actual_gbp: Optional[float] = Field(default=None, ge=0)
-    notes: Optional[str] = None
+    budgeted_gbp: float | None = Field(default=None, ge=0)
+    actual_gbp: float | None = Field(default=None, ge=0)
+    notes: str | None = None
 
 
 class CashflowForecastEntry(BaseModel):
@@ -260,7 +260,7 @@ class FinanceInsight(BaseModel):
     title: str
     message: str
     status: str
-    related_date: Optional[str] = None
+    related_date: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
@@ -292,7 +292,7 @@ class DebtStrategyRecommendation(BaseModel):
     headline: str
     message: str
     debts: list[dict[str, Any]] = Field(default_factory=list)
-    estimated_debt_free_date: Optional[str] = None
+    estimated_debt_free_date: str | None = None
 
 
 class CashflowForecastResponse(BaseModel):
@@ -306,8 +306,8 @@ class CashflowForecastResponse(BaseModel):
 
 class FinanceReportsResponse(BaseModel):
     month: str
-    personal_snapshot: Optional[PersonalFinanceSnapshot] = None
-    business_snapshot: Optional[BusinessFinanceSnapshot] = None
+    personal_snapshot: PersonalFinanceSnapshot | None = None
+    business_snapshot: BusinessFinanceSnapshot | None = None
     net_worth_gbp: float
     total_debt_gbp: float
     debt_reduction_gbp: float

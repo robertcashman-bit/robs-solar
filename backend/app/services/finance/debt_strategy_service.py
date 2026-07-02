@@ -43,17 +43,20 @@ def _add_months(start: date, months: int) -> date:
 
 
 def recommend_debt_strategy(liabilities: list[FinanceLiability]) -> DebtStrategyRecommendation:
-    active = [l for l in liabilities if l.is_active and l.balance_gbp > 0]
+    active = [item for item in liabilities if item.is_active and item.balance_gbp > 0]
     if not active:
         return DebtStrategyRecommendation(
             strategy="none",
             headline="No active debts",
-            message="You have no recorded debts. Add liabilities on the Debts page to get payoff recommendations.",
+            message=(
+                "You have no recorded debts. Add liabilities on the Debts page "
+                "to get payoff recommendations."
+            ),
             debts=[],
         )
 
-    snowball = sorted(active, key=lambda l: l.balance_gbp)
-    avalanche = sorted(active, key=lambda l: l.interest_rate_pct, reverse=True)
+    snowball = sorted(active, key=lambda debt: debt.balance_gbp)
+    avalanche = sorted(active, key=lambda debt: debt.interest_rate_pct, reverse=True)
     chosen = avalanche
     strategy = "avalanche"
 
@@ -96,14 +99,18 @@ def recommend_debt_strategy(liabilities: list[FinanceLiability]) -> DebtStrategy
             }
         )
 
-    strategy_label = "Avalanche (highest interest first)" if strategy == "avalanche" else "Snowball (smallest balance first)"
+    if strategy == "avalanche":
+        strategy_label = "Avalanche (highest interest first)"
+    else:
+        strategy_label = "Snowball (smallest balance first)"
     return DebtStrategyRecommendation(
         strategy=strategy,
         headline=f"Recommended: {strategy_label}",
         message=(
             f"Focus extra payments on {target.name} ({target.balance_gbp:.0f} GBP at "
             f"{target.interest_rate_pct:.1f}%). "
-            f"Estimated debt-free date for this debt: {debt_free or 'payment too low to cover interest'}."
+            f"Estimated debt-free date for this debt: "
+            f"{debt_free or 'payment too low to cover interest'}."
         ),
         debts=debts,
         estimated_debt_free_date=debt_free,

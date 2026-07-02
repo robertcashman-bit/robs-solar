@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_admin, require_viewer
 from app.auth.sessions import SessionData
 from app.db.session import get_db
+from app.integrations.registry import integration_registry
 from app.middleware.rate_limit import enforce_write_rate_limit
 from app.schemas.finance import (
     BusinessFinanceSnapshot,
@@ -39,7 +38,6 @@ from app.services.finance.finance_cashflow_service import finance_cashflow_servi
 from app.services.finance.finance_insights_service import finance_insights_service
 from app.services.finance.finance_liabilities_service import finance_liabilities_service
 from app.services.finance.finance_overview_service import finance_overview_service
-from app.integrations.registry import integration_registry
 from app.services.finance.finance_reports_service import finance_reports_service
 
 router = APIRouter(prefix="/finance", tags=["finance"])
@@ -55,7 +53,7 @@ async def get_overview(
 
 @router.get("/accounts", response_model=list[FinanceAccount])
 async def list_accounts(
-    scope: Optional[FinanceScope] = None,
+    scope: FinanceScope | None = None,
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> list[FinanceAccount]:
@@ -102,7 +100,7 @@ async def delete_account(
 
 @router.get("/liabilities", response_model=list[FinanceLiability])
 async def list_liabilities(
-    scope: Optional[FinanceScope] = None,
+    scope: FinanceScope | None = None,
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> list[FinanceLiability]:
@@ -164,7 +162,11 @@ async def list_personal_snapshots(
     return await finance_overview_service.list_personal_snapshots(db)
 
 
-@router.post("/snapshots/personal", response_model=PersonalFinanceSnapshot, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/snapshots/personal",
+    response_model=PersonalFinanceSnapshot,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_personal_snapshot(
     request: Request,
     body: PersonalFinanceSnapshotCreate,
@@ -183,7 +185,11 @@ async def list_business_snapshots(
     return await finance_overview_service.list_business_snapshots(db)
 
 
-@router.post("/snapshots/business", response_model=BusinessFinanceSnapshot, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/snapshots/business",
+    response_model=BusinessFinanceSnapshot,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_business_snapshot(
     request: Request,
     body: BusinessFinanceSnapshotCreate,
@@ -197,7 +203,7 @@ async def create_business_snapshot(
 @router.get("/budget", response_model=list[MonthlyBudgetLine])
 async def get_budget(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
-    scope: Optional[FinanceScope] = None,
+    scope: FinanceScope | None = None,
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> list[MonthlyBudgetLine]:
@@ -272,7 +278,7 @@ async def dismiss_insight(
 
 @router.get("/reports", response_model=FinanceReportsResponse)
 async def get_reports(
-    month: Optional[str] = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
+    month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> FinanceReportsResponse:

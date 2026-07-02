@@ -103,11 +103,13 @@ class FinanceLiabilitiesService:
         await db.commit()
         return True
 
-    def total_debt(self, liabilities: list[FinanceLiability], scope: FinanceScope | None = None) -> float:
+    def total_debt(
+        self, liabilities: list[FinanceLiability], scope: FinanceScope | None = None
+    ) -> float:
         items = liabilities
         if scope is not None:
-            items = [l for l in liabilities if l.scope == scope]
-        return sum(l.balance_gbp for l in items)
+            items = [debt for debt in liabilities if debt.scope == scope]
+        return sum(debt.balance_gbp for debt in items)
 
 
 finance_liabilities_service = FinanceLiabilitiesService()

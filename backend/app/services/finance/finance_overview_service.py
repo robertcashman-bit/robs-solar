@@ -73,35 +73,53 @@ class FinanceOverviewService:
         credit_cards = (
             finance_accounts_service.sum_by_type(accounts, FinanceAccountType.CREDIT_CARD)
             + sum(
-                l.balance_gbp
-                for l in liabilities
-                if l.debt_type.value == "credit_card"
+                debt.balance_gbp
+                for debt in liabilities
+                if debt.debt_type.value == "credit_card"
             )
         )
         loans = (
             finance_accounts_service.sum_by_type(accounts, FinanceAccountType.LOAN)
-            + sum(l.balance_gbp for l in liabilities if l.debt_type.value in ("loan", "business_loan"))
+            + sum(
+                debt.balance_gbp
+                for debt in liabilities
+                if debt.debt_type.value in ("loan", "business_loan")
+            )
         )
         mortgage = (
             finance_accounts_service.sum_by_type(accounts, FinanceAccountType.MORTGAGE)
-            + sum(l.balance_gbp for l in liabilities if l.debt_type.value == "mortgage")
+            + sum(
+                debt.balance_gbp
+                for debt in liabilities
+                if debt.debt_type.value == "mortgage"
+            )
         )
         pension = finance_accounts_service.sum_by_type(accounts, FinanceAccountType.PENSION)
         directors_loan = (
             finance_accounts_service.sum_by_type(accounts, FinanceAccountType.DIRECTORS_LOAN)
-            + sum(l.balance_gbp for l in liabilities if l.debt_type.value == "directors_loan")
+            + sum(
+                debt.balance_gbp
+                for debt in liabilities
+                if debt.debt_type.value == "directors_loan"
+            )
         )
 
-        total_personal_debt = finance_liabilities_service.total_debt(liabilities, FinanceScope.PERSONAL)
-        total_business_debt = finance_liabilities_service.total_debt(liabilities, FinanceScope.BUSINESS)
+        total_personal_debt = finance_liabilities_service.total_debt(
+            liabilities, FinanceScope.PERSONAL
+        )
+        total_business_debt = finance_liabilities_service.total_debt(
+            liabilities, FinanceScope.BUSINESS
+        )
 
         monthly_income = personal_snap.monthly_income_gbp if personal_snap else 0.0
         monthly_spending = personal_snap.monthly_spending_gbp if personal_snap else 0.0
         household_bills = personal_snap.household_bills_gbp if personal_snap else 0.0
         cash_after_bills = personal_bank - household_bills
 
-        vat_reserve = business_snap.vat_reserve_gbp if business_snap else finance_accounts_service.sum_by_type(
-            accounts, FinanceAccountType.VAT_RESERVE
+        vat_reserve = (
+            business_snap.vat_reserve_gbp
+            if business_snap
+            else finance_accounts_service.sum_by_type(accounts, FinanceAccountType.VAT_RESERVE)
         )
         corp_tax_reserve = (
             business_snap.corp_tax_reserve_gbp
@@ -128,8 +146,12 @@ class FinanceOverviewService:
             personal_snap.debt_repayments_gbp if personal_snap else 0.0
         )
 
-        vat_warning = vat_reserve < (business_snap.expenses_gbp * 0.2 if business_snap else 500)
-        corp_warning = corp_tax_reserve < (business_snap.profit_estimate_gbp * 0.19 if business_snap else 500)
+        vat_warning = vat_reserve < (
+            business_snap.expenses_gbp * 0.2 if business_snap else 500
+        )
+        corp_warning = corp_tax_reserve < (
+            business_snap.profit_estimate_gbp * 0.19 if business_snap else 500
+        )
 
         overview = FinanceOverviewResponse(
             personal_bank_balance_gbp=round(personal_bank, 2),
@@ -223,7 +245,9 @@ class FinanceOverviewService:
         await db.refresh(row)
         return _business_from_row(row)
 
-    async def list_personal_snapshots(self, db: AsyncSession, limit: int = 12) -> list[PersonalFinanceSnapshot]:
+    async def list_personal_snapshots(
+        self, db: AsyncSession, limit: int = 12
+    ) -> list[PersonalFinanceSnapshot]:
         rows = await db.scalars(
             select(PersonalFinanceSnapshotRow)
             .order_by(PersonalFinanceSnapshotRow.snapshot_date.desc())
@@ -231,7 +255,9 @@ class FinanceOverviewService:
         )
         return [_personal_from_row(r) for r in rows.all()]
 
-    async def list_business_snapshots(self, db: AsyncSession, limit: int = 12) -> list[BusinessFinanceSnapshot]:
+    async def list_business_snapshots(
+        self, db: AsyncSession, limit: int = 12
+    ) -> list[BusinessFinanceSnapshot]:
         rows = await db.scalars(
             select(BusinessFinanceSnapshotRow)
             .order_by(BusinessFinanceSnapshotRow.snapshot_date.desc())

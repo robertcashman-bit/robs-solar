@@ -14,7 +14,9 @@ from app.services.finance.finance_overview_service import finance_overview_servi
 
 
 class FinanceReportsService:
-    async def get_reports(self, db: AsyncSession, month: str | None = None) -> FinanceReportsResponse:
+    async def get_reports(
+        self, db: AsyncSession, month: str | None = None
+    ) -> FinanceReportsResponse:
         if month is None:
             month = datetime.now(timezone.utc).strftime("%Y-%m")
         overview = await finance_overview_service.get_overview(db)
