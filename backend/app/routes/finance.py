@@ -118,8 +118,19 @@ async def bank_connection_disconnect(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     await enforce_write_rate_limit(request)
-    if connection_id not in TARGET_BANKS:
+    bank = TARGET_BANKS.get(connection_id)
+    if bank is None:
         raise HTTPException(status_code=404, detail="Bank connection not found")
+    if bank.method.value == "open_banking":
+        lf_status = await lunch_flow_settings_service.get_status(db)
+        if lf_status.configured:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "This bank syncs via Lunch Flow. Remove the connection at "
+                    "lunchflow.app, then press Sync now to refresh."
+                ),
+            )
     if not await disconnect_bank_connection(db, connection_id):
         raise HTTPException(
             status_code=400,

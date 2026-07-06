@@ -177,8 +177,8 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
       await apiClient.post(`/finance/bank-connections/${connectionId}/disconnect`);
       setMessage("Disconnected. You can connect again any time.");
       await load();
-    } catch {
-      setError("Could not disconnect. Try again.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not disconnect. Try again.");
     } finally {
       setBusyId(null);
     }

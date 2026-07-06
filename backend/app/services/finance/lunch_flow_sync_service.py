@@ -28,7 +28,7 @@ def _infer_account_type(name: str, institution_name: str) -> str:
 def _account_record(
     *,
     account: dict,
-    balance_gbp: float,
+    balance_gbp: float | None,
 ) -> dict:
     account_id = int(account["id"])
     name = str(account.get("name") or "Account")
@@ -39,7 +39,7 @@ def _account_record(
         "account_type": account_type,
         "name": name,
         "provider": institution,
-        "balance_gbp": round(balance_gbp, 2),
+        "balance_gbp": round(balance_gbp, 2) if balance_gbp is not None else None,
         "external_id": f"lunchflow:{account_id}",
         "notes": f"Synced via Lunch Flow ({institution})",
     }
@@ -105,17 +105,36 @@ class LunchFlowSyncService:
         date_from = (now - timedelta(days=90)).date().isoformat()
         synced_accounts = 0
         synced_transactions = 0
+        disconnected_accounts = 0
+        skipped_non_gbp = 0
         account_rows: list[FinanceAccountRow] = []
 
         for account in accounts:
-            if str(account.get("status") or "ACTIVE").upper() not in ("ACTIVE", ""):
-                continue
             account_id = int(account["id"])
+            status_value = str(account.get("status") or "ACTIVE").upper()
+            if status_value not in ("ACTIVE", ""):
+                # DISCONNECTED/ERROR — retire the local row so stale balances
+                # stop counting towards net worth.
+                if await self._deactivate_account(db, f"lunchflow:{account_id}"):
+                    disconnected_accounts += 1
+                continue
+
+            currency = str(account.get("currency") or "").upper()
+            if currency and currency != "GBP":
+                skipped_non_gbp += 1
+                continue
+
+            balance_gbp: float | None
             try:
                 balance_body = await client.get_account_balance(account_id)
+                balance_currency = str(balance_body.get("currency") or "").upper()
+                if balance_currency and balance_currency != "GBP":
+                    skipped_non_gbp += 1
+                    continue
                 balance_gbp = _parse_balance_amount(balance_body)
             except LunchFlowError:
-                balance_gbp = 0.0
+                # Transient balance failure — keep the previously synced balance.
+                balance_gbp = None
 
             record = _account_record(account=account, balance_gbp=balance_gbp)
             row = await self._upsert_account(db, record)
@@ -130,6 +149,9 @@ class LunchFlowSyncService:
                 except LunchFlowError:
                     transactions = []
                 for tx in transactions:
+                    tx_currency = str(tx.get("currency") or "").upper()
+                    if tx_currency and tx_currency != "GBP":
+                        continue
                     payload = _transaction_record(
                         tx,
                         account_row_id=row.id,
@@ -148,6 +170,13 @@ class LunchFlowSyncService:
             message += "; historic placeholders retired"
         if synced_transactions:
             message += f"; {synced_transactions} transaction(s) imported"
+        if disconnected_accounts:
+            message += (
+                f"; {disconnected_accounts} disconnected account(s) retired — "
+                "reconnect them at lunchflow.app"
+            )
+        if skipped_non_gbp:
+            message += f"; {skipped_non_gbp} non-GBP account(s) skipped"
         return LunchFlowSyncResult(
             accounts_synced=synced_accounts,
             transactions_synced=synced_transactions,
@@ -163,13 +192,14 @@ class LunchFlowSyncService:
             )
         )
         now = datetime.now(timezone.utc)
+        balance = item.get("balance_gbp")
         if row is None:
             row = FinanceAccountRow(
                 scope=item["scope"],
                 account_type=item["account_type"],
                 name=item["name"],
                 provider=item.get("provider", "Lunch Flow"),
-                balance_gbp=item.get("balance_gbp", 0.0),
+                balance_gbp=balance if balance is not None else 0.0,
                 notes=item.get("notes", ""),
                 source=FinanceAccountSource.LUNCH_FLOW.value,
                 external_id=external_id,
@@ -181,7 +211,8 @@ class LunchFlowSyncService:
         else:
             row.name = item["name"]
             row.provider = item.get("provider", row.provider)
-            row.balance_gbp = item.get("balance_gbp", 0.0)
+            if balance is not None:
+                row.balance_gbp = balance
             row.account_type = item["account_type"]
             row.notes = item.get("notes", row.notes)
             row.is_active = True
@@ -189,6 +220,21 @@ class LunchFlowSyncService:
         await db.commit()
         await db.refresh(row)
         return row
+
+    async def _deactivate_account(self, db: AsyncSession, external_id: str) -> bool:
+        row = await db.scalar(
+            select(FinanceAccountRow).where(
+                FinanceAccountRow.external_id == external_id,
+                FinanceAccountRow.source == FinanceAccountSource.LUNCH_FLOW.value,
+                FinanceAccountRow.is_active.is_(True),
+            )
+        )
+        if row is None:
+            return False
+        row.is_active = False
+        row.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        return True
 
     async def _upsert_transaction(self, db: AsyncSession, item: dict) -> bool:
         existing = await db.scalar(

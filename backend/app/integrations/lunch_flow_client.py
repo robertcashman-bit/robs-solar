@@ -8,7 +8,8 @@ import httpx
 
 from app.schemas.finance import LunchFlowConfig
 
-LUNCH_FLOW_BASE = "https://lunchflow.app/api/v1"
+# Must be the www host: the apex domain 308-redirects and would break API calls.
+LUNCH_FLOW_BASE = "https://www.lunchflow.app/api/v1"
 
 
 class LunchFlowError(Exception):
@@ -26,15 +27,25 @@ class LunchFlowClient:
         }
 
     async def _get(self, path: str, params: dict[str, str] | None = None) -> Any:
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
             response = await client.get(
                 f"{LUNCH_FLOW_BASE}{path}", headers=self._headers(), params=params
             )
         if response.status_code == 401:
             raise LunchFlowError("Invalid Lunch Flow API key")
         if response.status_code == 403:
+            # 403 covers both invalid credentials and missing subscription — surface
+            # the API's own message rather than guessing.
+            message = ""
+            try:
+                body = response.json()
+                message = str(body.get("message") or "")
+            except Exception:
+                message = ""
             raise LunchFlowError(
-                "Lunch Flow subscription required. Start your trial at lunchflow.app"
+                f"Lunch Flow rejected the API key: {message}"
+                if message
+                else "Lunch Flow rejected the API key. Check it at lunchflow.app"
             )
         if response.status_code >= 400:
             try:

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import delete, select
 
-from app.db.models import FinanceAccountRow
+from app.db.models import FinanceAccountRow, FinanceTransactionRow
 from app.db.session import SessionLocal
 from app.schemas.finance import (
     BankConnectionMethod,
@@ -19,8 +19,16 @@ from app.services.finance.bank_connections_service import (
     disconnect,
     get_connections,
 )
+from app.services.lunch_flow_settings_service import lunch_flow_settings_service
 from app.services.open_banking_settings_service import open_banking_settings_service
 from tests.unit.test_enable_banking_client import _test_private_key_pem
+
+
+async def _clear_lunch_flow_settings(db) -> None:
+    row = await lunch_flow_settings_service._get_row(db, "lunch_flow")
+    if row is not None:
+        await db.delete(row)
+        await db.commit()
 
 
 @pytest.mark.asyncio
@@ -43,12 +51,14 @@ async def test_get_connections_open_banking_not_configured_message(
     monkeypatch.setattr(settings, "enable_banking_private_key_path", "")
     monkeypatch.setattr(settings, "open_banking_secret_id", "")
     monkeypatch.setattr(settings, "open_banking_secret_key", "")
+    monkeypatch.setattr(settings, "lunch_flow_api_key", "")
 
     async with SessionLocal() as db:
         row = await open_banking_settings_service._get_row(db, "open_banking")
         if row is not None:
             await db.delete(row)
             await db.commit()
+        await _clear_lunch_flow_settings(db)
         connections = await get_connections(db)
     lloyds = next(item for item in connections if item.id == "lloyds")
     assert lloyds.method == BankConnectionMethod.OPEN_BANKING
@@ -57,10 +67,15 @@ async def test_get_connections_open_banking_not_configured_message(
 
 
 @pytest.mark.asyncio
-async def test_get_connections_linked_lloyds_status() -> None:
+async def test_get_connections_linked_lloyds_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "lunch_flow_api_key", "")
+
     async with SessionLocal() as db:
         await db.execute(delete(FinanceAccountRow))
         await db.commit()
+        await _clear_lunch_flow_settings(db)
         await open_banking_settings_service.set_config(
             db,
             OpenBankingConfig(

@@ -13,7 +13,7 @@ from app.schemas.finance import LunchFlowConfig
 @pytest.mark.asyncio
 @respx.mock
 async def test_list_accounts_success() -> None:
-    respx.get("https://lunchflow.app/api/v1/accounts").mock(
+    respx.get("https://www.lunchflow.app/api/v1/accounts").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -39,7 +39,7 @@ async def test_list_accounts_success() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_test_connection_invalid_key() -> None:
-    respx.get("https://lunchflow.app/api/v1/accounts").mock(
+    respx.get("https://www.lunchflow.app/api/v1/accounts").mock(
         return_value=httpx.Response(
             401, json={"error": "Unauthorized", "message": "Invalid API key"}
         )
@@ -52,13 +52,13 @@ async def test_test_connection_invalid_key() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_get_account_balance_and_transactions() -> None:
-    respx.get("https://lunchflow.app/api/v1/accounts/7/balance").mock(
+    respx.get("https://www.lunchflow.app/api/v1/accounts/7/balance").mock(
         return_value=httpx.Response(
             200,
             json={"balance": {"available": 1200.0, "current": 1250.0, "currency": "GBP"}},
         )
     )
-    respx.get("https://lunchflow.app/api/v1/accounts/7/transactions").mock(
+    respx.get("https://www.lunchflow.app/api/v1/accounts/7/transactions").mock(
         return_value=httpx.Response(
             200,
             json={

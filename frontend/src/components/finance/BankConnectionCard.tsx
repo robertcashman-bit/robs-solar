@@ -36,7 +36,13 @@ export function BankConnectionCard({
       connection.status === "awaiting_login" ||
       connection.status === "not_configured" ||
       connection.status === "needs_reconnection");
-  const canDisconnect = writable && connection.method === "open_banking" && connected;
+  // Lunch Flow connections are managed at lunchflow.app — the backend cannot
+  // disconnect them, so offering the button here would be dishonest.
+  const canDisconnect =
+    writable &&
+    connection.method === "open_banking" &&
+    personalProvider !== "lunch_flow" &&
+    connected;
   const canSync =
     writable &&
     (connection.method === "open_banking" || connection.method === "quickfile") &&

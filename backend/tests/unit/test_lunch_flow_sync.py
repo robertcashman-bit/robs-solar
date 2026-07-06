@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 import respx
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.db.models import FinanceAccountRow, FinanceTransactionRow
 from app.db.session import SessionLocal
@@ -16,7 +16,7 @@ from app.services.finance.lunch_flow_sync_service import lunch_flow_sync_service
 @pytest.mark.asyncio
 @respx.mock
 async def test_sync_imports_accounts_and_transactions() -> None:
-    respx.get("https://lunchflow.app/api/v1/accounts").mock(
+    respx.get("https://www.lunchflow.app/api/v1/accounts").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -34,13 +34,13 @@ async def test_sync_imports_accounts_and_transactions() -> None:
         )
     )
     # Official spec shape: balance.amount, merchant, isPending, nullable id.
-    respx.get("https://lunchflow.app/api/v1/accounts/11/balance").mock(
+    respx.get("https://www.lunchflow.app/api/v1/accounts/11/balance").mock(
         return_value=httpx.Response(
             200,
             json={"balance": {"amount": 350.0, "currency": "GBP"}},
         )
     )
-    respx.get("https://lunchflow.app/api/v1/accounts/11/transactions").mock(
+    respx.get("https://www.lunchflow.app/api/v1/accounts/11/transactions").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -70,6 +70,10 @@ async def test_sync_imports_accounts_and_transactions() -> None:
     )
 
     async with SessionLocal() as db:
+        await db.execute(delete(FinanceTransactionRow))
+        await db.execute(delete(FinanceAccountRow))
+        await db.commit()
+
         result = await lunch_flow_sync_service.sync(db, LunchFlowConfig(api_key="secret"))
         assert result.accounts_synced == 1
         assert result.transactions_synced == 2
