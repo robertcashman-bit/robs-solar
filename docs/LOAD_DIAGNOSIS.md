@@ -5,15 +5,17 @@ System: Sunsynk inverter via the Sunsynk Connect cloud API (`ADAPTER_MODE=sunsyn
 
 ## TL;DR
 
-**This app is not showing Load = 0.** Live queries against the running backend (below) show it
-correctly displaying a non-zero, plausible house load (449–615 W across two snapshots taken
-minutes apart, matching the household's actual draw) by deriving it from the power balance.
+**Post-fix (2026-07-06, production after CT repair):** `loadOrEpsPower` now reports **410–485 W**
+(live), `house_load_source` is **`reported`** (not derived), and the dashboard **Home** node
+shows hundreds of watts. Battery is discharging appropriately (~454 W at 61% SOC). Octopus
+half-hourly average was **404 W** — aligned with Sunsynk. **`existsMeter` is still `false`** in
+the raw payload (Sunsynk cloud flag; load CT data is flowing via `loadOrEpsPower` regardless).
 
-**The raw Sunsynk cloud payload's load fields (`loadOrEpsPower`, `homeLoadPower`,
-`upsLoadPower`) are genuinely, persistently `0`,** and Sunsynk's own `existsMeter` flag is
-`false`. That combination is the cloud's way of saying: *the load/grid CT clamp is not providing
-a working reading*. This points to a **physical/installation issue on the Sunsynk side** (most
-likely the CT clamp), not a software bug in this codebase — see the root-cause ranking below.
+**Pre-fix (2026-07-06 investigation):** The app was not showing Load = 0 — it derived
+449–615 W from the power balance while raw load fields were all `0` and `existsMeter` was
+`false`. That pointed to a **physical CT issue**, since fixed on the inverter side.
+
+See §10 for the post-fix production snapshot.
 
 If you are instead seeing **0** on the **inverter's own screen or the official Sunsynk/Sunsynk
 Pro app**, that confirms the CT/meter issue is upstream of all software and is 100% a physical
@@ -254,3 +256,23 @@ No UI was "patched" to hide the problem: `house_load_w` and its derivation logic
 changed by this investigation (they were already correct). What changed is that the previously
 invisible raw data and field provenance are now surfaced, tested, and kept explicitly separate
 from the derived estimate.
+
+## 10. Post-fix production snapshot (2026-07-06)
+
+After the physical CT repair and a successful Vercel deploy (`6d4eeaa`), production at
+`https://robs-solar.vercel.app` was re-checked:
+
+| Field | Pre-fix | Post-fix |
+|---|---|---|
+| `loadOrEpsPower` (raw) | 0 W | **410 W** |
+| `homeLoadPower` (raw) | 0 W | 0 W |
+| `existsMeter` (raw) | false | false |
+| `house_load_w` (app) | 449 W (derived) | **410–485 W (reported)** |
+| `house_load_source` | derived | **reported** |
+| Battery | ~14 W / 98% SOC | **454 W discharge / 61% SOC** |
+| Octopus half-hourly avg | ~404 W | **404 W** |
+
+**Conclusion:** Load CT data is now flowing through `loadOrEpsPower`; the app uses the reported
+value instead of the power-balance fallback. Battery behaviour is consistent with real house
+load. The `existsMeter: false` flag in the Sunsynk cloud payload persists but is no longer
+blocking — measured load matches Octopus within normal averaging tolerance.

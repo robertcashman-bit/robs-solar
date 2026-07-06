@@ -6,6 +6,38 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Vercel project must use repo root (null), not a nested "robs-solar" folder — otherwise
+# git pushes fail with NOW_SANDBOX_WORKER_ROOTDIR_NOT_EXIST and vercel.json services are ignored.
+if [[ -n "${VERCEL_TOKEN:-}" ]]; then
+  VERCEL_META="$(python3 <<'PY'
+import json
+from pathlib import Path
+root = Path(".vercel")
+if (root / "project.json").exists():
+    data = json.loads((root / "project.json").read_text())
+    print(data["projectId"], data["orgId"])
+elif (root / "repo.json").exists():
+    repo = json.loads((root / "repo.json").read_text())
+    for p in repo.get("projects", []):
+        if p.get("directory") in (".", ""):
+            print(p["id"], p["orgId"])
+            break
+PY
+)"
+  if [[ -n "$VERCEL_META" ]]; then
+    read -r PROJECT_ID ORG_ID <<< "$VERCEL_META"
+    ROOT_DIR="$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" \
+      "https://api.vercel.com/v9/projects/${PROJECT_ID}?teamId=${ORG_ID}" \
+      | python3 -c "import json,sys; print(json.load(sys.stdin).get('rootDirectory') or '')")"
+    if [[ -n "$ROOT_DIR" ]]; then
+      echo "==> Fixing Vercel Root Directory (was '$ROOT_DIR', must be repo root)…"
+      curl -fsS -X PATCH -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" \
+        -d '{"rootDirectory": null}' \
+        "https://api.vercel.com/v9/projects/${PROJECT_ID}?teamId=${ORG_ID}" >/dev/null
+    fi
+  fi
+fi
+
 echo "==> Deploying frontend to Vercel (production)…"
 cd "$ROOT"
 if [[ -z "${BACKEND_URL:-}" ]]; then
