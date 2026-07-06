@@ -117,7 +117,13 @@ class EnableBankingClient:
 
     async def test_connection(self) -> dict[str, object]:
         body = await self._request("GET", "/application")
-        return {"ok": True, "application_name": str(body.get("name") or "")}
+        country = (self._config.country or "gb").upper()
+        aspsps = await self.list_aspsps(country=country)
+        return {
+            "ok": True,
+            "application_name": str(body.get("name") or ""),
+            "institution_count": len(aspsps),
+        }
 
     async def list_aspsps(self, *, country: str = "GB", query: str = "") -> list[dict[str, Any]]:
         params: dict[str, str] = {}

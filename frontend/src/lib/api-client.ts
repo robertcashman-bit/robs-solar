@@ -2,10 +2,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend";
 
 export class ApiError extends Error {
   status: number;
+  code?: string;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -36,13 +38,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     let detail = response.statusText;
+    let code: string | undefined;
     try {
       const body = await response.json();
-      detail = body.detail ?? detail;
+      const rawDetail = body.detail;
+      if (typeof rawDetail === "object" && rawDetail !== null && "message" in rawDetail) {
+        detail = String(rawDetail.message);
+        if ("status" in rawDetail && rawDetail.status) {
+          code = String(rawDetail.status);
+        }
+      } else if (rawDetail !== undefined) {
+        detail = String(rawDetail);
+      }
     } catch {
       // ignore parse errors
     }
-    throw new ApiError(String(detail), response.status);
+    throw new ApiError(String(detail), response.status, code);
   }
 
   if (response.status === 204) {

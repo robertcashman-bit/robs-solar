@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
+from fastapi import HTTPException
+
 from app.integrations.base import IntegrationNotConfiguredError
 from app.integrations.enable_banking_client import EnableBankingError
 from app.schemas.finance import (
@@ -108,6 +110,19 @@ def validate_config(
         )
 
     return errors
+
+
+def ob_error_http(exc: Exception) -> HTTPException:
+    """Map provider errors to structured HTTP 400 responses for connect flows."""
+    classified = classify_test_error(exc)
+    return HTTPException(
+        status_code=400,
+        detail={
+            "message": classified.message,
+            "status": classified.status,
+            "provider_error": classified.details.get("provider_error", ""),
+        },
+    )
 
 
 def classify_test_error(exc: Exception) -> OpenBankingTestResult:

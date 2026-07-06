@@ -29,6 +29,7 @@ export default function FinanceOverviewPage() {
     useFinanceOverview(Boolean(user));
   const [bankConnections, setBankConnections] = useState<BankConnectionItem[]>([]);
   const [obConfigured, setObConfigured] = useState(true);
+  const [obReady, setObReady] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -39,7 +40,9 @@ export default function FinanceOverviewPage() {
           apiClient.get<unknown>("/finance/integrations/open-banking/status"),
         ]);
         setBankConnections(bankConnectionsResponseSchema.parse(cards).connections);
-        setObConfigured(openBankingConfigStatusSchema.parse(ob).configured);
+        const parsedOb = openBankingConfigStatusSchema.parse(ob);
+        setObConfigured(parsedOb.configured);
+        setObReady(parsedOb.provider_ready ?? null);
       } catch {
         setBankConnections([]);
       }
@@ -73,7 +76,11 @@ export default function FinanceOverviewPage() {
         <p className="mt-8 text-sm text-[var(--muted)]">Loading finance overview…</p>
       ) : overview ? (
         <div className="mt-6 space-y-8">
-          <FinanceConnectBanner connections={bankConnections} obConfigured={obConfigured} />
+          <FinanceConnectBanner
+            connections={bankConnections}
+            obConfigured={obConfigured}
+            obReady={obReady}
+          />
           <FinanceAlertsPanel insights={overview.insights} />
           <FinanceAiAdviceCard canUse={canWrite(user)} />
           <FinanceOverviewView

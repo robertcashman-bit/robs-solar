@@ -6,7 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { z } from "zod";
 
 import { BankConnectionCard } from "@/components/finance/BankConnectionCard";
-import { CONNECTION_SEARCH } from "@/lib/bank-connections";
+import {
+  CONNECTION_SEARCH,
+  ENABLE_BANKING_CP_URL,
+  mapOpenBankingConnectError,
+} from "@/lib/bank-connections";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -16,6 +20,7 @@ import {
   openBankingInstitutionSchema,
   openBankingSyncResultSchema,
   type BankConnectionItem,
+  type OpenBankingConfigStatus,
 } from "@/lib/finance-schemas";
 import { canWrite } from "@/lib/permissions";
 
@@ -30,24 +35,27 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
   const writable = canWrite(user) && !readOnly;
 
   const [connections, setConnections] = useState<BankConnectionItem[]>([]);
-  const [obConfigured, setObConfigured] = useState(false);
+  const [obStatus, setObStatus] = useState<OpenBankingConfigStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const obConfigured = obStatus?.configured ?? false;
+  const obNeedsActivation = obConfigured && obStatus?.provider_ready === false;
 
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     setError(null);
     try {
-      const [cards, obStatus] = await Promise.all([
+      const [cards, statusResponse] = await Promise.all([
         apiClient.get<unknown>("/finance/bank-connections"),
         apiClient.get<unknown>("/finance/integrations/open-banking/status"),
       ]);
       const parsed = bankConnectionsResponseSchema.parse(cards);
       setConnections(parsed.connections);
-      setObConfigured(openBankingConfigStatusSchema.parse(obStatus).configured);
+      setObStatus(openBankingConfigStatusSchema.parse(statusResponse));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Could not load your bank connections. Try again shortly.",
@@ -75,8 +83,8 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
         setMessage(result.message || "Connected successfully.");
         await load();
         router.replace("/finance/connect");
-      } catch {
-        setError("Bank requires reconnection. Press Connect and sign in again at your bank.");
+      } catch (err) {
+        setError(mapOpenBankingConnectError(err));
       } finally {
         setBusyId(null);
       }
@@ -103,6 +111,10 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
       setError("Open Banking is not set up yet. Complete Open Banking Setup first.");
       return;
     }
+    if (obNeedsActivation) {
+      setError(mapOpenBankingConnectError(new Error(obStatus?.readiness_message ?? "not active")));
+      return;
+    }
     const query = CONNECTION_SEARCH[connectionId];
     if (!query) return;
 
@@ -127,8 +139,8 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
       const result = openBankingConnectResponseSchema.parse(connectData);
       setMessage(`Taking you to ${result.institution_name} to sign in…`);
       window.location.href = result.link;
-    } catch {
-      setError("Provider unavailable. Try again later or check Open Banking Settings.");
+    } catch (err) {
+      setError(mapOpenBankingConnectError(err));
     } finally {
       setBusyId(null);
     }
@@ -189,6 +201,44 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
           </Link>{" "}
           once.
         </p>
+      ) : null}
+
+      {obNeedsActivation ? (
+        <section className="rounded-xl border border-amber-300/40 bg-amber-500/10 px-4 py-4 text-sm text-amber-950 dark:text-amber-100">
+          <h2 className="font-semibold">Open Banking activation required</h2>
+          <p className="mt-2">
+            {obStatus?.readiness_message ??
+              "Your provider accepted the credentials but the app is not fully active yet."}
+          </p>
+          <ol className="mt-3 list-decimal space-y-1 pl-5">
+            <li>
+              Sign in at{" "}
+              <a
+                href={ENABLE_BANKING_CP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium underline"
+              >
+                Enable Banking Control Panel
+              </a>
+            </li>
+            <li>Open your production app and choose activate by linking accounts</li>
+            <li>Return here and press Connect on each bank</li>
+          </ol>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a
+              href={ENABLE_BANKING_CP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="solar-btn-primary text-sm"
+            >
+              Open Enable Banking CP
+            </a>
+            <Link href="/finance/open-banking/settings" className="solar-btn-secondary text-sm">
+              Open Banking Settings
+            </Link>
+          </div>
+        </section>
       ) : null}
 
       {message ? (

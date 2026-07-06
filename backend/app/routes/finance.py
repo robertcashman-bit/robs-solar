@@ -77,6 +77,7 @@ from app.services.open_banking_settings_service import open_banking_settings_ser
 from app.services.open_banking_setup_validation import (
     classify_test_error,
     map_setup_request_to_config,
+    ob_error_http,
     run_test_validation,
     success_test_result,
     validate_config,
@@ -578,7 +579,9 @@ async def open_banking_institutions(
     try:
         rows = await provider.list_institutions(country=country, query=q)
     except IntegrationNotConfiguredError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise ob_error_http(exc) from exc
+    except Exception as exc:
+        raise ob_error_http(exc) from exc
     return [OpenBankingInstitution.model_validate(row) for row in rows]
 
 
@@ -602,7 +605,9 @@ async def open_banking_connect(
             reference=reference,
         )
     except IntegrationNotConfiguredError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise ob_error_http(exc) from exc
+    except Exception as exc:
+        raise ob_error_http(exc) from exc
     finally:
         from app.services.finance.open_banking_sync_service import _maybe_save_legacy_tokens
 

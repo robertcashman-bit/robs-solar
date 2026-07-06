@@ -456,6 +456,15 @@ class OpenBankingRequisition(BaseModel):
     created_at: datetime | None = None
 
 
+OpenBankingTestStatus = Literal[
+    "connected_successfully",
+    "missing_credentials",
+    "invalid_redirect_url",
+    "provider_rejected_credentials",
+    "further_bank_authorisation_required",
+]
+
+
 class OpenBankingConfigStatus(BaseModel):
     provider: Literal["enable_banking", "gocardless"] = "enable_banking"
     application_id: str = ""
@@ -468,6 +477,9 @@ class OpenBankingConfigStatus(BaseModel):
     scopes: str = "accounts,transactions"
     webhook_url: str = ""
     configured: bool = False
+    provider_ready: bool | None = None
+    readiness_message: str | None = None
+    readiness_status: OpenBankingTestStatus | None = None
     linked_banks: list[str] = Field(default_factory=list)
     connections_count: int = 0
     last_sync_at: str | None = None
@@ -475,13 +487,6 @@ class OpenBankingConfigStatus(BaseModel):
 
 OpenBankingSetupProvider = Literal["enable_banking", "gocardless"]
 OpenBankingSetupEnvironment = Literal["sandbox", "live"]
-OpenBankingTestStatus = Literal[
-    "connected_successfully",
-    "missing_credentials",
-    "invalid_redirect_url",
-    "provider_rejected_credentials",
-    "further_bank_authorisation_required",
-]
 
 
 class OpenBankingSetupSaveRequest(BaseModel):

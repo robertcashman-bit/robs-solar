@@ -58,6 +58,82 @@ def test_build_jwt_has_kid_header() -> None:
 
 
 @pytest.mark.asyncio
+async def test_test_connection_probes_aspsps() -> None:
+    pem = _test_private_key_pem()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/application"):
+            return httpx.Response(200, json={"name": "Rob Finance"})
+        if request.url.path.endswith("/aspsps"):
+            return httpx.Response(
+                200,
+                json={"aspsps": [{"name": "Lloyds Bank", "country": "GB", "logo": ""}]},
+            )
+        return httpx.Response(404, json={"message": "not found"})
+
+    client = EnableBankingClient(
+        OpenBankingConfig(application_id="app-123", private_key_pem=pem, country="gb"),
+    )
+
+    async def patched_request(method, path, *, json=None, params=None):
+        token = client._build_jwt()
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        if json is not None:
+            headers["Content-Type"] = "application/json"
+        url = f"https://api.enablebanking.com{path}"
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as http_client:
+            response = await http_client.request(
+                method, url, headers=headers, json=json, params=params
+            )
+        if response.status_code >= 400:
+            raise EnableBankingError(f"Enable Banking {response.status_code}: {response.text}")
+        return response.json()
+
+    client._request = patched_request  # type: ignore[method-assign]
+
+    result = await client.test_connection()
+    assert result["application_name"] == "Rob Finance"
+    assert result["institution_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_test_connection_fails_when_app_inactive() -> None:
+    pem = _test_private_key_pem()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/application"):
+            return httpx.Response(200, json={"name": "Rob Finance"})
+        if request.url.path.endswith("/aspsps"):
+            return httpx.Response(403, text='{"message":"Application is not active"}')
+        return httpx.Response(404, json={"message": "not found"})
+
+    client = EnableBankingClient(
+        OpenBankingConfig(application_id="app-123", private_key_pem=pem, country="gb"),
+    )
+
+    async def patched_request(method, path, *, json=None, params=None):
+        token = client._build_jwt()
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        if json is not None:
+            headers["Content-Type"] = "application/json"
+        url = f"https://api.enablebanking.com{path}"
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as http_client:
+            response = await http_client.request(
+                method, url, headers=headers, json=json, params=params
+            )
+        if response.status_code >= 400:
+            raise EnableBankingError(f"Enable Banking {response.status_code}: {response.text}")
+        return response.json()
+
+    client._request = patched_request  # type: ignore[method-assign]
+
+    with pytest.raises(EnableBankingError, match="not active"):
+        await client.test_connection()
+
+
+@pytest.mark.asyncio
 async def test_list_aspsps_authorize_and_transactions() -> None:
     pem = _test_private_key_pem()
 

@@ -5,6 +5,7 @@ from app.schemas.finance import OpenBankingConfig, OpenBankingSetupSaveRequest
 from app.services.open_banking_setup_validation import (
     classify_test_error,
     map_setup_request_to_config,
+    ob_error_http,
     run_test_validation,
     success_test_result,
     validate_config,
@@ -82,6 +83,16 @@ def test_classify_inactive_application() -> None:
         IntegrationNotConfiguredError("Enable Banking 400: Application is not active")
     )
     assert result.status == "further_bank_authorisation_required"
+
+
+def test_ob_error_http_inactive_application() -> None:
+    exc = ob_error_http(
+        IntegrationNotConfiguredError("Enable Banking 403: Application is not active")
+    )
+    assert exc.status_code == 400
+    assert isinstance(exc.detail, dict)
+    assert exc.detail["status"] == "further_bank_authorisation_required"
+    assert "not fully active" in exc.detail["message"]
 
 
 def test_classify_rejected_credentials() -> None:

@@ -18,6 +18,7 @@ from app.schemas.finance import (
     OpenBankingConfigStatus,
     OpenBankingRequisition,
 )
+from app.services.open_banking_readiness import probe_provider_readiness
 
 _OPEN_BANKING_KEY = "open_banking"
 _REQUISITIONS_KEY = "open_banking_requisitions"
@@ -126,6 +127,15 @@ class OpenBankingSettingsService:
         sync_row = await self._get_row(db, _LAST_SYNC_KEY)
         requisitions = await self.list_requisitions(db)
         linked = [req for req in requisitions if is_connection_linked(config, req)]
+        configured = self.is_configured(config)
+        provider_ready: bool | None = None
+        readiness_message: str | None = None
+        readiness_status = None
+        if configured:
+            snapshot = await probe_provider_readiness(config)
+            provider_ready = snapshot.provider_ready
+            readiness_message = snapshot.readiness_message
+            readiness_status = snapshot.readiness_status
         return OpenBankingConfigStatus(
             provider=config.provider,
             application_id=config.application_id,
@@ -137,7 +147,10 @@ class OpenBankingSettingsService:
             country=config.country,
             scopes=config.scopes,
             webhook_url=config.webhook_url,
-            configured=self.is_configured(config),
+            configured=configured,
+            provider_ready=provider_ready,
+            readiness_message=readiness_message,
+            readiness_status=readiness_status,
             linked_banks=[req.institution_name for req in linked],
             connections_count=len(linked),
             last_sync_at=sync_row.value if sync_row else None,

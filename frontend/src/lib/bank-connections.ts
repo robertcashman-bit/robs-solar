@@ -1,4 +1,5 @@
 import type { BankConnectionItem } from "@/lib/finance-schemas";
+import { ApiError } from "@/lib/api-client";
 
 /** Plain-English labels for connection status (never show technical errors). */
 export function connectionStatusLabel(status: BankConnectionItem["status"]): string {
@@ -56,3 +57,30 @@ export const CONNECTION_SEARCH: Record<string, string> = {
   mbna: "MBNA",
   virgin: "Virgin Money",
 };
+
+export const ENABLE_BANKING_CP_URL = "https://enablebanking.com/cp/applications";
+
+/** Turn Open Banking connect API errors into plain-English guidance. */
+export function mapOpenBankingConnectError(err: unknown): string {
+  const activationMessage =
+    "Your Open Banking app is not active yet. An admin must sign in at Enable Banking Control Panel and complete activation by linking accounts, then return here and press Connect again.";
+
+  if (err instanceof ApiError) {
+    if (
+      err.code === "further_bank_authorisation_required" ||
+      /not active|activate/i.test(err.message)
+    ) {
+      return activationMessage;
+    }
+    return err.message;
+  }
+
+  if (err instanceof Error) {
+    if (/not active|activate/i.test(err.message)) {
+      return activationMessage;
+    }
+    return err.message;
+  }
+
+  return "Could not start bank connection. Try again or check Open Banking Settings.";
+}

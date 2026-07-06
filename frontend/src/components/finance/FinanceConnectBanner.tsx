@@ -7,16 +7,49 @@ import type { BankConnectionItem } from "@/lib/finance-schemas";
 type FinanceConnectBannerProps = {
   connections: BankConnectionItem[];
   obConfigured: boolean;
+  obReady?: boolean | null;
 };
 
-export function FinanceConnectBanner({ connections, obConfigured }: FinanceConnectBannerProps) {
+export function FinanceConnectBanner({
+  connections,
+  obConfigured,
+  obReady = null,
+}: FinanceConnectBannerProps) {
   const openBanking = connections.filter((c) => c.method === "open_banking");
   const needsConnect = openBanking.some(
     (c) => c.status === "not_connected" || c.status === "needs_reconnection",
   );
 
-  if (!needsConnect && obConfigured) {
+  if (!needsConnect && obConfigured && obReady !== false) {
     return null;
+  }
+
+  if (obConfigured && obReady === false) {
+    return (
+      <section className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-4 sm:px-5">
+        <h2 className="text-base font-semibold text-amber-950 dark:text-amber-100">
+          Open Banking needs activation before you can connect banks
+        </h2>
+        <p className="mt-2 text-sm text-amber-950/90 dark:text-amber-100/90">
+          Credentials are saved, but Enable Banking has not activated the app yet. An admin must
+          complete activation in the Enable Banking Control Panel, then use{" "}
+          <strong>Connect banks</strong> to link Lloyds, MBNA and Virgin Money.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <a
+            href="https://enablebanking.com/cp/applications"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="solar-btn-primary text-sm"
+          >
+            Enable Banking Control Panel
+          </a>
+          <Link href="/finance/connect" className="solar-btn-secondary text-sm">
+            Connect banks →
+          </Link>
+        </div>
+      </section>
+    );
   }
 
   if (!obConfigured) {

@@ -274,6 +274,18 @@ export const openBankingConfigStatusSchema = z.object({
   scopes: z.string().default("accounts,transactions"),
   webhook_url: z.string().default(""),
   configured: z.boolean(),
+  provider_ready: z.boolean().nullable().optional(),
+  readiness_message: z.string().nullable().optional(),
+  readiness_status: z
+    .enum([
+      "connected_successfully",
+      "missing_credentials",
+      "invalid_redirect_url",
+      "provider_rejected_credentials",
+      "further_bank_authorisation_required",
+    ])
+    .nullable()
+    .optional(),
   linked_banks: z.array(z.string()),
   connections_count: z.number(),
   last_sync_at: z.string().nullable().optional(),
