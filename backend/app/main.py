@@ -19,6 +19,7 @@ from app.routes import (
     config_snapshots,
     controls,
     finance,
+    finance_ai,
     forecast,
     health,
     metrics,
@@ -30,6 +31,10 @@ from app.routes import (
     ws,
 )
 from app.services.auto_scheduler import start_auto_scheduler, stop_auto_scheduler
+from app.services.finance.finance_daily_sync_service import (
+    start_finance_daily_sync,
+    stop_finance_daily_sync,
+)
 from app.services.metric_sampler import start_sampler, stop_sampler
 
 logger = logging.getLogger(__name__)
@@ -51,7 +56,9 @@ async def lifespan(_: FastAPI):
     await _load_octopus_credentials()
     start_sampler()
     start_auto_scheduler()
+    start_finance_daily_sync()
     yield
+    await stop_finance_daily_sync()
     await stop_auto_scheduler()
     await stop_sampler()
 
@@ -95,6 +102,7 @@ app.include_router(octopus.router)
 app.include_router(recommendations.router)
 app.include_router(optimisation.router)
 app.include_router(finance.router)
+app.include_router(finance_ai.router)
 app.include_router(forecast.router)
 app.include_router(alerts.router)
 app.include_router(settings_notifications.router)

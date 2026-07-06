@@ -12,6 +12,7 @@ from app.db.models import BusinessFinanceSnapshotRow, PersonalFinanceSnapshotRow
 from app.schemas.finance import (
     BusinessFinanceSnapshot,
     BusinessFinanceSnapshotCreate,
+    FinanceAccount,
     FinanceAccountType,
     FinanceOverviewResponse,
     FinanceScope,
@@ -19,8 +20,10 @@ from app.schemas.finance import (
     PersonalFinanceSnapshotCreate,
 )
 from app.services.finance.finance_accounts_service import finance_accounts_service
+from app.services.finance.finance_balance_service import build_balance_breakdown
 from app.services.finance.finance_insights_service import finance_insights_service
 from app.services.finance.finance_liabilities_service import finance_liabilities_service
+from app.services.finance.quickfile_reports_service import quickfile_reports_service
 
 
 def _personal_from_row(row: PersonalFinanceSnapshotRow) -> PersonalFinanceSnapshot:
@@ -57,12 +60,87 @@ def _business_from_row(row: BusinessFinanceSnapshotRow) -> BusinessFinanceSnapsh
     )
 
 
+def _historic_fields(
+    accounts: list[FinanceAccount],
+    *,
+    personal_snap: PersonalFinanceSnapshot | None,
+    has_personal_liabilities: bool,
+) -> list[str]:
+    fields: list[str] = []
+
+    personal_current = [
+        a
+        for a in accounts
+        if a.scope == FinanceScope.PERSONAL and a.account_type == FinanceAccountType.CURRENT
+    ]
+    if personal_current and all(a.is_historic for a in personal_current):
+        fields.append("personal_bank_balance_gbp")
+
+    business_current = [
+        a
+        for a in accounts
+        if a.scope == FinanceScope.BUSINESS and a.account_type == FinanceAccountType.CURRENT
+    ]
+    if business_current and any(a.is_historic for a in business_current):
+        fields.append("business_bank_balance_gbp")
+
+    if personal_snap is not None:
+        fields.extend(
+            [
+                "personal_monthly_income_gbp",
+                "monthly_income_gbp",
+                "monthly_spending_gbp",
+                "monthly_surplus_gbp",
+                "cash_after_bills_gbp",
+            ]
+        )
+
+    if has_personal_liabilities:
+        fields.extend(
+            [
+                "total_personal_debt_gbp",
+                "personal_short_term_debt_gbp",
+                "personal_long_term_debt_gbp",
+                "short_term_debt_gbp",
+                "long_term_debt_gbp",
+            ]
+        )
+
+    property_accounts = [a for a in accounts if a.account_type == FinanceAccountType.PROPERTY]
+    if property_accounts and all(a.is_historic for a in property_accounts):
+        fields.extend(["property_value_gbp", "home_equity_gbp", "long_term_assets_gbp"])
+
+    pension_accounts = [a for a in accounts if a.account_type == FinanceAccountType.PENSION]
+    if pension_accounts and all(a.is_historic for a in pension_accounts):
+        fields.append("pension_value_gbp")
+
+    if has_personal_liabilities:
+        fields.append("credit_card_balances_gbp")
+        fields.append("loan_balances_gbp")
+        fields.append("mortgage_balance_gbp")
+
+    dl_accounts = [a for a in accounts if a.account_type == FinanceAccountType.DIRECTORS_LOAN]
+    if dl_accounts and any(a.is_historic for a in dl_accounts):
+        fields.append("directors_loan_gbp")
+
+    vat_accounts = [a for a in accounts if a.account_type == FinanceAccountType.VAT_RESERVE]
+    if vat_accounts and any(a.is_historic for a in vat_accounts):
+        fields.append("vat_reserve_gbp")
+
+    corp_accounts = [a for a in accounts if a.account_type == FinanceAccountType.CORP_TAX_RESERVE]
+    if corp_accounts and any(a.is_historic for a in corp_accounts):
+        fields.append("corp_tax_reserve_gbp")
+
+    return sorted(set(fields))
+
+
 class FinanceOverviewService:
     async def get_overview(self, db: AsyncSession) -> FinanceOverviewResponse:
         accounts = await finance_accounts_service.list_accounts(db)
         liabilities = await finance_liabilities_service.list_liabilities(db)
         personal_snap = await self.latest_personal_snapshot(db)
         business_snap = await self.latest_business_snapshot(db)
+        qf_reports = await quickfile_reports_service.get_stored_reports(db)
 
         personal_bank = finance_accounts_service.sum_scope_balance(
             accounts, FinanceScope.PERSONAL, FinanceAccountType.CURRENT
@@ -70,46 +148,21 @@ class FinanceOverviewService:
         business_bank = finance_accounts_service.sum_scope_balance(
             accounts, FinanceScope.BUSINESS, FinanceAccountType.CURRENT
         )
-        credit_cards = (
-            finance_accounts_service.sum_by_type(accounts, FinanceAccountType.CREDIT_CARD)
-            + sum(
-                debt.balance_gbp
-                for debt in liabilities
-                if debt.debt_type.value == "credit_card"
-            )
+
+        debtors = (
+            business_snap.debtors_gbp
+            if business_snap
+            else finance_accounts_service.sum_by_type(accounts, FinanceAccountType.DEBTORS)
         )
-        loans = (
-            finance_accounts_service.sum_by_type(accounts, FinanceAccountType.LOAN)
-            + sum(
-                debt.balance_gbp
-                for debt in liabilities
-                if debt.debt_type.value in ("loan", "business_loan")
-            )
-        )
-        mortgage = (
-            finance_accounts_service.sum_by_type(accounts, FinanceAccountType.MORTGAGE)
-            + sum(
-                debt.balance_gbp
-                for debt in liabilities
-                if debt.debt_type.value == "mortgage"
-            )
-        )
-        pension = finance_accounts_service.sum_by_type(accounts, FinanceAccountType.PENSION)
-        directors_loan = (
-            finance_accounts_service.sum_by_type(accounts, FinanceAccountType.DIRECTORS_LOAN)
-            + sum(
-                debt.balance_gbp
-                for debt in liabilities
-                if debt.debt_type.value == "directors_loan"
-            )
+        breakdown = build_balance_breakdown(
+            accounts,
+            liabilities,
+            debtors_gbp=debtors,
         )
 
-        total_personal_debt = finance_liabilities_service.total_debt(
-            liabilities, FinanceScope.PERSONAL
-        )
-        total_business_debt = finance_liabilities_service.total_debt(
-            liabilities, FinanceScope.BUSINESS
-        )
+        personal_liabilities = [
+            debt for debt in liabilities if debt.scope == FinanceScope.PERSONAL
+        ]
 
         monthly_income = personal_snap.monthly_income_gbp if personal_snap else 0.0
         monthly_spending = personal_snap.monthly_spending_gbp if personal_snap else 0.0
@@ -124,27 +177,41 @@ class FinanceOverviewService:
         corp_tax_reserve = (
             business_snap.corp_tax_reserve_gbp
             if business_snap
-            else finance_accounts_service.sum_by_type(accounts, FinanceAccountType.CORP_TAX_RESERVE)
-        )
-
-        assets = personal_bank + business_bank + pension + (
-            business_snap.debtors_gbp if business_snap else finance_accounts_service.sum_by_type(
-                accounts, FinanceAccountType.DEBTORS
+            else finance_accounts_service.sum_by_type(
+                accounts, FinanceAccountType.CORP_TAX_RESERVE
             )
         )
-        debts = (
-            total_personal_debt
-            + total_business_debt
-            + credit_cards
-            + loans
-            + mortgage
-            + directors_loan
-        )
-        net_worth = assets - debts
 
         monthly_surplus = monthly_income - monthly_spending - (
             personal_snap.debt_repayments_gbp if personal_snap else 0.0
         )
+
+        personal_monthly_income = round(monthly_income, 2)
+        business_turnover = 0.0
+        business_expenses = 0.0
+        business_net_profit = 0.0
+        business_ytd_turnover = 0.0
+        business_ytd_net_profit = 0.0
+        business_from_qf = False
+        qf_synced_at: str | None = None
+
+        if qf_reports and qf_reports.profit_and_loss_month:
+            pl = qf_reports.profit_and_loss_month
+            business_turnover = pl.turnover_gbp
+            business_expenses = pl.expenses_gbp
+            business_net_profit = pl.net_profit_gbp
+            business_from_qf = True
+            qf_synced_at = qf_reports.synced_at
+        elif business_snap:
+            business_turnover = business_snap.turnover_gbp
+            business_expenses = business_snap.expenses_gbp
+            business_net_profit = business_snap.profit_estimate_gbp
+
+        if qf_reports and qf_reports.profit_and_loss_ytd:
+            business_ytd_turnover = qf_reports.profit_and_loss_ytd.turnover_gbp
+            business_ytd_net_profit = qf_reports.profit_and_loss_ytd.net_profit_gbp
+            business_from_qf = True
+            qf_synced_at = qf_reports.synced_at or qf_synced_at
 
         vat_warning = vat_reserve < (
             business_snap.expenses_gbp * 0.2 if business_snap else 500
@@ -156,8 +223,8 @@ class FinanceOverviewService:
         overview = FinanceOverviewResponse(
             personal_bank_balance_gbp=round(personal_bank, 2),
             business_bank_balance_gbp=round(business_bank, 2),
-            total_personal_debt_gbp=round(total_personal_debt, 2),
-            total_business_debt_gbp=round(total_business_debt, 2),
+            total_personal_debt_gbp=breakdown.personal_total_debt_gbp,
+            total_business_debt_gbp=breakdown.business_total_debt_gbp,
             monthly_income_gbp=round(monthly_income, 2),
             monthly_spending_gbp=round(monthly_spending, 2),
             cash_after_bills_gbp=round(cash_after_bills, 2),
@@ -165,13 +232,39 @@ class FinanceOverviewService:
             corp_tax_reserve_gbp=round(corp_tax_reserve, 2),
             vat_reserve_warning=vat_warning,
             corp_tax_reserve_warning=corp_warning,
-            credit_card_balances_gbp=round(credit_cards, 2),
-            loan_balances_gbp=round(loans, 2),
-            mortgage_balance_gbp=round(mortgage, 2),
-            pension_value_gbp=round(pension, 2),
-            directors_loan_gbp=round(directors_loan, 2),
-            net_worth_estimate_gbp=round(net_worth, 2),
+            credit_card_balances_gbp=breakdown.credit_card_balances_gbp,
+            loan_balances_gbp=breakdown.loan_balances_gbp,
+            mortgage_balance_gbp=breakdown.mortgage_balance_gbp,
+            pension_value_gbp=breakdown.pension_value_gbp,
+            directors_loan_gbp=breakdown.directors_loan_gbp,
+            liquid_assets_gbp=breakdown.liquid_assets_gbp,
+            long_term_assets_gbp=breakdown.long_term_assets_gbp,
+            property_value_gbp=breakdown.property_value_gbp,
+            debtors_gbp=breakdown.debtors_gbp,
+            total_assets_gbp=breakdown.total_assets_gbp,
+            short_term_debt_gbp=breakdown.short_term_debt_gbp,
+            long_term_debt_gbp=breakdown.long_term_debt_gbp,
+            total_debt_gbp=breakdown.total_debt_gbp,
+            home_equity_gbp=breakdown.home_equity_gbp,
+            personal_short_term_debt_gbp=breakdown.personal_short_term_debt_gbp,
+            personal_long_term_debt_gbp=breakdown.personal_long_term_debt_gbp,
+            business_short_term_debt_gbp=breakdown.business_short_term_debt_gbp,
+            business_long_term_debt_gbp=breakdown.business_long_term_debt_gbp,
+            net_worth_estimate_gbp=breakdown.net_worth_estimate_gbp,
             monthly_surplus_gbp=round(monthly_surplus, 2),
+            personal_monthly_income_gbp=personal_monthly_income,
+            business_monthly_turnover_gbp=round(business_turnover, 2),
+            business_monthly_expenses_gbp=round(business_expenses, 2),
+            business_monthly_net_profit_gbp=round(business_net_profit, 2),
+            business_ytd_turnover_gbp=round(business_ytd_turnover, 2),
+            business_ytd_net_profit_gbp=round(business_ytd_net_profit, 2),
+            business_income_from_quickfile=business_from_qf,
+            quickfile_reports_at=qf_synced_at,
+            historic_fields=_historic_fields(
+                accounts,
+                personal_snap=personal_snap,
+                has_personal_liabilities=bool(personal_liabilities),
+            ),
             insights=[],
         )
         overview.insights = await finance_insights_service.refresh_for_overview(db, overview)

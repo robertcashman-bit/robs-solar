@@ -1,24 +1,32 @@
 {
+  "id": "/",
   "name": "Rob's Finance",
   "short_name": "Rob's Finance",
-  "description": "Personal and business finance dashboard with Energy / Solar monitoring",
+  "description": "Personal and business finance dashboard — balances, debts, cash flow, and tax.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0c0f14",
-  "theme_color": "#f59e0b",
+  "theme_color": "#10b981",
   "orientation": "portrait-primary",
+  "categories": ["finance", "productivity"],
   "icons": [
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

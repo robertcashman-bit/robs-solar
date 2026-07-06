@@ -15,6 +15,7 @@ from app.schemas.finance import (
     QuickFileConfig,
     QuickFileSyncResult,
 )
+from app.services.finance.quickfile_reports_service import quickfile_reports_service
 from app.services.quickfile_settings_service import quickfile_settings_service
 
 
@@ -32,28 +33,36 @@ class QuickFileSyncService:
             await self._upsert_account(db, item)
             synced += 1
 
-        if debtors_gbp > 0:
-            await self._upsert_account(
-                db,
-                {
-                    "scope": FinanceScope.BUSINESS.value,
-                    "account_type": FinanceAccountType.DEBTORS.value,
-                    "name": "QuickFile unpaid invoices",
-                    "provider": "QuickFile",
-                    "balance_gbp": debtors_gbp,
-                    "external_id": "quickfile-debtors",
-                    "notes": "Sum of unpaid sales invoices from QuickFile",
-                },
-            )
-            synced += 1
+        await self._upsert_account(
+            db,
+            {
+                "scope": FinanceScope.BUSINESS.value,
+                "account_type": FinanceAccountType.DEBTORS.value,
+                "name": "Debtors control account",
+                "provider": "QuickFile",
+                "balance_gbp": debtors_gbp,
+                "external_id": "quickfile-debtors",
+                "notes": "Debtors control balance from QuickFile balance sheet",
+            },
+        )
+        synced += 1
 
         await quickfile_settings_service.mark_synced(db)
         message = f"Synced {synced} QuickFile account(s)"
-        if debtors_gbp > 0:
-            message += f"; debtors total {debtors_gbp:.2f} GBP"
+        message += f"; debtors control {debtors_gbp:.2f} GBP"
+
+        reports_synced = False
+        try:
+            await quickfile_reports_service.sync_reports(db, config)
+            reports_synced = True
+            message += "; P&L and balance sheet synced"
+        except Exception:
+            pass
+
         return QuickFileSyncResult(
             accounts_synced=synced,
             debtors_gbp=debtors_gbp,
+            reports_synced=reports_synced,
             message=message,
         )
 

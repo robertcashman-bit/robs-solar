@@ -14,6 +14,7 @@ from app.schemas.domain import (
     ForecastStrategy,
     HistoryRange,
     LiveMetrics,
+    LoadDiagnostics,
     MetricCompareResponse,
     MetricHistoryResponse,
     MetricSummaryResponse,
@@ -33,6 +34,7 @@ from app.services.effective_load import finalize_live_metrics
 from app.services.ev_load_detector import ev_load_detector, sync_ev_detector
 from app.services.forecast_strategy_service import forecast_strategy_service
 from app.services.live_metrics_cache import live_metrics_cache
+from app.services.load_diagnostics_service import load_diagnostics_service
 from app.services.live_metrics_guard import (
     LiveMetricsGuardError,
     assert_live_metrics_integrity,
@@ -90,6 +92,20 @@ async def live_metrics(_: SessionData = Depends(require_viewer)) -> LiveMetrics:
     await sync_ev_detector(metrics)
     finalized = finalize_live_metrics(metrics)
     return await _enrich_with_smart_meter(finalized)
+
+
+@router.get("/diagnostics", response_model=LoadDiagnostics)
+async def load_diagnostics(
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> LoadDiagnostics:
+    """Raw payload + per-field source breakdown behind the Load figure.
+
+    Never silently substitutes 0 for a value that could not be determined —
+    unavailable fields are reported with an explicit "unknown"/"cached" origin.
+    """
+    adapter = get_adapter()
+    return await load_diagnostics_service.get_diagnostics(adapter, db)
 
 
 @router.get("/connectivity", response_model=ConnectivityStatus)

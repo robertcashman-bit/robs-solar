@@ -1,10 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 
+import { FinanceAmount } from "@/components/finance/FinanceAmount";
+import { FinanceSignLegend } from "@/components/finance/FinanceSignLegend";
 import { MetricTile } from "@/components/finance/MetricTile";
+import { HistoricBadge } from "@/components/finance/HistoricBadge";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
@@ -17,7 +21,7 @@ import {
   type FinanceAccount,
   type PersonalFinanceSnapshot,
 } from "@/lib/finance-schemas";
-import { formatGbp, currentMonthKey } from "@/lib/money";
+import { currentMonthKey, financeRoleForAccountBalance } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
 
 export default function PersonalFinancePage() {
@@ -99,14 +103,33 @@ export default function PersonalFinancePage() {
         title="Personal Finance"
         description="Current accounts, credit cards, loans, mortgage, pension, and household cash flow."
       />
+      <p className="mt-2 text-sm">
+        <Link href="/finance/connect" className="underline text-[var(--muted)]">
+          Connect or refresh personal bank logins →
+        </Link>
+      </p>
       {error ? <div className="mt-4"><ErrorBanner message={error} /></div> : null}
+      <div className="mt-4">
+        <FinanceSignLegend />
+      </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <MetricTile label="Total personal balance" value={totalBalance} />
-        <MetricTile label="Monthly income" value={snapshot?.monthly_income_gbp} />
+        <MetricTile
+          label="Total personal balance"
+          value={totalBalance}
+          amountRole="signed"
+          historic={accounts.some((a) => a.is_historic)}
+        />
+        <MetricTile
+          label="Monthly income"
+          value={snapshot?.monthly_income_gbp}
+          amountRole="inflow"
+          historic={Boolean(snapshot)}
+        />
         <MetricTile
           label="Monthly surplus"
           value={snapshot?.surplus_deficit_gbp}
-          positive={(snapshot?.surplus_deficit_gbp ?? 0) >= 0}
+          amountRole="signed"
+          historic={Boolean(snapshot)}
         />
       </div>
       <section className="mt-8">
@@ -117,8 +140,12 @@ export default function PersonalFinancePage() {
               <span>
                 {a.name}{" "}
                 <span className="text-[var(--muted)]">({a.account_type.replaceAll("_", " ")})</span>
+                {a.is_historic ? <HistoricBadge /> : null}
               </span>
-              <span className="font-semibold tabular-nums">{formatGbp(a.balance_gbp)}</span>
+              <FinanceAmount
+                value={a.balance_gbp}
+                role={financeRoleForAccountBalance(a.account_type, a.balance_gbp)}
+              />
             </li>
           ))}
           {accounts.length === 0 ? (
@@ -147,6 +174,7 @@ export default function PersonalFinancePage() {
             <option value="credit_card">Credit card</option>
             <option value="loan">Loan</option>
             <option value="mortgage">Mortgage</option>
+            <option value="property">Property</option>
             <option value="pension">Pension</option>
           </select>
           <input

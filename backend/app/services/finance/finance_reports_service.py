@@ -11,6 +11,7 @@ from app.db.models import DailySavingsRow, EnergyDailySnapshotRow
 from app.schemas.finance import FinanceReportsResponse
 from app.services.finance.finance_liabilities_service import finance_liabilities_service
 from app.services.finance.finance_overview_service import finance_overview_service
+from app.services.finance.quickfile_reports_service import quickfile_reports_service
 
 
 class FinanceReportsService:
@@ -40,10 +41,13 @@ class FinanceReportsService:
             if avg < 1.0:
                 vs_forecast = "Below forecast"
 
+        qf_reports = await quickfile_reports_service.get_stored_reports(db)
+
         return FinanceReportsResponse(
             month=month,
             personal_snapshot=personal,
             business_snapshot=business,
+            quickfile_reports=qf_reports,
             net_worth_gbp=overview.net_worth_estimate_gbp,
             total_debt_gbp=total_debt,
             debt_reduction_gbp=0.0,

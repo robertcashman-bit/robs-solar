@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ============================================================
-   Rob's Solar — Design System
+   Rob's Finance — Design System
    Layered surfaces, elevation, aurora backdrop, motion tokens.
    ============================================================ */
 
@@ -491,4 +491,21 @@ details summary::-webkit-details-marker {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* QuickFile report — table layout matching their P&L / balance sheet reports */
+.quickfile-report-document {
+  font-feature-settings: "tnum" 1;
+}
+
+.quickfile-report .quickfile-report-line td:first-child {
+  font-weight: 400;
+}
+
+.quickfile-report .quickfile-report-total td {
+  border-top-width: 1px;
+}
+
+.quickfile-report .quickfile-report-section td {
+  padding-top: 1rem;
 }

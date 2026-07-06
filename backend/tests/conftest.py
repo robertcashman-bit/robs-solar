@@ -15,6 +15,7 @@ os.environ.setdefault("ADMIN_PASSWORD", "admin-pass")
 os.environ.setdefault("VIEWER_USERNAME", "viewer")
 os.environ.setdefault("VIEWER_PASSWORD", "viewer-pass")
 os.environ.setdefault("METRICS_SAMPLER_ENABLED", "false")
+os.environ.setdefault("FINANCE_DAILY_SYNC_ENABLED", "false")
 os.environ.setdefault("AI_ENABLED", "false")
 
 from app.db.session import init_db

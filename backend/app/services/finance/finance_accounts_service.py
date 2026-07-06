@@ -15,6 +15,7 @@ from app.schemas.finance import (
     FinanceAccountType,
     FinanceAccountUpdate,
     FinanceScope,
+    account_is_historic,
 )
 
 
@@ -33,6 +34,7 @@ def _to_schema(row: FinanceAccountRow) -> FinanceAccount:
         source=FinanceAccountSource(row.source),
         external_id=row.external_id,
         is_active=row.is_active,
+        is_historic=account_is_historic(FinanceAccountSource(row.source)),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -91,7 +93,12 @@ class FinanceAccountsService:
         if row is None:
             return None
         for field, value in body.model_dump(exclude_unset=True).items():
-            setattr(row, field, value)
+            if field == "account_type" and value is not None:
+                row.account_type = (
+                    value.value if isinstance(value, FinanceAccountType) else str(value)
+                )
+            else:
+                setattr(row, field, value)
         row.updated_at = datetime.now(timezone.utc)
         await db.commit()
         await db.refresh(row)

@@ -31,6 +31,7 @@ def _to_schema(row: FinanceLiabilityRow) -> FinanceLiability:
         account_id=row.account_id,
         notes=row.notes,
         is_active=row.is_active,
+        is_historic=True,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )

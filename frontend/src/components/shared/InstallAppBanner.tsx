@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const DISMISS_KEY = "robs-solar-install-dismissed";
+const DISMISS_KEY = "robs-finance-install-dismissed";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -90,17 +90,17 @@ export function InstallAppBanner() {
   }
 
   return (
-    <div className="mx-auto mb-4 max-w-3xl rounded-xl border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+    <div className="mx-auto mb-4 max-w-3xl rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-950 dark:text-emerald-100">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-semibold">Install Rob&apos;s Solar on your phone</p>
+          <p className="font-semibold">Add Rob&apos;s Finance to your Dock or Home Screen</p>
           {initial.iosHint ? (
             <p className="mt-1 text-xs opacity-90">
               Tap Share, then &quot;Add to Home Screen&quot; to open the app like a native app.
             </p>
           ) : (
             <p className="mt-1 text-xs opacity-90">
-              Add a home-screen shortcut for quick access and full-screen monitoring.
+              Install for quick access from your Dock (Mac) or home screen with the finance app icon.
             </p>
           )}
         </div>

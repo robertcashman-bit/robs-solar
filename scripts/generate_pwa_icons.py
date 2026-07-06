@@ -1,51 +1,98 @@
 #!/usr/bin/env python3
-"""Generate PWA icons for Rob's Solar (amber sun on dark background)."""
+"""Generate PWA icons for Rob's Finance (emerald wallet on dark background)."""
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 try:
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageFont
 except ImportError as exc:  # pragma: no cover - dev utility
     raise SystemExit("Install Pillow: pip install pillow") from exc
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "frontend" / "public" / "icons"
 BG = (12, 15, 20, 255)
-AMBER = (245, 158, 11, 255)
-AMBER_GLOW = (251, 191, 36, 180)
+EMERALD = (16, 185, 129, 255)
+TEAL = (20, 184, 166, 255)
+EMERALD_GLOW = (52, 211, 153, 120)
+WHITE = (255, 255, 255, 255)
+
+
+def _lerp(a: float, b: float, t: float) -> float:
+    return a + (b - a) * t
 
 
 def draw_icon(size: int) -> Image.Image:
     img = Image.new("RGBA", (size, size), BG)
     draw = ImageDraw.Draw(img)
-    margin = size * 0.12
-    glow = margin * 0.35
-    draw.ellipse(
-        (margin - glow, margin - glow, size - margin + glow, size - margin + glow),
-        fill=AMBER_GLOW,
-    )
-    draw.ellipse((margin, margin, size - margin, size - margin), fill=AMBER)
-    ray_len = size * 0.08
-    center = size / 2
-    outer = size / 2 - margin * 0.35
-    for angle in range(0, 360, 45):
-        import math
 
-        rad = math.radians(angle)
-        x1 = center + math.cos(rad) * outer
-        y1 = center + math.sin(rad) * outer
-        x2 = center + math.cos(rad) * (outer + ray_len)
-        y2 = center + math.sin(rad) * (outer + ray_len)
-        draw.line((x1, y1, x2, y2), fill=AMBER, width=max(2, size // 64))
+    corner = size * 0.18
+    inset = size * 0.14
+    glow_inset = inset - size * 0.03
+    draw.rounded_rectangle(
+        (glow_inset, glow_inset, size - glow_inset, size - glow_inset),
+        radius=corner + size * 0.04,
+        fill=EMERALD_GLOW,
+    )
+
+    for y in range(int(inset), int(size - inset)):
+        t = (y - inset) / max(1, size - 2 * inset)
+        r = int(_lerp(EMERALD[0], TEAL[0], t))
+        g = int(_lerp(EMERALD[1], TEAL[1], t))
+        b = int(_lerp(EMERALD[2], TEAL[2], t))
+        draw.line((inset, y, size - inset, y), fill=(r, g, b, 255))
+
+    draw.rounded_rectangle(
+        (inset, inset, size - inset, size - inset),
+        radius=corner,
+        outline=(255, 255, 255, 40),
+        width=max(1, size // 128),
+    )
+
+    wallet_top = size * 0.36
+    wallet_bottom = size * 0.72
+    wallet_left = size * 0.28
+    wallet_right = size * 0.72
+    draw.rounded_rectangle(
+        (wallet_left, wallet_top, wallet_right, wallet_bottom),
+        radius=size * 0.06,
+        fill=(255, 255, 255, 235),
+    )
+    clasp_h = (wallet_bottom - wallet_top) * 0.35
+    draw.rounded_rectangle(
+        (wallet_right - size * 0.14, wallet_top + (wallet_bottom - wallet_top - clasp_h) / 2,
+         wallet_right + size * 0.02, wallet_top + (wallet_bottom - wallet_top + clasp_h) / 2),
+        radius=size * 0.03,
+        fill=EMERALD,
+    )
+
+    font_size = int(size * 0.34)
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", font_size)
+    except OSError:
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+        except OSError:
+            font = ImageFont.load_default()
+
+    symbol = "£"
+    bbox = draw.textbbox((0, 0), symbol, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    text_x = (size - text_w) / 2 - bbox[0]
+    text_y = wallet_top + (wallet_bottom - wallet_top - text_h) / 2 - bbox[1] - size * 0.02
+    draw.text((text_x, text_y), symbol, fill=TEAL, font=font)
+
     return img
 
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    for size in (192, 512):
+    for size in (180, 192, 512):
         draw_icon(size).save(OUT / f"icon-{size}.png", format="PNG")
+    draw_icon(32).save(ROOT / "frontend" / "public" / "favicon.png", format="PNG")
     print(f"Wrote icons to {OUT}")
 
 

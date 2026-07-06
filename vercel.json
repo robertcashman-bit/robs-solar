@@ -35,5 +35,11 @@
       "source": "/(.*)",
       "destination": { "service": "web" }
     }
+  ],
+  "crons": [
+    {
+      "path": "/backend/finance/cron/daily-sync",
+      "schedule": "0 6 * * *"
+    }
   ]
 }

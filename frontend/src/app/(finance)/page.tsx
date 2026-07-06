@@ -1,20 +1,50 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { FinanceAlertsPanel } from "@/components/finance/FinanceAlertsPanel";
+import { FinanceConnectBanner } from "@/components/finance/FinanceConnectBanner";
 import { FinanceOverviewView } from "@/components/finance/FinanceOverviewView";
+import { FinanceAiAdviceCard } from "@/components/finance/FinanceAiAdviceCard";
+import { RecentTransactions } from "@/components/finance/RecentTransactions";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
+import {
+  bankConnectionsResponseSchema,
+  openBankingConfigStatusSchema,
+  type BankConnectionItem,
+} from "@/lib/finance-schemas";
 import { useFinanceOverview } from "@/lib/use-finance-overview";
+import { canWrite } from "@/lib/permissions";
 
 export default function FinanceOverviewPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const { overview, loading, error, refresh } = useFinanceOverview(Boolean(user));
+  const { overview, accounts, liabilities, loading, error, refresh } =
+    useFinanceOverview(Boolean(user));
+  const [bankConnections, setBankConnections] = useState<BankConnectionItem[]>([]);
+  const [obConfigured, setObConfigured] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    void (async () => {
+      try {
+        const [cards, ob] = await Promise.all([
+          apiClient.get<unknown>("/finance/bank-connections"),
+          apiClient.get<unknown>("/finance/integrations/open-banking/status"),
+        ]);
+        setBankConnections(bankConnectionsResponseSchema.parse(cards).connections);
+        setObConfigured(openBankingConfigStatusSchema.parse(ob).configured);
+      } catch {
+        setBankConnections([]);
+      }
+    })();
+  }, [user, overview]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -42,8 +72,19 @@ export default function FinanceOverviewPage() {
       {loading && !overview ? (
         <p className="mt-8 text-sm text-[var(--muted)]">Loading finance overview…</p>
       ) : overview ? (
-        <div className="mt-6">
-          <FinanceOverviewView overview={overview} />
+        <div className="mt-6 space-y-8">
+          <FinanceConnectBanner connections={bankConnections} obConfigured={obConfigured} />
+          <FinanceAlertsPanel insights={overview.insights} />
+          <FinanceAiAdviceCard canUse={canWrite(user)} />
+          <FinanceOverviewView
+            overview={overview}
+            accounts={accounts}
+            liabilities={liabilities}
+          />
+          <section>
+            <h2 className="mb-3 text-lg font-semibold">Recent transactions</h2>
+            <RecentTransactions limit={10} />
+          </section>
         </div>
       ) : null}
     </AppShell>

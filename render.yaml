@@ -77,3 +77,13 @@ services:
         sync: false
       - key: QUICKFILE_APPLICATION_ID
         sync: false
+      - key: OPEN_BANKING_PROVIDER
+        sync: false
+      - key: ENABLE_BANKING_APPLICATION_ID
+        sync: false
+      - key: ENABLE_BANKING_PRIVATE_KEY_PEM
+        sync: false
+      - key: ENABLE_BANKING_ENVIRONMENT
+        sync: false
+      - key: OPEN_BANKING_REDIRECT_URL
+        sync: false

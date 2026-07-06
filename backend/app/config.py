@@ -137,6 +137,23 @@ class Settings(BaseSettings):
     quickfile_api_key: str = ""
     quickfile_application_id: str = ""
 
+    # Personal Open Banking — Enable Banking (default) or legacy GoCardless
+    open_banking_provider: str = "enable_banking"
+    enable_banking_application_id: str = ""
+    enable_banking_private_key_pem: str = ""
+    enable_banking_private_key_path: str = ""
+    enable_banking_environment: str = "SANDBOX"
+    open_banking_secret_id: str = ""
+    open_banking_secret_key: str = ""
+    open_banking_redirect_url: str = "http://127.0.0.1:3000/open-banking/callback"
+
+    # Finance background sync (Open Banking + QuickFile)
+    finance_daily_sync_enabled: bool = True
+    finance_daily_sync_interval_hours: int = 24
+    # Vercel Cron sends Authorization: Bearer <CRON_SECRET>. When set, the in-process
+    # daily loop is disabled — production relies on GET /finance/cron/daily-sync instead.
+    cron_secret: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

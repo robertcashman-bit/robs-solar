@@ -267,6 +267,36 @@ class QuickFileClient:
             balances[code] = amount
         return balances
 
+    async def fetch_profit_and_loss(
+        self,
+        *,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if from_date:
+            params["FromDate"] = from_date
+        if to_date:
+            params["ToDate"] = to_date
+        return await self.request(
+            "/1_2/report/profitandloss",
+            {"SearchParameters": params},
+        )
+
+    async def fetch_balance_sheet(
+        self,
+        *,
+        to_date: str | None = None,
+        show_as_nbv: bool = False,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"ShowAsNBV": show_as_nbv}
+        if to_date:
+            params["ToDate"] = to_date
+        return await self.request(
+            "/1_2/report/balancesheet",
+            {"SearchParameters": params},
+        )
+
     async def fetch_unpaid_invoice_total(self) -> float:
         total = 0.0
         offset = 0

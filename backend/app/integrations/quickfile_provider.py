@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from app.integrations.base import BaseFinanceProvider, IntegrationNotConfiguredError
+from datetime import datetime, timezone
+
 from app.integrations.quickfile_client import QuickFileClient, QuickFileError, _nominal_code_key
+from app.integrations.quickfile_reports import parse_balance_sheet_full
 from app.schemas.finance import FinanceAccountType, FinanceScope, QuickFileConfig
 
 
@@ -14,6 +17,8 @@ def _map_account_type(raw: str, name: str) -> FinanceAccountType:
     label = (name or "").lower()
     if value == "CREDITCARD" or "credit card" in label:
         return FinanceAccountType.CREDIT_CARD
+    if "director" in label and "loan" in label:
+        return FinanceAccountType.DIRECTORS_LOAN
     if value == "LOAN" or "loan" in label:
         return FinanceAccountType.LOAN
     if value == "RESERVE" or "vat" in label:
@@ -49,6 +54,8 @@ def _normalize_balance(account_type: FinanceAccountType, amount: float) -> float
         FinanceAccountType.CREDIT_CARD,
         FinanceAccountType.LOAN,
         FinanceAccountType.CAPITAL_ON_TAP,
+        FinanceAccountType.DIRECTORS_LOAN,
+        FinanceAccountType.CREDITORS,
     ):
         return round(abs(amount), 2)
     return round(amount, 2)
@@ -119,9 +126,13 @@ class QuickFileProvider(BaseFinanceProvider):
         return []
 
     async def fetch_debtors_gbp(self) -> float:
+        """Debtors control balance from the balance sheet report (matches QuickFile BS)."""
         self._ensure_configured()
         try:
-            return await self._client.fetch_unpaid_invoice_total()
+            to_date = datetime.now(timezone.utc).date().isoformat()
+            body = await self._client.fetch_balance_sheet(to_date=to_date)
+            parsed = parse_balance_sheet_full(body, to_date=to_date)
+            return float(parsed["debtors_gbp"])
         except QuickFileError:
             return 0.0
 

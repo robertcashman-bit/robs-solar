@@ -37,6 +37,40 @@ export const liveMetricsSchema = z.object({
   smart_meter_interval_end: z.string().nullable().optional(),
 });
 
+const loadFieldOriginSchema = z.enum(["live", "derived", "cached", "missing", "unknown"]);
+
+export const loadFieldStatusSchema = z.object({
+  label: z.string(),
+  value: z.number().nullable().optional(),
+  unit: z.string().default("W"),
+  origin: loadFieldOriginSchema,
+  source_field: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
+});
+
+export const loadDiagnosticsSchema = z.object({
+  timestamp: z.string(),
+  adapter_mode: z.string(),
+  data_source: z.string(),
+  is_cached: z.boolean(),
+  cache_age_seconds: z.number().nullable().optional(),
+  raw_payload: z.record(z.string(), z.unknown()).nullable().optional(),
+  raw_payload_captured_at: z.string().nullable().optional(),
+  raw_payload_note: z.string().nullable().optional(),
+  pv: loadFieldStatusSchema,
+  battery: loadFieldStatusSchema,
+  grid_import: loadFieldStatusSchema,
+  grid_export: loadFieldStatusSchema,
+  measured_load_w: z.number().nullable().optional(),
+  measured_load_origin: loadFieldOriginSchema,
+  estimated_load_w: z.number().nullable().optional(),
+  estimated_load_formula: z.string(),
+  house_load_source: z.enum(["reported", "derived", "day_series", "recent_typical", "minimal"]),
+  house_load_w: z.number(),
+  house_load_at: z.string().nullable().optional(),
+  grid_meter_connected: z.boolean().nullable().optional(),
+});
+
 export const connectivitySchema = z.object({
   backend_healthy: z.boolean(),
   adapter_mode: z.string(),
@@ -184,6 +218,8 @@ export const capabilitiesResponseSchema = z.object({
 });
 
 export type LiveMetrics = z.infer<typeof liveMetricsSchema>;
+export type LoadFieldStatus = z.infer<typeof loadFieldStatusSchema>;
+export type LoadDiagnostics = z.infer<typeof loadDiagnosticsSchema>;
 export type ConnectivityStatus = z.infer<typeof connectivitySchema>;
 export type UserInfo = z.infer<typeof userInfoSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;

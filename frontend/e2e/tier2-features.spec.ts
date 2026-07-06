@@ -7,7 +7,7 @@ test("PWA manifest is served", async ({ request }) => {
   expect(response.ok()).toBeTruthy();
   const manifest = await response.json();
   expect(manifest.name).toContain("Rob's Finance");
-  expect(manifest.theme_color).toBe("#f59e0b");
+  expect(manifest.theme_color).toBe("#10b981");
   for (const icon of manifest.icons) {
     const iconResponse = await request.get(icon.src);
     expect(iconResponse.ok(), `icon ${icon.src} should exist`).toBeTruthy();

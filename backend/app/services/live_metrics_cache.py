@@ -25,6 +25,17 @@ class LiveMetricsCache:
     def peek(self) -> LiveMetrics | None:
         return self._metrics if self._fresh() else None
 
+    @property
+    def fetched_at(self) -> datetime | None:
+        """When the cached snapshot was captured (regardless of TTL freshness)."""
+        return self._fetched_at
+
+    def age_seconds(self) -> float | None:
+        """Age of the cached snapshot in seconds, or None if nothing cached yet."""
+        if self._fetched_at is None:
+            return None
+        return (datetime.now(timezone.utc) - self._fetched_at).total_seconds()
+
     async def get(self, adapter: InverterAdapter) -> LiveMetrics:
         cached = self.peek()
         if cached is not None:

@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 
-import { MetricTile } from "@/components/finance/MetricTile";
+import { BusinessFinanceView } from "@/components/finance/BusinessFinanceView";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
@@ -14,10 +15,12 @@ import { useAuth } from "@/lib/auth-context";
 import {
   businessFinanceSnapshotSchema,
   financeAccountSchema,
+  quickFileReportsSchema,
   type BusinessFinanceSnapshot,
   type FinanceAccount,
+  type QuickFileReports,
 } from "@/lib/finance-schemas";
-import { currentMonthKey, formatGbp } from "@/lib/money";
+import { currentMonthKey } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
 
 export default function BusinessFinancePage() {
@@ -25,6 +28,7 @@ export default function BusinessFinancePage() {
   const { user, loading: authLoading } = useAuth();
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
   const [snapshot, setSnapshot] = useState<BusinessFinanceSnapshot | null>(null);
+  const [quickfileReports, setQuickfileReports] = useState<QuickFileReports | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
@@ -42,13 +46,15 @@ export default function BusinessFinancePage() {
 
   const load = useCallback(async () => {
     try {
-      const [accts, snaps] = await Promise.all([
+      const [accts, snaps, qfReports] = await Promise.all([
         apiClient.get<unknown>("/finance/accounts?scope=business"),
         apiClient.get<unknown>("/finance/snapshots/business"),
+        apiClient.get<unknown>("/finance/integrations/quickfile/reports"),
       ]);
       setAccounts(z.array(financeAccountSchema).parse(accts));
       const parsed = z.array(businessFinanceSnapshotSchema).parse(snaps);
       setSnapshot(parsed[0] ?? null);
+      setQuickfileReports(quickFileReportsSchema.parse(qfReports));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load business finance");
     }
@@ -94,47 +100,45 @@ export default function BusinessFinancePage() {
 
   if (authLoading || !user) return <AuthLoadingShell />;
 
-  const bankBalance = accounts
-    .filter((a) => a.account_type === "current")
-    .reduce((s, a) => s + a.balance_gbp, 0);
-
   return (
     <AppShell>
       <PageHeader
         eyebrow="Finance"
         title="Business Finance"
-        description="Turnover, expenses, VAT and corporation tax reserves, debtors, creditors, and cash to draw."
+        description="QuickFile profit & loss account and balance sheet, then your live bank accounts and loans."
       />
-      {error ? <div className="mt-4"><ErrorBanner message={error} /></div> : null}
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricTile label="Business bank" value={bankBalance} />
-        <MetricTile label="Turnover (month)" value={snapshot?.turnover_gbp} />
-        <MetricTile label="Expenses (month)" value={snapshot?.expenses_gbp} />
-        <MetricTile label="Profit estimate" value={snapshot?.profit_estimate_gbp} positive />
-        <MetricTile label="VAT reserve" value={snapshot?.vat_reserve_gbp} />
-        <MetricTile label="Corp tax reserve" value={snapshot?.corp_tax_reserve_gbp} />
-        <MetricTile label="Debtors" value={snapshot?.debtors_gbp} />
-        <MetricTile label="Cash to draw" value={snapshot?.cash_available_to_draw_gbp} />
+      <p className="mt-2 text-sm">
+        <Link href="/finance/connect" className="underline text-[var(--muted)]">
+          Sync business bank accounts from QuickFile →
+        </Link>
+      </p>
+      {error ? (
+        <div className="mt-4">
+          <ErrorBanner message={error} />
+        </div>
+      ) : null}
+
+      <div className="mt-6">
+        <BusinessFinanceView
+          accounts={accounts}
+          quickfileReports={quickfileReports}
+          fallbackPl={
+            snapshot
+              ? {
+                  turnover_gbp: snapshot.turnover_gbp,
+                  expenses_gbp: snapshot.expenses_gbp,
+                  net_profit_gbp: snapshot.profit_estimate_gbp,
+                }
+              : undefined
+          }
+        />
       </div>
-      <section className="mt-8">
-        <h2 className="solar-section-title">Business accounts</h2>
-        <ul className="mt-3 space-y-2">
-          {accounts.map((a) => (
-            <li key={a.id} className="flex justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm">
-              <span>{a.name}</span>
-              <span className="font-semibold tabular-nums">{formatGbp(a.balance_gbp)}</span>
-            </li>
-          ))}
-          {accounts.length === 0 ? (
-            <li className="text-sm text-[var(--muted)]">No business accounts yet.</li>
-          ) : null}
-        </ul>
-      </section>
+
       {canWrite(user) ? (
         <>
           <form
             onSubmit={(e) => void addAccount(e)}
-            className="mt-6 grid gap-3 rounded-2xl border border-[var(--border)] p-4 sm:grid-cols-4"
+            className="mt-8 grid gap-3 rounded-2xl border border-[var(--border)] p-4 sm:grid-cols-4"
           >
             <input
               className="solar-input"
@@ -170,7 +174,11 @@ export default function BusinessFinancePage() {
             </button>
           </form>
           <section className="mt-8">
-            <h2 className="solar-section-title">Monthly snapshot ({currentMonthKey()})</h2>
+            <h2 className="solar-section-title">Manual snapshot ({currentMonthKey()})</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Fallback only when QuickFile is not connected. Sync QuickFile in Settings for live
+              reports.
+            </p>
             <form
               onSubmit={(e) => void saveSnapshot(e)}
               className="mt-3 grid gap-3 rounded-2xl border border-[var(--border)] p-4 sm:grid-cols-2 lg:grid-cols-4"

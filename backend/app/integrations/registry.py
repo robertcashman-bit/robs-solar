@@ -24,7 +24,7 @@ class IntegrationRegistry:
     def list_providers(self) -> list[dict[str, str]]:
         return [
             {"id": "manual", "label": "Manual entry", "status": "active"},
-            {"id": "open_banking", "label": "Open Banking", "status": "coming_soon"},
+            {"id": "open_banking", "label": "Open Banking", "status": "inactive"},
             {"id": "quickfile", "label": "QuickFile", "status": "inactive"},
             {"id": "octopus", "label": "Octopus Energy", "status": "active"},
             {"id": "sunsynk", "label": "Sunsynk Connect", "status": "active"},

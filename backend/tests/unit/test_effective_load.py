@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app.schemas.domain import HouseLoadSource, InverterMode, InverterStatus, LiveMetrics
-from app.services.effective_load import finalize_live_metrics, resolve_house_load
+from app.services.effective_load import derived_house_load, finalize_live_metrics, resolve_house_load
 
 
 def test_resolve_house_load_prefers_derived_when_ct_underreports() -> None:
@@ -95,6 +95,65 @@ def test_finalize_live_metrics_matches_sunsynk_low_load_snapshot() -> None:
     finalized = finalize_live_metrics(metrics)
     assert finalized.house_load_w == pytest.approx(22.0)
     assert finalized.house_load_source == HouseLoadSource.DERIVED
+
+
+def test_resolve_house_load_never_goes_negative_when_exporting_heavily() -> None:
+    """Export exceeds PV+battery (e.g. metering glitch): balance goes negative,
+    but the resolved load must clamp to 0, never a negative watt figure."""
+    watts, source = resolve_house_load(
+        0,
+        pv=1000,
+        grid_import=0,
+        grid_export=2000,
+        battery_power_w=0,
+    )
+    assert watts == pytest.approx(0.0)
+    assert watts >= 0
+    assert source == HouseLoadSource.MINIMAL
+
+
+def test_derived_house_load_can_be_negative_before_clamping() -> None:
+    """The raw balance formula itself is unclamped -- resolve_house_load clamps it."""
+    balance = derived_house_load(pv=5000, grid_import=0, grid_export=4800, battery_power_w=-150)
+    assert balance == pytest.approx(50.0)
+    negative_balance = derived_house_load(pv=1000, grid_import=0, grid_export=2000, battery_power_w=0)
+    assert negative_balance == pytest.approx(-1000.0)
+
+
+def test_finalize_live_metrics_never_reports_negative_load() -> None:
+    """A pathological negative derived balance must not surface as a negative load."""
+    metrics = LiveMetrics(
+        pv_power_w=100,
+        battery_soc_pct=90,
+        battery_power_w=0,
+        house_load_w=0,
+        house_load_source=HouseLoadSource.MINIMAL,
+        grid_import_w=0,
+        grid_export_w=900,  # export exceeds PV -- shouldn't happen, but must not go negative
+        inverter_mode=InverterMode.SELF_USE,
+        inverter_status=InverterStatus.ONLINE,
+        daily_pv_kwh=1,
+        daily_import_kwh=0,
+        daily_export_kwh=1,
+        timestamp=datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    finalized = finalize_live_metrics(metrics)
+    assert finalized.house_load_w >= 0
+    assert finalized.house_load_w == pytest.approx(0.0)
+
+
+def test_resolve_house_load_watts_are_not_reinterpreted_as_kilowatts() -> None:
+    """Sunsynk /flow values are always watts; a small kW-scale number (e.g. 2.4)
+    must not be mistaken for a large load -- it stays a small, plausible watt value."""
+    watts, source = resolve_house_load(
+        2.4,
+        pv=0,
+        grid_import=2.4,
+        grid_export=0,
+        battery_power_w=0,
+    )
+    assert watts == pytest.approx(2.4)
+    assert source == HouseLoadSource.MINIMAL  # below the 5W noise floor either way
 
 
 def test_finalize_live_metrics_preserves_high_load_kettle_scenario() -> None:

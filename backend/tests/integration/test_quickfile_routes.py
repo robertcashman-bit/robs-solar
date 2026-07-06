@@ -7,7 +7,23 @@ from tests.conftest import login
 
 
 @pytest.mark.asyncio
-async def test_quickfile_status_unconfigured(client: AsyncClient) -> None:
+async def test_quickfile_status_unconfigured(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy import delete
+
+    from app.config import settings
+    from app.db.models import AppSettingRow
+    from app.db.session import SessionLocal
+
+    monkeypatch.setattr(settings, "quickfile_account_number", "")
+    monkeypatch.setattr(settings, "quickfile_api_key", "")
+    monkeypatch.setattr(settings, "quickfile_application_id", "")
+
+    async with SessionLocal() as db:
+        await db.execute(delete(AppSettingRow).where(AppSettingRow.key == "quickfile"))
+        await db.commit()
+
     await login(client, "viewer", "viewer-pass")
     response = await client.get("/finance/integrations/quickfile/status")
     assert response.status_code == 200

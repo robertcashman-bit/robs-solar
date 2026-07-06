@@ -1,97 +1,68 @@
 import Link from "next/link";
 
-import { InsightCard } from "@/components/finance/InsightCard";
-import { MetricTile } from "@/components/finance/MetricTile";
-import type { FinanceOverview } from "@/lib/finance-schemas";
+import { AccountStatements } from "@/components/finance/AccountStatements";
+import { FinanceSignLegend } from "@/components/finance/FinanceSignLegend";
+import type { FinanceAccount, FinanceLiability, FinanceOverview } from "@/lib/finance-schemas";
+import { formatFinanceGbp } from "@/lib/money";
 
 type FinanceOverviewViewProps = {
   overview: FinanceOverview;
+  accounts?: FinanceAccount[];
+  liabilities?: FinanceLiability[];
 };
 
-export function FinanceOverviewView({ overview }: FinanceOverviewViewProps) {
+export function FinanceOverviewView({
+  overview,
+  accounts = [],
+  liabilities = [],
+}: FinanceOverviewViewProps) {
+  const personalAccounts = accounts.filter((a) => a.scope === "personal");
+  const personalLiabilities = liabilities.filter((l) => l.scope === "personal");
+  const profit = formatFinanceGbp(overview.business_monthly_net_profit_gbp, "signed");
+
   return (
     <div className="space-y-8">
-      <section>
-        <h2 className="solar-section-title">Balances</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricTile label="Personal bank" value={overview.personal_bank_balance_gbp} />
-          <MetricTile label="Business bank" value={overview.business_bank_balance_gbp} />
-          <MetricTile
-            label="Cash after bills"
-            value={overview.cash_after_bills_gbp}
-            positive={overview.cash_after_bills_gbp > 0}
-            warning={overview.cash_after_bills_gbp < 500}
-          />
-          <MetricTile
-            label="Net worth (estimate)"
-            value={overview.net_worth_estimate_gbp}
-            positive={overview.net_worth_estimate_gbp > 0}
-          />
-        </div>
-      </section>
+      <FinanceSignLegend />
 
-      <section>
-        <h2 className="solar-section-title">Monthly flow</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <MetricTile label="Monthly income" value={overview.monthly_income_gbp} positive />
-          <MetricTile label="Monthly spending" value={overview.monthly_spending_gbp} />
-          <MetricTile
-            label="Monthly surplus"
-            value={overview.monthly_surplus_gbp}
-            positive={overview.monthly_surplus_gbp >= 0}
-            warning={overview.monthly_surplus_gbp < 0}
-          />
-        </div>
-      </section>
-
-      <section>
-        <h2 className="solar-section-title">Debts &amp; reserves</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricTile label="Personal debt" value={overview.total_personal_debt_gbp} warning />
-          <MetricTile label="Business debt" value={overview.total_business_debt_gbp} warning />
-          <MetricTile label="Credit cards" value={overview.credit_card_balances_gbp} warning />
-          <MetricTile label="Loans" value={overview.loan_balances_gbp} />
-          <MetricTile label="Mortgage" value={overview.mortgage_balance_gbp} />
-          <MetricTile label="Pension" value={overview.pension_value_gbp} positive />
-          <MetricTile label="Director's loan" value={overview.directors_loan_gbp} />
-          <MetricTile
-            label="VAT reserve"
-            value={overview.vat_reserve_gbp}
-            warning={overview.vat_reserve_warning}
-            hint={overview.vat_reserve_warning ? "VAT reserve appears low" : undefined}
-          />
-          <MetricTile
-            label="Corp tax reserve"
-            value={overview.corp_tax_reserve_gbp}
-            warning={overview.corp_tax_reserve_warning}
-          />
-        </div>
-      </section>
-
-      <section>
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="solar-section-title">Alerts &amp; recommendations</h2>
-          <Link href="/finance/reports" className="solar-btn-ghost text-sm">
-            View reports
+      <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="solar-section-title">Business</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Profit &amp; loss and balance sheet live on the Business page.
+            </p>
+          </div>
+          <Link href="/finance/business" className="solar-btn-primary text-sm">
+            Open business finance
           </Link>
         </div>
-        {overview.insights.length === 0 ? (
-          <p className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-6 text-sm text-[var(--muted)]">
-            No active insights. Add accounts and snapshots on the Personal, Business, or Debts pages.
+        {overview.business_income_from_quickfile ? (
+          <p className="mt-3 text-sm tabular-nums">
+            This month net profit:{" "}
+            <span className={profit.className}>{profit.text}</span>
           </p>
-        ) : (
-          <div className="mt-4 grid gap-3">
-            {overview.insights.map((insight) => (
-              <InsightCard key={insight.id} insight={insight} />
-            ))}
-          </div>
-        )}
+        ) : null}
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="solar-section-title">Personal accounts &amp; net worth</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            Personal bank accounts and debts — one line per item.
+          </p>
+        </div>
+        <AccountStatements
+          overview={overview}
+          accounts={personalAccounts}
+          liabilities={personalLiabilities}
+        />
       </section>
 
       <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-        <h2 className="font-semibold">Quick links</h2>
+        <h2 className="font-semibold">More pages</h2>
         <div className="mt-3 flex flex-wrap gap-2">
           {[
+            ["/finance/connect", "Connect banks"],
             ["/finance/personal", "Personal finance"],
             ["/finance/business", "Business finance"],
             ["/finance/debts", "Debts"],
@@ -104,13 +75,6 @@ export function FinanceOverviewView({ overview }: FinanceOverviewViewProps) {
             </Link>
           ))}
         </div>
-        <p className="mt-3 text-xs text-[var(--muted)]">
-          Live solar savings and inverter data are in the{" "}
-          <Link href="/energy" className="underline">
-            Energy / Solar
-          </Link>{" "}
-          section.
-        </p>
       </section>
     </div>
   );

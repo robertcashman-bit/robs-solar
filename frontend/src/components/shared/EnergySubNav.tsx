@@ -11,6 +11,7 @@ const energyItems = [
   { href: "/energy/scheduler", label: "Scheduler" },
   { href: "/energy/controls", label: "Controls", adminOnly: true },
   { href: "/energy/assistant", label: "Assistant", adminOnly: true },
+  { href: "/energy/diagnostics", label: "Diagnostics" },
 ];
 
 type EnergySubNavProps = {

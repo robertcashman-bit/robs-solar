@@ -97,6 +97,66 @@ class LiveMetrics(BaseModel):
     smart_meter_interval_end: Optional[datetime] = None
 
 
+class LoadFieldOrigin(str, Enum):
+    """Where a single diagnostic field's value actually came from.
+
+    Distinct from ``HouseLoadSource`` (which only classifies house load itself):
+    this labels every power-flow field shown on the diagnostics screen, so a
+    missing/undefined value is reported as ``unknown`` rather than silently
+    displayed as 0.
+    """
+
+    LIVE = "live"
+    DERIVED = "derived"
+    CACHED = "cached"
+    MISSING = "missing"
+    UNKNOWN = "unknown"
+
+
+class LoadFieldStatus(BaseModel):
+    """A single power-flow value plus where it came from, for the diagnostics UI."""
+
+    label: str
+    value: Optional[float] = None
+    unit: str = "W"
+    origin: LoadFieldOrigin
+    source_field: Optional[str] = None
+    note: Optional[str] = None
+
+
+class LoadDiagnostics(BaseModel):
+    """Full raw-to-derived load picture for the diagnostics screen (task 4/5).
+
+    Keeps "Measured Load" (directly reported by the adapter/CT) and
+    "Estimated Load" (calculated from the power balance) explicitly separate,
+    per the requirement to never blur measured and estimated values.
+    """
+
+    timestamp: datetime
+    adapter_mode: str
+    data_source: str
+    is_cached: bool
+    cache_age_seconds: Optional[float] = None
+
+    raw_payload: Optional[dict[str, Any]] = None
+    raw_payload_captured_at: Optional[datetime] = None
+    raw_payload_note: Optional[str] = None
+
+    pv: LoadFieldStatus
+    battery: LoadFieldStatus
+    grid_import: LoadFieldStatus
+    grid_export: LoadFieldStatus
+
+    measured_load_w: Optional[float] = None
+    measured_load_origin: LoadFieldOrigin
+    estimated_load_w: Optional[float] = None
+    estimated_load_formula: str = "pv_power_w + grid_import_w - grid_export_w + battery_power_w"
+    house_load_source: HouseLoadSource
+    house_load_w: float
+    house_load_at: Optional[datetime] = None
+    grid_meter_connected: Optional[bool] = None
+
+
 class ConnectivityStatus(BaseModel):
     backend_healthy: bool
     adapter_mode: str

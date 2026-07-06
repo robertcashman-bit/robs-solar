@@ -1,5 +1,128 @@
 export type MoneyTone = "positive" | "negative" | "neutral";
 
+/** How a finance figure should be signed in the UI. */
+export type FinanceAmountRole =
+  | "asset"
+  | "debt"
+  | "inflow"
+  | "outflow"
+  | "signed";
+
+export type FinanceAmountFormat = {
+  text: string;
+  tone: MoneyTone;
+  className: string;
+  role: FinanceAmountRole;
+};
+
+const FINANCE_POSITIVE_CLASS = "text-emerald-600 dark:text-emerald-400";
+const FINANCE_NEGATIVE_CLASS = "text-red-600 dark:text-red-400";
+const FINANCE_NEUTRAL_CLASS = "text-[var(--foreground)]";
+
+export const FINANCE_SIGN_LEGEND =
+  "Green + figures are assets or money in (credit). Red − figures are debts or money out (debit).";
+
+/** Format a GBP amount with an explicit +/− sign for finance dashboards. */
+export function formatFinanceGbp(
+  value: number | null | undefined,
+  role: FinanceAmountRole,
+): FinanceAmountFormat {
+  if (value == null || Number.isNaN(value)) {
+    return {
+      text: "—",
+      tone: "neutral",
+      className: FINANCE_NEUTRAL_CLASS,
+      role,
+    };
+  }
+
+  const absText = formatGbp(Math.abs(value));
+
+  switch (role) {
+    case "asset":
+    case "inflow":
+      return {
+        text: `+${absText}`,
+        tone: "positive",
+        className: FINANCE_POSITIVE_CLASS,
+        role,
+      };
+    case "debt":
+    case "outflow":
+      return {
+        text: `−${absText}`,
+        tone: "negative",
+        className: FINANCE_NEGATIVE_CLASS,
+        role,
+      };
+    case "signed":
+      if (value >= 0) {
+        return {
+          text: `+${absText}`,
+          tone: "positive",
+          className: FINANCE_POSITIVE_CLASS,
+          role,
+        };
+      }
+      return {
+        text: `−${absText}`,
+        tone: "negative",
+        className: FINANCE_NEGATIVE_CLASS,
+        role,
+      };
+    default:
+      return {
+        text: absText,
+        tone: "neutral",
+        className: FINANCE_NEUTRAL_CLASS,
+        role,
+      };
+  }
+}
+
+/** Pick asset vs debt display for a bank/account balance. */
+export function financeRoleForAccountBalance(
+  accountType: string,
+  balanceGbp: number,
+): FinanceAmountRole {
+  const debtTypes = new Set([
+    "credit_card",
+    "loan",
+    "mortgage",
+    "directors_loan",
+    "capital_on_tap",
+    "creditors",
+  ]);
+  if (debtTypes.has(accountType)) {
+    return "debt";
+  }
+  if (accountType === "current" && balanceGbp < 0) {
+    return "signed";
+  }
+  return "asset";
+}
+
+/** Cash-flow entry amounts are stored signed; infer display role from type. */
+export function financeRoleForCashflowEntry(
+  entryType: string,
+  amountGbp: number,
+): FinanceAmountRole {
+  if (amountGbp < 0) {
+    return "outflow";
+  }
+  if (amountGbp > 0) {
+    return "inflow";
+  }
+  if (entryType === "income") {
+    return "inflow";
+  }
+  return "outflow";
+}
+
+export function financeRoleForDebtType(debtType: string): FinanceAmountRole {
+  return debtType === "mortgage" ? "debt" : "debt";
+}
+
 export function currencySymbol(currency: string): string {
   if (currency === "GBP") return "£";
   if (currency === "EUR") return "€";
@@ -20,6 +143,30 @@ export function formatGbp(value: number | null | undefined, decimals = 2): strin
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(value);
+}
+
+/** Plain accounting currency — no +/- colours (matches QuickFile report figures). */
+export function formatAccountingGbp(value: number | null | undefined, decimals = 2): string {
+  if (value == null || Number.isNaN(value)) {
+    return "—";
+  }
+  if (value < 0) {
+    return `(${formatGbp(Math.abs(value), decimals)})`;
+  }
+  return formatGbp(value, decimals);
+}
+
+export function formatQuickFilePeriod(fromDate: string, toDate: string): string {
+  const format = (iso: string) => {
+    const [year, month, day] = iso.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+  return `${format(fromDate)} to ${format(toDate)}`;
 }
 
 export function formatPercent(value: number | null | undefined, decimals = 1): string {

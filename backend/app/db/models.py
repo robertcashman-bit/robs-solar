@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Float, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -264,6 +264,24 @@ class EnergyDailySnapshotRow(Base):
     export_credit_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     peak_discharge_ok: Mapped[bool] = mapped_column(default=True, nullable=False)
     alerts_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FinanceTransactionRow(Base):
+    __tablename__ = "finance_transactions"
+    __table_args__ = (Index("ix_finance_transactions_external_id", "external_id", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    external_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    transaction_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    description: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    merchant: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    amount_gbp: Mapped[float] = mapped_column(Float, nullable=False)
+    category: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    reference: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    is_pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

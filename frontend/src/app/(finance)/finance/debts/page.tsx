@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 
+import { FinanceAmount } from "@/components/finance/FinanceAmount";
 import { AppShell } from "@/components/shared/AppShell";
+import { HistoricBadge } from "@/components/finance/HistoricBadge";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -16,7 +18,7 @@ import {
   type DebtStrategy,
   type FinanceLiability,
 } from "@/lib/finance-schemas";
-import { formatGbp, formatPercent } from "@/lib/money";
+import { formatPercent, financeRoleForDebtType } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
 
 export default function DebtsPage() {
@@ -115,12 +117,21 @@ export default function DebtsPage() {
           <tbody>
             {debts.map((d) => (
               <tr key={d.id} className="border-b border-[var(--border)]">
-                <td className="py-3 pr-4">{d.name}</td>
+                <td className="py-3 pr-4">
+                  {d.name}
+                  {d.is_historic ? <HistoricBadge /> : null}
+                </td>
                 <td className="py-3 pr-4 capitalize">{d.scope}</td>
-                <td className="py-3 pr-4 tabular-nums">{formatGbp(d.balance_gbp)}</td>
+                <td className="py-3 pr-4">
+                  <FinanceAmount value={d.balance_gbp} role={financeRoleForDebtType(d.debt_type)} />
+                </td>
                 <td className="py-3 pr-4">{formatPercent(d.interest_rate_pct)}</td>
-                <td className="py-3 pr-4 tabular-nums">{formatGbp(d.minimum_payment_gbp)}</td>
-                <td className="py-3 tabular-nums">{formatGbp(d.overpayment_gbp)}</td>
+                <td className="py-3 pr-4">
+                  <FinanceAmount value={d.minimum_payment_gbp} role="outflow" />
+                </td>
+                <td className="py-3">
+                  <FinanceAmount value={d.overpayment_gbp} role="outflow" />
+                </td>
               </tr>
             ))}
           </tbody>

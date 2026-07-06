@@ -19,12 +19,15 @@ import { InstallAppBanner } from "@/components/shared/InstallAppBanner";
 
 const navItems = [
   { href: "/", label: "Overview", icon: GaugeIcon },
+  { href: "/finance/connect", label: "Connect banks", icon: WalletIcon, highlight: true },
+  { href: "/finance/open-banking/setup", label: "OB Setup", icon: SettingsIcon, adminOnly: true },
   { href: "/finance/personal", label: "Personal", icon: WalletIcon },
   { href: "/finance/business", label: "Business", icon: WalletIcon },
   { href: "/finance/debts", label: "Debts", icon: WalletIcon },
   { href: "/finance/cash-flow", label: "Cash Flow", icon: ChartIcon },
   { href: "/finance/budget", label: "Budget", icon: ChartIcon },
   { href: "/finance/reports", label: "Reports", icon: ChartIcon },
+  { href: "/finance/assistant", label: "AI assistant", icon: ChartIcon },
   { href: "/energy", label: "Energy", icon: SunIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
@@ -50,7 +53,11 @@ function isNavActive(pathname: string, href: string): boolean {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { user, logout, loading } = useAuth();
-  const [theme, setTheme] = useState<"dark" | "light">(readStoredTheme);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    setTheme(readStoredTheme());
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -98,9 +105,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                 aria-label="Main navigation"
                 className="flex max-w-[min(100vw-2rem,52rem)] flex-wrap gap-0.5 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 shadow-sm"
               >
-                {navItems.map((item) => {
+                {(canWrite(user)
+                  ? navItems
+                  : navItems.filter((item) => !("adminOnly" in item && item.adminOnly))
+                ).map((item) => {
                   const active = isNavActive(pathname, item.href);
                   const Icon = item.icon;
+                  const highlight = "highlight" in item && item.highlight;
                   return (
                     <Link
                       key={item.href}
@@ -109,7 +120,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                       className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all sm:px-3 ${
                         active
                           ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm"
-                          : "text-[var(--muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--foreground)]"
+                          : highlight
+                            ? "text-emerald-800 ring-1 ring-emerald-500/40 dark:text-emerald-200 hover:bg-[var(--surface-elevated)]"
+                            : "text-[var(--muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--foreground)]"
                       }`}
                     >
                       <Icon size={15} className={active ? "opacity-95" : "opacity-70"} />

@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ErrorBanner } from "@/components/shared/Banners";
-import { SunIcon } from "@/components/shared/icons";
+import { WalletIcon } from "@/components/shared/icons";
 import { useAuth } from "@/lib/auth-context";
 
 export default function LoginPage() {
@@ -47,14 +47,16 @@ export default function LoginPage() {
         style={{ boxShadow: "var(--shadow-lg)" }}
       >
         <div className="flex flex-col items-center text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg">
-            <SunIcon size={28} />
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-lg">
+            <WalletIcon size={28} />
           </div>
-          <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-[var(--solar-dark)]">
-            Rob&apos;s Solar
+          <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+            Rob&apos;s Finance
           </p>
           <h1 className="mt-1 text-2xl font-bold">Sign in</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">Local auth for monitoring and control.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            Personal and business finance dashboard.
+          </p>
         </div>
 
         <label className="mt-8 block text-sm font-medium">

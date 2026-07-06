@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -19,6 +19,7 @@ class FinanceAccountType(str, Enum):
     CREDIT_CARD = "credit_card"
     LOAN = "loan"
     MORTGAGE = "mortgage"
+    PROPERTY = "property"
     PENSION = "pension"
     DIRECTORS_LOAN = "directors_loan"
     VAT_RESERVE = "vat_reserve"
@@ -33,6 +34,11 @@ class FinanceAccountSource(str, Enum):
     MANUAL = "manual"
     OPEN_BANKING = "open_banking"
     QUICKFILE = "quickfile"
+
+
+def account_is_historic(source: FinanceAccountSource) -> bool:
+    """True when balance is manually entered rather than synced live."""
+    return source not in (FinanceAccountSource.QUICKFILE, FinanceAccountSource.OPEN_BANKING)
 
 
 class DebtType(str, Enum):
@@ -80,6 +86,7 @@ class FinanceAccount(BaseModel):
     source: FinanceAccountSource = FinanceAccountSource.MANUAL
     external_id: str | None = None
     is_active: bool = True
+    is_historic: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -100,6 +107,7 @@ class FinanceAccountCreate(BaseModel):
 
 class FinanceAccountUpdate(BaseModel):
     name: str | None = None
+    account_type: FinanceAccountType | None = None
     provider: str | None = None
     balance_gbp: float | None = None
     credit_limit_gbp: float | None = None
@@ -122,6 +130,7 @@ class FinanceLiability(BaseModel):
     account_id: int | None = None
     notes: str = ""
     is_active: bool = True
+    is_historic: bool = True
     created_at: datetime
     updated_at: datetime
 
@@ -282,9 +291,39 @@ class FinanceOverviewResponse(BaseModel):
     mortgage_balance_gbp: float
     pension_value_gbp: float
     directors_loan_gbp: float
+    liquid_assets_gbp: float = 0.0
+    long_term_assets_gbp: float = 0.0
+    property_value_gbp: float = 0.0
+    debtors_gbp: float = 0.0
+    total_assets_gbp: float = 0.0
+    short_term_debt_gbp: float = 0.0
+    long_term_debt_gbp: float = 0.0
+    total_debt_gbp: float = 0.0
+    home_equity_gbp: float = 0.0
+    personal_short_term_debt_gbp: float = 0.0
+    personal_long_term_debt_gbp: float = 0.0
+    business_short_term_debt_gbp: float = 0.0
+    business_long_term_debt_gbp: float = 0.0
     net_worth_estimate_gbp: float
     monthly_surplus_gbp: float
+    personal_monthly_income_gbp: float = 0.0
+    business_monthly_turnover_gbp: float = 0.0
+    business_monthly_expenses_gbp: float = 0.0
+    business_monthly_net_profit_gbp: float = 0.0
+    business_ytd_turnover_gbp: float = 0.0
+    business_ytd_net_profit_gbp: float = 0.0
+    business_income_from_quickfile: bool = False
+    quickfile_reports_at: str | None = None
+    historic_fields: list[str] = Field(default_factory=list)
     insights: list[FinanceInsight] = Field(default_factory=list)
+
+
+class HistoricFinanceSeedResponse(BaseModel):
+    accounts_created: int
+    liabilities_created: int
+    snapshot_created: bool
+    skipped: bool
+    message: str
 
 
 class DebtStrategyRecommendation(BaseModel):
@@ -296,6 +335,7 @@ class DebtStrategyRecommendation(BaseModel):
 
 
 class CashflowForecastResponse(BaseModel):
+    scope: FinanceScope
     horizon_days: int
     starting_balance_gbp: float
     projected_balance_gbp: float
@@ -304,10 +344,62 @@ class CashflowForecastResponse(BaseModel):
     warning_message: str = ""
 
 
+class CashflowForecastsResponse(BaseModel):
+    horizon_days: int
+    personal: CashflowForecastResponse
+    business: CashflowForecastResponse
+
+
+class QuickFileReportLine(BaseModel):
+    nominal_code: str | None = None
+    label: str
+    amount_gbp: float
+
+
+class QuickFileReportSection(BaseModel):
+    key: str
+    label: str
+    lines: list[QuickFileReportLine] = Field(default_factory=list)
+    subtotal_gbp: float | None = None
+    subtotal_label: str | None = None
+    is_total: bool = False
+
+
+class QuickFileProfitAndLossSummary(BaseModel):
+    from_date: str
+    to_date: str
+    turnover_gbp: float
+    cost_of_sales_gbp: float
+    expenses_gbp: float
+    net_profit_gbp: float
+    sections: list[QuickFileReportSection] = Field(default_factory=list)
+
+
+class QuickFileBalanceSheetSummary(BaseModel):
+    to_date: str
+    fixed_assets_gbp: float
+    current_assets_gbp: float
+    current_liabilities_gbp: float
+    long_term_liabilities_gbp: float
+    capital_and_reserves_gbp: float
+    debtors_gbp: float = 0.0
+    creditors_gbp: float = 0.0
+    vat_liability_gbp: float = 0.0
+    sections: list[QuickFileReportSection] = Field(default_factory=list)
+
+
+class QuickFileReportsResponse(BaseModel):
+    synced_at: str | None = None
+    profit_and_loss_month: QuickFileProfitAndLossSummary | None = None
+    profit_and_loss_ytd: QuickFileProfitAndLossSummary | None = None
+    balance_sheet: QuickFileBalanceSheetSummary | None = None
+
+
 class FinanceReportsResponse(BaseModel):
     month: str
     personal_snapshot: PersonalFinanceSnapshot | None = None
     business_snapshot: BusinessFinanceSnapshot | None = None
+    quickfile_reports: QuickFileReportsResponse | None = None
     net_worth_gbp: float
     total_debt_gbp: float
     debt_reduction_gbp: float
@@ -332,4 +424,196 @@ class QuickFileConfigStatus(BaseModel):
 class QuickFileSyncResult(BaseModel):
     accounts_synced: int
     debtors_gbp: float
+    reports_synced: bool = False
     message: str
+
+
+class OpenBankingConfig(BaseModel):
+    provider: Literal["enable_banking", "gocardless"] = "enable_banking"
+    application_id: str = ""
+    private_key_pem: str = ""
+    environment: Literal["SANDBOX", "PRODUCTION"] = "SANDBOX"
+    secret_id: str = ""
+    secret_key: str = ""
+    redirect_url: str = ""
+    country: str = "gb"
+    scopes: str = "accounts,transactions"
+    webhook_url: str = ""
+    access_token: str = ""
+    refresh_token: str = ""
+    access_expires_at: datetime | None = None
+
+
+class OpenBankingRequisition(BaseModel):
+    id: str
+    institution_id: str
+    institution_name: str
+    status: str = "CR"
+    account_ids: list[str] = Field(default_factory=list)
+    reference: str = ""
+    state: str = ""
+    provider: Literal["enable_banking", "gocardless"] = "enable_banking"
+    created_at: datetime | None = None
+
+
+class OpenBankingConfigStatus(BaseModel):
+    provider: Literal["enable_banking", "gocardless"] = "enable_banking"
+    application_id: str = ""
+    private_key_set: bool = False
+    environment: Literal["SANDBOX", "PRODUCTION"] = "SANDBOX"
+    secret_id: str = ""
+    secret_key_set: bool = False
+    redirect_url: str = ""
+    country: str = "gb"
+    scopes: str = "accounts,transactions"
+    webhook_url: str = ""
+    configured: bool = False
+    linked_banks: list[str] = Field(default_factory=list)
+    connections_count: int = 0
+    last_sync_at: str | None = None
+
+
+OpenBankingSetupProvider = Literal["enable_banking", "gocardless"]
+OpenBankingSetupEnvironment = Literal["sandbox", "live"]
+OpenBankingTestStatus = Literal[
+    "connected_successfully",
+    "missing_credentials",
+    "invalid_redirect_url",
+    "provider_rejected_credentials",
+    "further_bank_authorisation_required",
+]
+
+
+class OpenBankingSetupSaveRequest(BaseModel):
+    """Plain-English setup form payload from the UI."""
+
+    provider: OpenBankingSetupProvider = "enable_banking"
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_url: str = ""
+    environment: OpenBankingSetupEnvironment = "sandbox"
+    country: str = Field(default="gb", min_length=2, max_length=2)
+    scopes: str = "accounts,transactions"
+    webhook_url: str = ""
+
+
+class OpenBankingTestResult(BaseModel):
+    status: OpenBankingTestStatus
+    message: str
+    details: dict[str, str] = Field(default_factory=dict)
+
+
+class OpenBankingInstitution(BaseModel):
+    id: str
+    name: str
+    logo: str = ""
+
+
+class OpenBankingConnectRequest(BaseModel):
+    institution_id: str = Field(min_length=2, max_length=128)
+    institution_name: str = Field(min_length=2, max_length=128)
+
+
+class OpenBankingConnectResponse(BaseModel):
+    link: str
+    requisition_id: str
+    institution_id: str
+    institution_name: str
+    reference: str
+    state: str = ""
+
+
+class OpenBankingFinalizeRequest(BaseModel):
+    reference: str | None = Field(default=None, min_length=8, max_length=128)
+    state: str | None = Field(default=None, min_length=8, max_length=128)
+    code: str | None = Field(default=None, min_length=4, max_length=512)
+
+
+class OpenBankingSyncResult(BaseModel):
+    accounts_synced: int
+    message: str
+
+
+class FinanceAiFinding(BaseModel):
+    title: str
+    detail: str
+    severity: str = "info"
+
+
+class FinanceAiAssessment(BaseModel):
+    summary: str
+    findings: list[FinanceAiFinding] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    questions_you_might_ask: list[str] = Field(default_factory=list)
+
+
+class FinanceAiChatMessage(BaseModel):
+    role: str = Field(pattern=r"^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class FinanceAiChatRequest(BaseModel):
+    messages: list[FinanceAiChatMessage] = Field(min_length=1, max_length=20)
+
+
+class FinanceAiChatResponse(BaseModel):
+    reply: str
+
+
+class FinanceAiStatusResponse(BaseModel):
+    enabled: bool
+    model: str = ""
+    reason: str = ""
+
+
+class BankConnectionMethod(str, Enum):
+    OPEN_BANKING = "open_banking"
+    QUICKFILE = "quickfile"
+    MANUAL = "manual"
+
+
+class BankConnectionStatus(str, Enum):
+    NOT_CONFIGURED = "not_configured"
+    NOT_CONNECTED = "not_connected"
+    AWAITING_LOGIN = "awaiting_login"
+    CONNECTED = "connected"
+    NEEDS_RECONNECTION = "needs_reconnection"
+    SYNC_FAILED = "sync_failed"
+    MANUAL = "manual"
+
+
+class FinanceDailySyncResult(BaseModel):
+    open_banking: str = ""
+    quickfile: str = ""
+    ok: bool = True
+
+
+class BankConnectionItem(BaseModel):
+    id: str
+    label: str
+    method: BankConnectionMethod
+    status: BankConnectionStatus
+    status_message: str
+    last_sync_at: str | None = None
+    institution: str = ""
+    account_count: int = 0
+    balance_gbp: float = 0.0
+
+
+class BankConnectionsResponse(BaseModel):
+    connections: list[BankConnectionItem] = Field(default_factory=list)
+
+
+class FinanceTransaction(BaseModel):
+    id: int
+    account_id: int
+    external_id: str
+    transaction_date: str
+    description: str = ""
+    merchant: str = ""
+    amount_gbp: float
+    category: str = ""
+    reference: str = ""
+    is_pending: bool = False
+    synced_at: datetime
+    created_at: datetime

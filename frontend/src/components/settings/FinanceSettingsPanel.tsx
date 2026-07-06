@@ -1,10 +1,12 @@
 "use client";
 
+import { Suspense } from "react";
+
+import { OpenBankingSettingsPanel } from "@/components/settings/OpenBankingSettingsPanel";
 import { QuickFileSettingsPanel } from "@/components/settings/QuickFileSettingsPanel";
 
 const integrations = [
   { id: "manual", label: "Manual entry", status: "Active", detail: "Enter balances and transactions yourself." },
-  { id: "open_banking", label: "Open Banking", status: "Coming soon", detail: "No bank passwords stored — OAuth when enabled." },
   { id: "octopus", label: "Octopus Energy", status: "Active", detail: "Configured in Energy settings." },
   { id: "sunsynk", label: "Sunsynk Connect", status: "Active", detail: "Live inverter data in Energy section." },
   { id: "tesla", label: "Tesla", status: "Coming soon", detail: "EV charging visibility when API is connected." },
@@ -14,10 +16,21 @@ type FinanceSettingsPanelProps = {
   readOnly?: boolean;
 };
 
+function OpenBankingSettingsPanelFallback() {
+  return (
+    <section className="solar-card">
+      <p className="text-sm text-[var(--muted)]">Loading Open Banking settings…</p>
+    </section>
+  );
+}
+
 export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelProps) {
   return (
     <div className="space-y-6">
       <QuickFileSettingsPanel readOnly={readOnly} />
+      <Suspense fallback={<OpenBankingSettingsPanelFallback />}>
+        <OpenBankingSettingsPanel readOnly={readOnly} />
+      </Suspense>
       <section className="solar-card space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Other integrations</h2>
