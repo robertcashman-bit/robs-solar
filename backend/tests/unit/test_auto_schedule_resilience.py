@@ -22,10 +22,12 @@ from app.services.safety_settings_service import safety_settings_service
 async def _fixed_bands(_db) -> list[TouBandWrite]:
     """Stub compute_bands so the failure test does not depend on the Octopus API."""
     return [
-        TouBandWrite(slot=1, start="00:00", target_soc_pct=100,
-                     grid_charge_enabled=True, power_w=8000),
-        TouBandWrite(slot=2, start="05:30", target_soc_pct=20,
-                     grid_charge_enabled=False, power_w=8000),
+        TouBandWrite(
+            slot=1, start="00:00", target_soc_pct=100, grid_charge_enabled=True, power_w=8000
+        ),
+        TouBandWrite(
+            slot=2, start="05:30", target_soc_pct=20, grid_charge_enabled=False, power_w=8000
+        ),
     ]
 
 
@@ -52,9 +54,7 @@ class _FailingAdapter:
 @pytest.mark.asyncio
 async def test_api_failure_is_surfaced_not_faked(monkeypatch) -> None:
     monkeypatch.setattr(safety_settings_service, "effective_read_only", lambda: False)
-    monkeypatch.setattr(
-        safety_settings_service, "effective_enable_live_writes", lambda: True
-    )
+    monkeypatch.setattr(safety_settings_service, "effective_enable_live_writes", lambda: True)
     service = AutoScheduleService()
     monkeypatch.setattr(service, "compute_bands", _fixed_bands)
     adapter = _FailingAdapter()
@@ -72,9 +72,7 @@ async def test_api_failure_is_surfaced_not_faked(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_writes_disabled_does_not_silently_succeed(monkeypatch) -> None:
     monkeypatch.setattr(safety_settings_service, "effective_read_only", lambda: True)
-    monkeypatch.setattr(
-        safety_settings_service, "effective_enable_live_writes", lambda: False
-    )
+    monkeypatch.setattr(safety_settings_service, "effective_enable_live_writes", lambda: False)
     service = AutoScheduleService()
     adapter = _FailingAdapter()
 
@@ -135,8 +133,12 @@ async def test_switches_to_self_use_when_selling_on_peak(monkeypatch) -> None:
         sys_work_mode_label="Selling first",
         bands=[],
         active_band=TouBand(
-            slot=2, start="05:30", end="23:30", target_soc_pct=20,
-            grid_charge_enabled=False, power_w=8000,
+            slot=2,
+            start="05:30",
+            end="23:30",
+            target_soc_pct=20,
+            grid_charge_enabled=False,
+            power_w=8000,
         ),
         active_band_slot=2,
     )

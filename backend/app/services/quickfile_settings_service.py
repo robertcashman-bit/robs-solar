@@ -43,9 +43,7 @@ class QuickFileSettingsService:
         config = await self.get_config(db)
         sync_row = await self._get_row(db, _LAST_SYNC_KEY)
         last_sync = sync_row.value if sync_row else None
-        configured = bool(
-            config.account_number and config.api_key and config.application_id
-        )
+        configured = bool(config.account_number and config.api_key and config.application_id)
         return QuickFileConfigStatus(
             account_number=config.account_number,
             api_key_set=bool(config.api_key),
@@ -54,9 +52,7 @@ class QuickFileSettingsService:
             last_sync_at=last_sync,
         )
 
-    async def set_config(
-        self, db: AsyncSession, config: QuickFileConfig
-    ) -> QuickFileConfigStatus:
+    async def set_config(self, db: AsyncSession, config: QuickFileConfig) -> QuickFileConfigStatus:
         current = await self.get_config(db)
         if not config.api_key:
             config.api_key = current.api_key

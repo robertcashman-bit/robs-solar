@@ -135,8 +135,7 @@ class SystemWarningsService:
                     severity=SystemWarningSeverity.AMBER,
                     title="Solar exported when battery had room",
                     message=(
-                        "Solar may have been exported when it could have been stored "
-                        "for later use."
+                        "Solar may have been exported when it could have been stored for later use."
                     ),
                     category="export",
                 )
@@ -149,8 +148,7 @@ class SystemWarningsService:
                     severity=SystemWarningSeverity.AMBER,
                     title="Import and export at the same time",
                     message=(
-                        "Import/export readings may be inconsistent. "
-                        "Check data source alignment."
+                        "Import/export readings may be inconsistent. Check data source alignment."
                     ),
                     category="data",
                 )
@@ -187,8 +185,7 @@ class SystemWarningsService:
                     for r in peak_rows[: len(peak_rows) // 2]
                 )
                 late_import = any(
-                    r.grid_import_w > import_threshold
-                    for r in peak_rows[len(peak_rows) // 2 :]
+                    r.grid_import_w > import_threshold for r in peak_rows[len(peak_rows) // 2 :]
                 )
                 if early_low and late_import:
                     warnings.append(
@@ -229,10 +226,7 @@ class SystemWarningsService:
     ) -> bool:
         streak = 0
         for row in rows:
-            if (
-                row.battery_soc_pct >= soc_threshold
-                and row.grid_import_w >= import_threshold
-            ):
+            if row.battery_soc_pct >= soc_threshold and row.grid_import_w >= import_threshold:
                 streak += 1
                 if streak >= _IMPORT_SUSTAINED_SAMPLES:
                     return True

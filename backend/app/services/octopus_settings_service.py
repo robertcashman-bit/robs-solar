@@ -34,9 +34,7 @@ class OctopusSettingsService:
         )
 
     async def _get_row(self, db: AsyncSession) -> AppSettingRow | None:
-        result = await db.execute(
-            select(AppSettingRow).where(AppSettingRow.key == _OCTOPUS_KEY)
-        )
+        result = await db.execute(select(AppSettingRow).where(AppSettingRow.key == _OCTOPUS_KEY))
         return result.scalar_one_or_none()
 
     async def get_config(self, db: AsyncSession) -> OctopusConfig:
@@ -72,17 +70,12 @@ class OctopusSettingsService:
             return config
         if not (config.mpan and config.meter_serial):
             try:
-                discovered = await octopus_client.discover(
-                    config.api_key, config.account_number
-                )
+                discovered = await octopus_client.discover(config.api_key, config.account_number)
                 config = config.model_copy(
                     update={
                         "mpan": config.mpan or discovered.get("mpan", ""),
-                        "meter_serial": config.meter_serial
-                        or discovered.get("meter_serial", ""),
-                        "region": (
-                            discovered.get("region") or config.region or "C"
-                        ).upper(),
+                        "meter_serial": config.meter_serial or discovered.get("meter_serial", ""),
+                        "region": (discovered.get("region") or config.region or "C").upper(),
                     }
                 )
             except Exception as exc:
@@ -94,9 +87,7 @@ class OctopusSettingsService:
             try:
                 devices = await octopus_client.get_smart_device_ids()
                 if devices.get("electricity"):
-                    config = config.model_copy(
-                        update={"device_id": devices["electricity"]}
-                    )
+                    config = config.model_copy(update={"device_id": devices["electricity"]})
             except Exception as exc:
                 logger.warning("Octopus Home Mini discovery failed: %s", exc)
         return config

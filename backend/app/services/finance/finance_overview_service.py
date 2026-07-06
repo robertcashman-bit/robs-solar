@@ -160,9 +160,7 @@ class FinanceOverviewService:
             debtors_gbp=debtors,
         )
 
-        personal_liabilities = [
-            debt for debt in liabilities if debt.scope == FinanceScope.PERSONAL
-        ]
+        personal_liabilities = [debt for debt in liabilities if debt.scope == FinanceScope.PERSONAL]
 
         monthly_income = personal_snap.monthly_income_gbp if personal_snap else 0.0
         monthly_spending = personal_snap.monthly_spending_gbp if personal_snap else 0.0
@@ -177,13 +175,13 @@ class FinanceOverviewService:
         corp_tax_reserve = (
             business_snap.corp_tax_reserve_gbp
             if business_snap
-            else finance_accounts_service.sum_by_type(
-                accounts, FinanceAccountType.CORP_TAX_RESERVE
-            )
+            else finance_accounts_service.sum_by_type(accounts, FinanceAccountType.CORP_TAX_RESERVE)
         )
 
-        monthly_surplus = monthly_income - monthly_spending - (
-            personal_snap.debt_repayments_gbp if personal_snap else 0.0
+        monthly_surplus = (
+            monthly_income
+            - monthly_spending
+            - (personal_snap.debt_repayments_gbp if personal_snap else 0.0)
         )
 
         personal_monthly_income = round(monthly_income, 2)
@@ -213,9 +211,7 @@ class FinanceOverviewService:
             business_from_qf = True
             qf_synced_at = qf_reports.synced_at or qf_synced_at
 
-        vat_warning = vat_reserve < (
-            business_snap.expenses_gbp * 0.2 if business_snap else 500
-        )
+        vat_warning = vat_reserve < (business_snap.expenses_gbp * 0.2 if business_snap else 500)
         corp_warning = corp_tax_reserve < (
             business_snap.profit_estimate_gbp * 0.19 if business_snap else 500
         )
@@ -291,11 +287,7 @@ class FinanceOverviewService:
         db: AsyncSession,
         body: PersonalFinanceSnapshotCreate,
     ) -> PersonalFinanceSnapshot:
-        surplus = (
-            body.monthly_income_gbp
-            - body.monthly_spending_gbp
-            - body.debt_repayments_gbp
-        )
+        surplus = body.monthly_income_gbp - body.monthly_spending_gbp - body.debt_repayments_gbp
         row = PersonalFinanceSnapshotRow(
             snapshot_date=body.snapshot_date,
             monthly_income_gbp=body.monthly_income_gbp,

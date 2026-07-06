@@ -49,9 +49,7 @@ class AutoScheduleService:
     _MODE_FIX_COOLDOWN = timedelta(minutes=30)
 
     async def _load_config(self, db: AsyncSession) -> dict[str, Any]:
-        row = await db.scalar(
-            select(AppSettingRow).where(AppSettingRow.key == _AUTO_SCHEDULE_KEY)
-        )
+        row = await db.scalar(select(AppSettingRow).where(AppSettingRow.key == _AUTO_SCHEDULE_KEY))
         if row:
             try:
                 return json.loads(row.value)
@@ -64,9 +62,7 @@ class AutoScheduleService:
 
     async def _save_config(self, db: AsyncSession, payload: dict[str, Any]) -> None:
         encoded = json.dumps(payload)
-        row = await db.scalar(
-            select(AppSettingRow).where(AppSettingRow.key == _AUTO_SCHEDULE_KEY)
-        )
+        row = await db.scalar(select(AppSettingRow).where(AppSettingRow.key == _AUTO_SCHEDULE_KEY))
         if row:
             row.value = encoded
         else:
@@ -104,9 +100,7 @@ class AutoScheduleService:
         config = await self._load_config(db)
         soc_floor = int(config.get("soc_floor_pct", settings.auto_schedule_soc_floor_pct))
         overnight_target = int(
-            config.get(
-                "overnight_target_pct", settings.auto_schedule_overnight_target_pct
-            )
+            config.get("overnight_target_pct", settings.auto_schedule_overnight_target_pct)
         )
         dispatches = await octopus_client.get_dispatches()
         self._next_cheap_windows = list(dispatches.planned)

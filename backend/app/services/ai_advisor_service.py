@@ -379,9 +379,9 @@ class AiAdvisorService:
         context = await self.build_context(db)
         user_prompt = (
             "Assess whether the current solar/battery settings are optimal right "
-            "now. Respond with JSON of shape: {\"optimal\": bool, \"headline\": "
-            "str, \"findings\": [str], \"proposed_actions\": [{\"kind\": str, "
-            "\"summary\": str, \"reason\": str, \"body\": object}]}.\n\n"
+            'now. Respond with JSON of shape: {"optimal": bool, "headline": '
+            'str, "findings": [str], "proposed_actions": [{"kind": str, '
+            '"summary": str, "reason": str, "body": object}]}.\n\n'
             f"context = {json.dumps(context, default=str)}"
         )
         raw = await self._complete(

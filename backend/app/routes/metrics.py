@@ -34,11 +34,11 @@ from app.services.effective_load import finalize_live_metrics
 from app.services.ev_load_detector import ev_load_detector, sync_ev_detector
 from app.services.forecast_strategy_service import forecast_strategy_service
 from app.services.live_metrics_cache import live_metrics_cache
-from app.services.load_diagnostics_service import load_diagnostics_service
 from app.services.live_metrics_guard import (
     LiveMetricsGuardError,
     assert_live_metrics_integrity,
 )
+from app.services.load_diagnostics_service import load_diagnostics_service
 from app.services.octopus_client import octopus_client
 from app.services.peak_import_guard_service import peak_import_guard_service
 from app.services.sell_advisor_service import sell_advisor_service

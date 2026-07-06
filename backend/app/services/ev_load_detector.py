@@ -72,8 +72,10 @@ class EvLoadDetector:
         return self._car_charging_likely
 
     def status(self, metrics: LiveMetrics | None = None) -> EvStatusResponse:
-        load = metrics.house_load_w if metrics else (
-            self._samples[-1].signal_w if self._samples else 0.0
+        load = (
+            metrics.house_load_w
+            if metrics
+            else (self._samples[-1].signal_w if self._samples else 0.0)
         )
         message = ""
         if self._car_charging_likely:

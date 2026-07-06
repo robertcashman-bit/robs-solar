@@ -41,9 +41,7 @@ OFFPEAK_END = "05:30"
 
 def _band_covering(bands, minute: int):
     """Return the band whose [start, next-start) window contains *minute*."""
-    parsed = sorted(
-        (int(b.start[:2]) * 60 + int(b.start[3:]), b.slot, b) for b in bands
-    )
+    parsed = sorted((int(b.start[:2]) * 60 + int(b.start[3:]), b.slot, b) for b in bands)
     chosen = parsed[-1][2]
     for start_min, _, band in parsed:
         if start_min <= minute:
@@ -101,8 +99,12 @@ class TestDaytimeDischarge:
             battery_soc_pct=95.0,
             battery_power_w=0.0,
             active_band=TouBand(
-                slot=2, start="05:30", end="23:30", target_soc_pct=20,
-                grid_charge_enabled=False, power_w=8000,
+                slot=2,
+                start="05:30",
+                end="23:30",
+                target_soc_pct=20,
+                grid_charge_enabled=False,
+                power_w=8000,
             ),
             offpeak_start=OFFPEAK_START,
             offpeak_end=OFFPEAK_END,
@@ -147,8 +149,12 @@ class TestMinimumSoc:
             battery_soc_pct=95.0,
             battery_power_w=0.0,
             active_band=TouBand(
-                slot=2, start="05:30", end="23:30", target_soc_pct=20,
-                grid_charge_enabled=False, power_w=8000,
+                slot=2,
+                start="05:30",
+                end="23:30",
+                target_soc_pct=20,
+                grid_charge_enabled=False,
+                power_w=8000,
             ),
             offpeak_start=OFFPEAK_START,
             offpeak_end=OFFPEAK_END,
@@ -242,22 +248,45 @@ class TestSignConvention:
 
     def test_battery_direction_flag_charging_is_negative(self) -> None:
         m = self._adapter()._parse_flow(
-            {"data": {"battPower": 600, "toBat": True, "soc": 80,
-                      "pvPower": 0, "loadOrEpsPower": 100, "gridOrMeterPower": 0}}
+            {
+                "data": {
+                    "battPower": 600,
+                    "toBat": True,
+                    "soc": 80,
+                    "pvPower": 0,
+                    "loadOrEpsPower": 100,
+                    "gridOrMeterPower": 0,
+                }
+            }
         )
         assert m.battery_power_w == -600  # charging -> negative (app convention)
 
     def test_battery_direction_flag_discharging_is_positive(self) -> None:
         m = self._adapter()._parse_flow(
-            {"data": {"battPower": 600, "batteryTo": True, "soc": 80,
-                      "pvPower": 0, "loadOrEpsPower": 700, "gridOrMeterPower": 0}}
+            {
+                "data": {
+                    "battPower": 600,
+                    "batteryTo": True,
+                    "soc": 80,
+                    "pvPower": 0,
+                    "loadOrEpsPower": 700,
+                    "gridOrMeterPower": 0,
+                }
+            }
         )
         assert m.battery_power_w == 600  # discharging -> positive
 
     def test_battery_signed_negative_is_discharging(self) -> None:
         m = self._adapter()._parse_flow(
-            {"data": {"battPower": -158, "soc": 98,
-                      "pvPower": 85, "loadOrEpsPower": 0, "gridOrMeterPower": 12}}
+            {
+                "data": {
+                    "battPower": -158,
+                    "soc": 98,
+                    "pvPower": 85,
+                    "loadOrEpsPower": 0,
+                    "gridOrMeterPower": 12,
+                }
+            }
         )
         assert m.battery_power_w == 158
         assert m.house_load_w == pytest.approx(255, abs=5)
@@ -265,45 +294,95 @@ class TestSignConvention:
     def test_to_bat_flag_conflicts_with_negative_batt_uses_balance(self) -> None:
         """Live Sunsynk often sets toBat=true while battPower is negative at low load."""
         m = self._adapter()._parse_flow(
-            {"data": {"battPower": -150, "toBat": True, "batTo": False, "soc": 98,
-                      "pvPower": 75, "loadOrEpsPower": 0, "homeLoadPower": 0,
-                      "gridOrMeterPower": 13, "gridTo": True}}
+            {
+                "data": {
+                    "battPower": -150,
+                    "toBat": True,
+                    "batTo": False,
+                    "soc": 98,
+                    "pvPower": 75,
+                    "loadOrEpsPower": 0,
+                    "homeLoadPower": 0,
+                    "gridOrMeterPower": 13,
+                    "gridTo": True,
+                }
+            }
         )
         assert m.battery_power_w == 150
         assert m.house_load_w == pytest.approx(238, abs=5)
 
     def test_battery_signed_fallback_without_flags(self) -> None:
         m = self._adapter()._parse_flow(
-            {"data": {"battPower": 600, "soc": 80,
-                      "pvPower": 0, "loadOrEpsPower": 100, "gridOrMeterPower": 0}}
+            {
+                "data": {
+                    "battPower": 600,
+                    "soc": 80,
+                    "pvPower": 0,
+                    "loadOrEpsPower": 100,
+                    "gridOrMeterPower": 0,
+                }
+            }
         )
         assert m.battery_power_w == 600  # unchanged legacy behaviour
 
     def test_grid_direction_flags(self) -> None:
         adapter = self._adapter()
         imp = adapter._parse_flow(
-            {"data": {"gridOrMeterPower": 2400, "gridTo": True, "soc": 50,
-                      "pvPower": 0, "loadOrEpsPower": 2400, "battPower": 0}}
+            {
+                "data": {
+                    "gridOrMeterPower": 2400,
+                    "gridTo": True,
+                    "soc": 50,
+                    "pvPower": 0,
+                    "loadOrEpsPower": 2400,
+                    "battPower": 0,
+                }
+            }
         )
         assert imp.grid_import_w == 2400 and imp.grid_export_w == 0
         exp = adapter._parse_flow(
-            {"data": {"gridOrMeterPower": 2400, "toGrid": True, "soc": 50,
-                      "pvPower": 4800, "loadOrEpsPower": 2400, "battPower": 0}}
+            {
+                "data": {
+                    "gridOrMeterPower": 2400,
+                    "toGrid": True,
+                    "soc": 50,
+                    "pvPower": 4800,
+                    "loadOrEpsPower": 2400,
+                    "battPower": 0,
+                }
+            }
         )
         assert exp.grid_export_w == 2400 and exp.grid_import_w == 0
 
     def test_small_grid_import_with_grid_to_flag(self) -> None:
         m = self._adapter()._parse_flow(
-            {"data": {"gridOrMeterPower": 13, "gridTo": True, "soc": 98,
-                      "pvPower": 75, "loadOrEpsPower": 0, "battPower": -150}}
+            {
+                "data": {
+                    "gridOrMeterPower": 13,
+                    "gridTo": True,
+                    "soc": 98,
+                    "pvPower": 75,
+                    "loadOrEpsPower": 0,
+                    "battPower": -150,
+                }
+            }
         )
         assert m.grid_import_w == 13
         assert m.grid_export_w == 0
 
     def test_low_load_solar_plus_grid_derives_house_load(self) -> None:
         m = self._adapter()._parse_flow(
-            {"data": {"gridOrMeterPower": 11, "gridTo": True, "soc": 98,
-                      "pvPower": 9, "loadOrEpsPower": 0, "homeLoadPower": 0, "battPower": 0}}
+            {
+                "data": {
+                    "gridOrMeterPower": 11,
+                    "gridTo": True,
+                    "soc": 98,
+                    "pvPower": 9,
+                    "loadOrEpsPower": 0,
+                    "homeLoadPower": 0,
+                    "battPower": 0,
+                }
+            }
         )
         assert m.grid_import_w == 11
         assert m.house_load_w == pytest.approx(20, abs=2)
@@ -311,15 +390,30 @@ class TestSignConvention:
     def test_grid_signed_fallback(self) -> None:
         # Negative gridOrMeterPower without flags -> export (legacy behaviour)
         m = self._adapter()._parse_flow(
-            {"data": {"gridOrMeterPower": -2400, "soc": 50,
-                      "pvPower": 4800, "loadOrEpsPower": 2400, "battPower": 0}}
+            {
+                "data": {
+                    "gridOrMeterPower": -2400,
+                    "soc": 50,
+                    "pvPower": 4800,
+                    "loadOrEpsPower": 2400,
+                    "battPower": 0,
+                }
+            }
         )
         assert m.grid_export_w == 2400 and m.grid_import_w == 0
 
     def test_work_mode_selling_maps_to_feed_in(self) -> None:
         m = self._adapter()._parse_flow(
-            {"data": {"sysWorkMode": "2", "soc": 96, "pvPower": 30,
-                      "loadOrEpsPower": 970, "gridOrMeterPower": 20, "battPower": 0}}
+            {
+                "data": {
+                    "sysWorkMode": "2",
+                    "soc": 96,
+                    "pvPower": 30,
+                    "loadOrEpsPower": 970,
+                    "gridOrMeterPower": 20,
+                    "battPower": 0,
+                }
+            }
         )
         assert m.inverter_mode == InverterMode.FEED_IN
         assert m.system_work_mode == SystemWorkMode.SELLING
@@ -350,7 +444,9 @@ class TestSchedulerConflict:
             )
         ]
         charge = charge_intervals_from_windows(
-            OFFPEAK_START, OFFPEAK_END, planned,
+            OFFPEAK_START,
+            OFFPEAK_END,
+            planned,
             now=datetime(2026, 1, 15, 11, 0, tzinfo=timezone.utc),
         )
         local_minute = 12 * 60 + 15

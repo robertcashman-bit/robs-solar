@@ -11,7 +11,6 @@ from app.schemas.finance import (
     OpenBankingConfig,
     OpenBankingSetupSaveRequest,
     OpenBankingTestResult,
-    OpenBankingTestStatus,
 )
 
 _PROVIDER_LABELS = {
@@ -72,7 +71,7 @@ def validate_config(
 ) -> list[str]:
     """Return human-readable validation errors (empty list = OK)."""
     errors: list[str] = []
-    label = _PROVIDER_LABELS.get(config.provider, config.provider)
+    _PROVIDER_LABELS.get(config.provider, config.provider)
 
     if config.provider == "enable_banking":
         if not config.application_id:
@@ -89,7 +88,8 @@ def validate_config(
     elif config.provider == "gocardless":
         if not config.secret_id:
             errors.append(
-                "Client ID is missing — paste your Secret ID from the GoCardless / Nordigen dashboard"
+                "Client ID is missing — paste your Secret ID from the "
+                "GoCardless / Nordigen dashboard"
             )
         has_secret = bool(config.secret_key or existing.secret_key)
         if not has_secret:
@@ -102,7 +102,10 @@ def validate_config(
         errors.append(redirect_error)
 
     if not config.country or len(config.country) != 2:
-        errors.append("Bank country is missing — choose a two-letter country code (e.g. GB for United Kingdom)")
+        errors.append(
+            "Bank country is missing — choose a two-letter country code "
+            "(e.g. GB for United Kingdom)"
+        )
 
     return errors
 
@@ -118,7 +121,8 @@ def classify_test_error(exc: Exception) -> OpenBankingTestResult:
                 status="further_bank_authorisation_required",
                 message=(
                     "Your provider accepted the credentials but the app is not fully active yet. "
-                    "In Enable Control Panel, open your app and complete activation by linking accounts."
+                    "In Enable Control Panel, open your app and complete activation by "
+                    "linking accounts."
                 ),
                 details={"provider_error": message},
             )
@@ -139,16 +143,21 @@ def classify_test_error(exc: Exception) -> OpenBankingTestResult:
                 status="further_bank_authorisation_required",
                 message=(
                     "Your provider accepted the credentials but the app is not fully active yet. "
-                    "In Enable Control Panel, open your app and complete activation by linking accounts."
+                    "In Enable Control Panel, open your app and complete activation by "
+                    "linking accounts."
                 ),
                 details={"provider_error": message},
             )
-        if any(token in lowered for token in ("401", "403", "unauthorized", "forbidden", "jwt", "signature")):
+        if any(
+            token in lowered
+            for token in ("401", "403", "unauthorized", "forbidden", "jwt", "signature")
+        ):
             return OpenBankingTestResult(
                 status="provider_rejected_credentials",
                 message=(
-                    "The provider rejected your credentials. Check that Client ID and Client Secret "
-                    "match your provider dashboard and that you uploaded the matching public certificate."
+                    "The provider rejected your credentials. Check that Client ID and "
+                    "Client Secret match your provider dashboard and that you uploaded the "
+                    "matching public certificate."
                 ),
                 details={"provider_error": message},
             )
@@ -157,7 +166,8 @@ def classify_test_error(exc: Exception) -> OpenBankingTestResult:
                 status="invalid_redirect_url",
                 message=(
                     "The redirect URL does not match what is registered with your provider. "
-                    "Copy the exact callback URL into both this form and your provider app settings."
+                    "Copy the exact callback URL into both this form and your provider app "
+                    "settings."
                 ),
                 details={"provider_error": message},
             )
@@ -165,7 +175,10 @@ def classify_test_error(exc: Exception) -> OpenBankingTestResult:
     if re.search(r"\b401\b|\b403\b", message):
         return OpenBankingTestResult(
             status="provider_rejected_credentials",
-            message="The provider rejected your credentials. Double-check Client ID and Client Secret.",
+            message=(
+                "The provider rejected your credentials. "
+                "Double-check Client ID and Client Secret."
+            ),
             details={"provider_error": message},
         )
 
@@ -176,7 +189,9 @@ def classify_test_error(exc: Exception) -> OpenBankingTestResult:
     )
 
 
-def run_test_validation(config: OpenBankingConfig, existing: OpenBankingConfig) -> OpenBankingTestResult | None:
+def run_test_validation(
+    config: OpenBankingConfig, existing: OpenBankingConfig
+) -> OpenBankingTestResult | None:
     """Pre-flight checks before calling the provider API."""
     errors = validate_config(config, existing=existing)
     if errors:
@@ -202,7 +217,9 @@ def success_test_result(provider_result: dict[str, object]) -> OpenBankingTestRe
     elif institution_count is not None:
         message = f"Connected successfully ({institution_count} banks available)."
     else:
-        message = "Connected successfully — your provider credentials and redirect URL look correct."
+        message = (
+            "Connected successfully — your provider credentials and redirect URL look correct."
+        )
     details: dict[str, str] = {}
     if app_name:
         details["application_name"] = app_name

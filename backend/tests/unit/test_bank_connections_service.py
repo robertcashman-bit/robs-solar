@@ -150,7 +150,9 @@ async def test_disconnect_removes_open_banking_requisition() -> None:
         assert remaining[0].institution_name == "Virgin Money"
 
         account = await db.scalar(
-            select(FinanceAccountRow).where(FinanceAccountRow.external_id == "openbanking:enable:acc-mbna")
+            select(FinanceAccountRow).where(
+                FinanceAccountRow.external_id == "openbanking:enable:acc-mbna"
+            )
         )
         assert account is not None
         assert account.is_active is False

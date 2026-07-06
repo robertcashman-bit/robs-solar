@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { OpenBankingSetupInstructions } from "@/components/finance/OpenBankingSetupInstructions";
 import { apiClient } from "@/lib/api-client";
-import { useAuth } from "@/lib/auth-context";
 import {
   openBankingConfigStatusSchema,
   openBankingTestResultSchema,

@@ -57,9 +57,7 @@ class BatteryPlanService:
         auto_enabled = bool(auto_config.get("enabled", False))
         floor = int(auto_config.get("soc_floor_pct", settings.auto_schedule_soc_floor_pct))
         target = int(
-            auto_config.get(
-                "overnight_target_pct", settings.auto_schedule_overnight_target_pct
-            )
+            auto_config.get("overnight_target_pct", settings.auto_schedule_overnight_target_pct)
         )
         auto_status = await auto_schedule_service.get_status(db)
 

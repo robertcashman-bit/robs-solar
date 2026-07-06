@@ -324,11 +324,7 @@ class FinanceCashflowService:
                 )
             )
 
-        profit = (
-            (business_snap.turnover_gbp - business_snap.expenses_gbp)
-            if business_snap
-            else 0.0
-        )
+        profit = (business_snap.turnover_gbp - business_snap.expenses_gbp) if business_snap else 0.0
         if business_snap and profit > 0:
             created.append(
                 await self.create_entry(

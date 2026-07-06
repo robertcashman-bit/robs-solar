@@ -32,9 +32,7 @@ class SafetySettingsService:
         self._overrides = data
         return SafetySettings(
             read_only=bool(data.get("read_only", settings.read_only)),
-            enable_live_writes=bool(
-                data.get("enable_live_writes", settings.enable_live_writes)
-            ),
+            enable_live_writes=bool(data.get("enable_live_writes", settings.enable_live_writes)),
             runtime_overrides=True,
         )
 
@@ -43,9 +41,7 @@ class SafetySettingsService:
     ) -> SafetySettings:
         current = await self.get_settings(db)
         payload = {
-            "read_only": update.read_only
-            if update.read_only is not None
-            else current.read_only,
+            "read_only": update.read_only if update.read_only is not None else current.read_only,
             "enable_live_writes": update.enable_live_writes
             if update.enable_live_writes is not None
             else current.enable_live_writes,
@@ -74,9 +70,7 @@ class SafetySettingsService:
 
     def effective_enable_live_writes(self) -> bool:
         if self._overrides is not None:
-            return bool(
-                self._overrides.get("enable_live_writes", settings.enable_live_writes)
-            )
+            return bool(self._overrides.get("enable_live_writes", settings.enable_live_writes))
         return settings.enable_live_writes
 
 

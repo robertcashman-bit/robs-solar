@@ -5,7 +5,11 @@ from datetime import datetime, timezone
 import pytest
 
 from app.schemas.domain import HouseLoadSource, InverterMode, InverterStatus, LiveMetrics
-from app.services.effective_load import derived_house_load, finalize_live_metrics, resolve_house_load
+from app.services.effective_load import (
+    derived_house_load,
+    finalize_live_metrics,
+    resolve_house_load,
+)
 
 
 def test_resolve_house_load_prefers_derived_when_ct_underreports() -> None:
@@ -116,7 +120,9 @@ def test_derived_house_load_can_be_negative_before_clamping() -> None:
     """The raw balance formula itself is unclamped -- resolve_house_load clamps it."""
     balance = derived_house_load(pv=5000, grid_import=0, grid_export=4800, battery_power_w=-150)
     assert balance == pytest.approx(50.0)
-    negative_balance = derived_house_load(pv=1000, grid_import=0, grid_export=2000, battery_power_w=0)
+    negative_balance = derived_house_load(
+        pv=1000, grid_import=0, grid_export=2000, battery_power_w=0
+    )
     assert negative_balance == pytest.approx(-1000.0)
 
 

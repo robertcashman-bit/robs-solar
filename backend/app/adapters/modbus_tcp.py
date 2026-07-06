@@ -83,11 +83,7 @@ class ModbusTcpAdapter(InverterAdapter):
 
     async def get_capabilities(self) -> AdapterCapabilities:
         configured = bool(settings.modbus_host)
-        write_ready = bool(
-            configured
-            and settings.enable_live_writes
-            and not settings.read_only
-        )
+        write_ready = bool(configured and settings.enable_live_writes and not settings.read_only)
         return AdapterCapabilities(
             mode=_MODE,
             supports_read=configured,
@@ -182,16 +178,12 @@ class ModbusTcpAdapter(InverterAdapter):
         if settings.read_only:
             raise UnsupportedWriteError("Read-only mode is enabled.")
         if not settings.enable_live_writes:
-            raise UnsupportedWriteError(
-                "Live writes disabled. Set ENABLE_LIVE_WRITES=true."
-            )
+            raise UnsupportedWriteError("Live writes disabled. Set ENABLE_LIVE_WRITES=true.")
 
     async def _write_register(self, address: int, value: int) -> None:
         self._ensure_writes_enabled()
         client = await self._get_client()
-        result = await client.write_register(
-            address, value, slave=settings.modbus_slave_id
-        )
+        result = await client.write_register(address, value, slave=settings.modbus_slave_id)
         if result.isError():
             raise AdapterError(f"Modbus write failed at {address}")
         await asyncio.sleep(_WRITE_DELAY_S)

@@ -12,7 +12,6 @@ from app.schemas.finance import (
     FinanceScope,
 )
 
-
 SHORT_TERM_DEBT_TYPES = {
     DebtType.CREDIT_CARD,
     DebtType.LOAN,
@@ -133,9 +132,7 @@ def build_balance_breakdown(
     business_overdraft = abs(min(0.0, business_current))
 
     vat_reserve = _sum_accounts(accounts, account_types={FinanceAccountType.VAT_RESERVE})
-    corp_tax_reserve = _sum_accounts(
-        accounts, account_types={FinanceAccountType.CORP_TAX_RESERVE}
-    )
+    corp_tax_reserve = _sum_accounts(accounts, account_types={FinanceAccountType.CORP_TAX_RESERVE})
     pension = _sum_accounts(accounts, account_types={FinanceAccountType.PENSION})
     property_value = _sum_accounts(accounts, account_types={FinanceAccountType.PROPERTY})
     debtors = debtors_gbp or _sum_accounts(accounts, account_types={FinanceAccountType.DEBTORS})

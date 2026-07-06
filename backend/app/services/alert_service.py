@@ -250,9 +250,7 @@ class AlertService:
             logger.warning("Alert SMTP failed: %s", exc)
 
     async def list_alerts(self, db: AsyncSession, limit: int = 50) -> list[dict]:
-        result = await db.execute(
-            select(AlertRow).order_by(AlertRow.timestamp.desc()).limit(limit)
-        )
+        result = await db.execute(select(AlertRow).order_by(AlertRow.timestamp.desc()).limit(limit))
         rows = result.scalars().all()
         return [
             {

@@ -277,9 +277,9 @@ class OpenBankingSyncService:
             )
         )
         for row in account_rows.all():
-            if HISTORIC_SEED_MARKER in (row.notes or "") or (
-                row.external_id or ""
-            ).startswith(HISTORIC_SEED_MARKER):
+            if HISTORIC_SEED_MARKER in (row.notes or "") or (row.external_id or "").startswith(
+                HISTORIC_SEED_MARKER
+            ):
                 row.is_active = False
                 row.updated_at = now
 

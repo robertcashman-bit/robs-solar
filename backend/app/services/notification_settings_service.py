@@ -58,9 +58,7 @@ class NotificationSettingsService:
         await db.commit()
         return await self.get_status(db)
 
-    def category_enabled(
-        self, config: NotificationSettings, category: str
-    ) -> bool:
+    def category_enabled(self, config: NotificationSettings, category: str) -> bool:
         toggles = config.categories.model_dump()
         return bool(toggles.get(category, True))
 

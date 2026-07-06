@@ -24,8 +24,8 @@ from app.schemas.domain import (
     LiveMetrics,
     LoadFieldOrigin,
 )
-from app.services.load_diagnostics_service import LoadDiagnosticsService
 from app.services.live_metrics_cache import live_metrics_cache
+from app.services.load_diagnostics_service import LoadDiagnosticsService
 
 
 @pytest.fixture(autouse=True)

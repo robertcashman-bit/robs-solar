@@ -111,12 +111,8 @@ async def test_requires_sustained_samples_before_remediation() -> None:
         await guard.set_config(db, PeakImportGuardConfigRequest(enabled=True))
 
     with (
-        patch(
-            "app.services.peak_import_guard_service.safety_settings_service"
-        ) as mock_safety,
-        patch(
-            "app.services.peak_import_guard_service.ev_load_detector"
-        ) as mock_ev,
+        patch("app.services.peak_import_guard_service.safety_settings_service") as mock_safety,
+        patch("app.services.peak_import_guard_service.ev_load_detector") as mock_ev,
         patch.object(
             guard,
             "_remediate",
@@ -145,12 +141,8 @@ async def test_respects_cooldown() -> None:
     guard._consecutive_samples = 2
 
     with (
-        patch(
-            "app.services.peak_import_guard_service.safety_settings_service"
-        ) as mock_safety,
-        patch(
-            "app.services.peak_import_guard_service.ev_load_detector"
-        ) as mock_ev,
+        patch("app.services.peak_import_guard_service.safety_settings_service") as mock_safety,
+        patch("app.services.peak_import_guard_service.ev_load_detector") as mock_ev,
         patch.object(
             guard,
             "_remediate",
@@ -176,12 +168,8 @@ async def test_skips_when_ev_charging() -> None:
     guard._last_action_at = datetime.now(timezone.utc) - timedelta(minutes=60)
 
     with (
-        patch(
-            "app.services.peak_import_guard_service.safety_settings_service"
-        ) as mock_safety,
-        patch(
-            "app.services.peak_import_guard_service.ev_load_detector"
-        ) as mock_ev,
+        patch("app.services.peak_import_guard_service.safety_settings_service") as mock_safety,
+        patch("app.services.peak_import_guard_service.ev_load_detector") as mock_ev,
         patch.object(
             guard,
             "_remediate",
@@ -207,12 +195,8 @@ async def test_skips_when_writes_disabled() -> None:
     guard._last_action_at = datetime.now(timezone.utc) - timedelta(minutes=60)
 
     with (
-        patch(
-            "app.services.peak_import_guard_service.safety_settings_service"
-        ) as mock_safety,
-        patch(
-            "app.services.peak_import_guard_service.ev_load_detector"
-        ) as mock_ev,
+        patch("app.services.peak_import_guard_service.safety_settings_service") as mock_safety,
+        patch("app.services.peak_import_guard_service.ev_load_detector") as mock_ev,
         patch.object(
             guard,
             "_remediate",

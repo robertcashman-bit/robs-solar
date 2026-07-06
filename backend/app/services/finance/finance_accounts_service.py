@@ -127,9 +127,7 @@ class FinanceAccountsService:
         account_type: FinanceAccountType = FinanceAccountType.CURRENT,
     ) -> float:
         return sum(
-            a.balance_gbp
-            for a in accounts
-            if a.scope == scope and a.account_type == account_type
+            a.balance_gbp for a in accounts if a.scope == scope and a.account_type == account_type
         )
 
 

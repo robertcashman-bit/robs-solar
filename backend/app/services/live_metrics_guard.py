@@ -39,6 +39,4 @@ def assert_live_metrics_integrity(
             )
 
     if settings.adapter_mode.lower() == "simulator":
-        raise LiveMetricsGuardError(
-            "ADAPTER_MODE is simulator but live metrics were requested."
-        )
+        raise LiveMetricsGuardError("ADAPTER_MODE is simulator but live metrics were requested.")

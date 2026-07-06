@@ -1,5 +1,7 @@
 """Unit tests for finance balance / net worth breakdown."""
 
+from datetime import datetime, timezone
+
 from app.schemas.finance import (
     DebtType,
     FinanceAccount,
@@ -9,7 +11,6 @@ from app.schemas.finance import (
     FinanceScope,
 )
 from app.services.finance.finance_balance_service import build_balance_breakdown
-from datetime import datetime, timezone
 
 _NOW = datetime.now(timezone.utc)
 
@@ -71,7 +72,9 @@ def test_net_worth_without_property_is_deeply_negative() -> None:
 def test_directors_loan_credit_balance_counts_as_debt() -> None:
     """QuickFile stores director's loan as negative credit — debt totals use magnitude."""
     accounts = [
-        _account(scope=FinanceScope.BUSINESS, balance_gbp=10_000, account_type=FinanceAccountType.CURRENT),
+        _account(
+            scope=FinanceScope.BUSINESS, balance_gbp=10_000, account_type=FinanceAccountType.CURRENT
+        ),
         _account(
             scope=FinanceScope.BUSINESS,
             account_type=FinanceAccountType.DIRECTORS_LOAN,

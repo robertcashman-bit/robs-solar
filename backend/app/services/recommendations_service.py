@@ -42,9 +42,7 @@ class RecommendationsService:
             .where(OptimisationRecommendationRow.status != RecommendationStatus.DISMISSED.value)
             .order_by(OptimisationRecommendationRow.estimated_extra_saving_gbp.desc())
         )
-        return RecommendationsResponse(
-            recommendations=[self._to_schema(r) for r in rows.all()]
-        )
+        return RecommendationsResponse(recommendations=[self._to_schema(r) for r in rows.all()])
 
     async def apply(
         self,
@@ -119,9 +117,7 @@ class RecommendationsService:
             RecommendationType.CHARGE_WINDOW.value,
             RecommendationType.GRID_CHARGE.value,
         ):
-            await auto_schedule_service.set_config(
-                db, AutoScheduleConfigRequest(enabled=True)
-            )
+            await auto_schedule_service.set_config(db, AutoScheduleConfigRequest(enabled=True))
             await auto_schedule_service.run_once(db, get_adapter())
             audit = await audit_service.record(
                 db,
@@ -219,9 +215,7 @@ class RecommendationsService:
                         recommendation_type=RecommendationType.CHARGE_WINDOW.value,
                         title="Charge battery from grid overnight",
                         current_setting="Grid charge off or limited",
-                        proposed_setting=(
-                            f"Charge {tariff.off_peak_start}–{tariff.off_peak_end}"
-                        ),
+                        proposed_setting=(f"Charge {tariff.off_peak_start}–{tariff.off_peak_end}"),
                         reason=(
                             f"Your overnight rate ({night:.2f}p/kWh equivalent) is cheaper "
                             f"than daytime, and {summary.import_kwh:.1f} kWh was imported today."
@@ -248,9 +242,7 @@ class RecommendationsService:
                     title="Avoid overcharging overnight before high solar",
                     current_setting="100% overnight target",
                     proposed_setting="70% overnight target",
-                    reason=(
-                        "High solar expected — leave room in the battery for PV generation."
-                    ),
+                    reason=("High solar expected — leave room in the battery for PV generation."),
                     estimated_extra_saving_gbp=0.0,
                     risk_level=RecommendationRisk.LOW.value,
                     status=RecommendationStatus.PENDING.value,

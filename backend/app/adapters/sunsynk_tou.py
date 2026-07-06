@@ -56,9 +56,7 @@ def parse_tou_bands(data: dict[str, Any]) -> list[TouBand]:
                 start=start,
                 end=next_start,
                 target_soc_pct=_int_field(data, f"cap{slot}"),
-                grid_charge_enabled=_bool_field(
-                    data, f"time{slot}on", f"time{slot}On"
-                ),
+                grid_charge_enabled=_bool_field(data, f"time{slot}on", f"time{slot}On"),
                 power_w=_int_field(data, f"sellTime{slot}Pac"),
             )
         )

@@ -74,6 +74,7 @@ const quickfileReports: QuickFileReports = {
     cost_of_sales_gbp: 2000,
     expenses_gbp: 6500,
     net_profit_gbp: 7500,
+    sections: [],
   },
   profit_and_loss_ytd: {
     from_date: "2026-04-01",
@@ -82,6 +83,7 @@ const quickfileReports: QuickFileReports = {
     cost_of_sales_gbp: 12000,
     expenses_gbp: 38000,
     net_profit_gbp: 42000,
+    sections: [],
   },
   balance_sheet: {
     to_date: "2026-01-31",
@@ -93,6 +95,7 @@ const quickfileReports: QuickFileReports = {
     debtors_gbp: 8883,
     creditors_gbp: 1200,
     vat_liability_gbp: 500,
+    sections: [],
   },
 };
 

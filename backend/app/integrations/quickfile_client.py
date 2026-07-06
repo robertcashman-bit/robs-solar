@@ -86,13 +86,9 @@ def build_quickfile_auth(
     if not application_id:
         missing.append("Application ID")
     if missing:
-        raise QuickFileError(
-            "QuickFile not configured — missing: " + ", ".join(missing) + "."
-        )
+        raise QuickFileError("QuickFile not configured — missing: " + ", ".join(missing) + ".")
     sub = submission_number or f"rf-{uuid.uuid4().hex[:12]}"
-    md5_value = hashlib.md5(
-        f"{account_number}{api_key}{sub}".encode()
-    ).hexdigest().lower()
+    md5_value = hashlib.md5(f"{account_number}{api_key}{sub}".encode()).hexdigest().lower()
     return {
         "account_number": account_number,
         "submission_number": sub,
@@ -108,9 +104,7 @@ def parse_quickfile_response(status_code: int, raw: str) -> dict[str, Any]:
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise QuickFileError(
-            f"QuickFile response parse error (HTTP {status_code})"
-        ) from exc
+        raise QuickFileError(f"QuickFile response parse error (HTTP {status_code})") from exc
 
     errors = payload.get("Errors")
     if errors:
@@ -120,9 +114,7 @@ def parse_quickfile_response(status_code: int, raw: str) -> dict[str, Any]:
         messages = []
         for item in err_items:
             if isinstance(item, dict):
-                messages.append(
-                    str(item.get("Message") or item.get("Detail") or item)
-                )
+                messages.append(str(item.get("Message") or item.get("Detail") or item))
             else:
                 messages.append(str(item))
         raise QuickFileError("; ".join(messages))
@@ -131,11 +123,7 @@ def parse_quickfile_response(status_code: int, raw: str) -> dict[str, Any]:
         raise QuickFileError(f"QuickFile HTTP {status_code}: {text[:300]}")
 
     root_key = next(
-        (
-            key
-            for key in payload
-            if isinstance(payload[key], dict) and "Header" in payload[key]
-        ),
+        (key for key in payload if isinstance(payload[key], dict) and "Header" in payload[key]),
         None,
     )
     message = (
@@ -237,9 +225,7 @@ class QuickFileClient:
         accounts = _extract_records(body)
         return accounts
 
-    async def fetch_bank_balances(
-        self, nominal_codes: list[str]
-    ) -> dict[str, float]:
+    async def fetch_bank_balances(self, nominal_codes: list[str]) -> dict[str, float]:
         if not nominal_codes:
             return {}
         numeric_codes: list[int | str] = []
@@ -255,9 +241,7 @@ class QuickFileClient:
         balances: dict[str, float] = {}
         for record in _extract_records(body):
             code = _nominal_code_key(
-                record.get("NominalCode")
-                or record.get("Nominal")
-                or record.get("Code")
+                record.get("NominalCode") or record.get("Nominal") or record.get("Code")
             )
             if not code:
                 continue

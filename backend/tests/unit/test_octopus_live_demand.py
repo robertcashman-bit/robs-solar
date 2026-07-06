@@ -12,17 +12,13 @@ from app.services.octopus_client import KRAKEN_GRAPHQL, OctopusClient, OctopusCr
 
 def _graphql_client(response_json: dict) -> OctopusClient:
     client = OctopusClient()
-    client.update_credentials(
-        OctopusCredentials(api_key="k", account_number="A-TEST", region="J")
-    )
+    client.update_credentials(OctopusCredentials(api_key="k", account_number="A-TEST", region="J"))
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert str(request.url) == KRAKEN_GRAPHQL
         return httpx.Response(200, json=response_json)
 
-    client._graphql_client = httpx.AsyncClient(
-        transport=httpx.MockTransport(handler), timeout=5.0
-    )
+    client._graphql_client = httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=5.0)
 
     async def fake_token() -> str:
         return "token"
@@ -38,13 +34,7 @@ async def test_get_smart_device_ids_extracts_electricity_device() -> None:
             "data": {
                 "account": {
                     "electricityAgreements": [
-                        {
-                            "meterPoint": {
-                                "meters": [
-                                    {"smartDevices": [{"deviceId": "mini-123"}]}
-                                ]
-                            }
-                        }
+                        {"meterPoint": {"meters": [{"smartDevices": [{"deviceId": "mini-123"}]}]}}
                     ]
                 }
             }
@@ -60,9 +50,7 @@ async def test_get_smart_device_ids_empty_when_no_home_mini() -> None:
         {
             "data": {
                 "account": {
-                    "electricityAgreements": [
-                        {"meterPoint": {"meters": [{"smartDevices": []}]}}
-                    ]
+                    "electricityAgreements": [{"meterPoint": {"meters": [{"smartDevices": []}]}}]
                 }
             }
         }

@@ -15,7 +15,12 @@ _PL_SECTIONS: tuple[tuple[str, str, str, bool], ...] = (
 _BS_SECTIONS: tuple[tuple[str, str, str, bool], ...] = (
     ("FixedAssets", "Fixed assets", "FixedAssets", False),
     ("CurrentAssets", "Current assets", "CurrentAssets", False),
-    ("CurrentLiabilities", "Creditors: amounts falling due within one year", "CurrentLiabilities", True),
+    (
+        "CurrentLiabilities",
+        "Creditors: amounts falling due within one year",
+        "CurrentLiabilities",
+        True,
+    ),
     (
         "LongTermLiabilities",
         "Creditors: amounts falling due after one year",
@@ -90,9 +95,7 @@ def _line_matches_label(label: str, *name_parts: str) -> bool:
     return any(part.lower() in lowered for part in name_parts)
 
 
-def _line_amount_from_breakdown(
-    section: dict[str, Any] | None, *name_parts: str
-) -> float:
+def _line_amount_from_breakdown(section: dict[str, Any] | None, *name_parts: str) -> float:
     for item in _balances_list(section):
         label = str(item.get("NominalAccountName") or "")
         if _line_matches_label(label, *name_parts):
@@ -100,9 +103,7 @@ def _line_amount_from_breakdown(
     return 0.0
 
 
-def _sum_lines_from_breakdown(
-    section: dict[str, Any] | None, *name_parts: str
-) -> float:
+def _sum_lines_from_breakdown(section: dict[str, Any] | None, *name_parts: str) -> float:
     total = 0.0
     for item in _balances_list(section):
         label = str(item.get("NominalAccountName") or "")
@@ -206,9 +207,7 @@ def parse_balance_sheet_full(body: dict[str, Any], *, to_date: str) -> dict[str,
         "fixed_assets_gbp": round(_float(totals.get("FixedAssets")), 2),
         "current_assets_gbp": round(_float(totals.get("CurrentAssets")), 2),
         "current_liabilities_gbp": round(abs(_float(totals.get("CurrentLiabilities"))), 2),
-        "long_term_liabilities_gbp": round(
-            abs(_float(totals.get("LongTermLiabilities"))), 2
-        ),
+        "long_term_liabilities_gbp": round(abs(_float(totals.get("LongTermLiabilities"))), 2),
         "capital_and_reserves_gbp": round(_float(totals.get("CapitalAndReserves")), 2),
         "debtors_gbp": debtors,
         "creditors_gbp": creditors,

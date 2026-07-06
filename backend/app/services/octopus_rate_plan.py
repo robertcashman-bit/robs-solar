@@ -58,9 +58,7 @@ def _windows_from_half_hourly_slots(
     peak_minutes: set[int] = set()
     for row in rates:
         value = float(row["value_inc_vat"])
-        start = to_tariff(
-            datetime.fromisoformat(row["valid_from"].replace("Z", "+00:00"))
-        )
+        start = to_tariff(datetime.fromisoformat(row["valid_from"].replace("Z", "+00:00")))
         minute = start.hour * 60 + start.minute
         if _is_cheap_rate(value, cheap_p):
             cheap_minutes.add(minute)

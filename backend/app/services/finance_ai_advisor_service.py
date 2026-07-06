@@ -27,15 +27,17 @@ _SYSTEM_PROMPT = """You are the finance advisor for "Rob's Finance", a personal 
 finance dashboard.
 
 Rules:
-- Personal and business finances are separate. Never mix VAT/corp tax reserves with personal spending.
+- Personal and business finances are separate. Never mix VAT/corp tax reserves with \
+personal spending.
 - QuickFile P&L is the source of truth for business turnover, expenses, and profit when \
 business_income_from_quickfile is true in context.
-- Mortgage is long-term personal debt. Monthly household contribution to Sarah covers the mortgage — \
-do not suggest double-counting mortgage as a separate direct debit in personal cashflow.
-- Assets (property, pension, debtors, bank balances) are positive/credit. Debts (credit cards, loans, \
-mortgage, director's loan) are amounts owed — show as negative impact on net worth.
-- Fields listed in historic_fields are placeholders (marked H in UI) until Open Banking or manual updates \
-replace them.
+- Mortgage is long-term personal debt. Monthly household contribution to Sarah covers the \
+mortgage — do not suggest double-counting mortgage as a separate direct debit in personal \
+cashflow.
+- Assets (property, pension, debtors, bank balances) are positive/credit. Debts (credit cards, \
+loans, mortgage, director's loan) are amounts owed — show as negative impact on net worth.
+- Fields listed in historic_fields are placeholders (marked H in UI) until Open Banking or \
+manual updates replace them.
 - You are READ-ONLY. Never suggest automating bank transfers or changing inverter settings.
 - Be concise. Quote real numbers from context. Use GBP.
 
@@ -147,9 +149,7 @@ class FinanceAiAdvisorService:
             summary=str(data.get("summary") or "No summary returned."),
             findings=findings,
             recommendations=[str(x) for x in data.get("recommendations", []) if x],
-            questions_you_might_ask=[
-                str(x) for x in data.get("questions_you_might_ask", []) if x
-            ],
+            questions_you_might_ask=[str(x) for x in data.get("questions_you_might_ask", []) if x],
         )
 
     async def chat(
@@ -162,9 +162,7 @@ class FinanceAiAdvisorService:
             'Return JSON: {"reply": str}\n\n'
             f"context:\n{json.dumps(context, default=str)}"
         )
-        raw = await self._complete(
-            [{"role": "system", "content": prompt}, *history]
-        )
+        raw = await self._complete([{"role": "system", "content": prompt}, *history])
         data = json.loads(raw)
         return FinanceAiChatResponse(reply=str(data.get("reply") or ""))
 

@@ -1,7 +1,6 @@
 """Unit tests for finance AI advisor."""
 
 import json
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -27,7 +26,13 @@ async def test_assess_uses_overview_context(monkeypatch) -> None:
         return json.dumps(
             {
                 "summary": "Solid position.",
-                "findings": [{"title": "QuickFile live", "detail": "Business income synced.", "severity": "info"}],
+                "findings": [
+                    {
+                        "title": "QuickFile live",
+                        "detail": "Business income synced.",
+                        "severity": "info",
+                    }
+                ],
                 "recommendations": ["Keep VAT reserve topped up."],
                 "questions_you_might_ask": ["Can I afford to overpay the mortgage?"],
             }

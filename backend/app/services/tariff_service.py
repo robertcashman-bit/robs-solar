@@ -26,9 +26,7 @@ class TariffService:
         )
 
     async def get_tariff(self, db: AsyncSession) -> TariffSettings:
-        result = await db.execute(
-            select(AppSettingRow).where(AppSettingRow.key == _TARIFF_KEY)
-        )
+        result = await db.execute(select(AppSettingRow).where(AppSettingRow.key == _TARIFF_KEY))
         row = result.scalar_one_or_none()
         if row is None:
             return self._defaults()
@@ -36,9 +34,7 @@ class TariffService:
         return TariffSettings.model_validate(data)
 
     async def set_tariff(self, db: AsyncSession, tariff: TariffSettings) -> TariffSettings:
-        result = await db.execute(
-            select(AppSettingRow).where(AppSettingRow.key == _TARIFF_KEY)
-        )
+        result = await db.execute(select(AppSettingRow).where(AppSettingRow.key == _TARIFF_KEY))
         row = result.scalar_one_or_none()
         payload = json.dumps(tariff.model_dump())
         if row is None:

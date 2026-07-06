@@ -188,8 +188,6 @@ function buildSummaryProfitAndLossItems(
   month: QuickFileProfitAndLossSummary | null | undefined,
   ytd: QuickFileProfitAndLossSummary | null | undefined,
 ): FinanceItem[] {
-  const dualColumn = Boolean(month && ytd);
-
   return [
     {
       key: "turnover",

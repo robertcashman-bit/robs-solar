@@ -1,5 +1,6 @@
 """Unit tests for Open Banking setup validation."""
 
+from app.integrations.base import IntegrationNotConfiguredError
 from app.schemas.finance import OpenBankingConfig, OpenBankingSetupSaveRequest
 from app.services.open_banking_setup_validation import (
     classify_test_error,
@@ -9,7 +10,6 @@ from app.services.open_banking_setup_validation import (
     validate_config,
     validate_redirect_url,
 )
-from app.integrations.base import IntegrationNotConfiguredError
 
 
 def _empty_config() -> OpenBankingConfig:

@@ -24,12 +24,14 @@ const fullReports: QuickFileReports = {
           { nominal_code: "4001", label: "Other income", amount_gbp: 5000 },
         ],
         subtotal_gbp: 50000,
+        is_total: false,
       },
       {
         key: "LessCostofSales",
         label: "Less: Cost of sales",
         lines: [{ nominal_code: "5000", label: "Purchases", amount_gbp: 12000 }],
         subtotal_gbp: 12000,
+        is_total: false,
       },
       {
         key: "GrossProfit",
@@ -37,12 +39,14 @@ const fullReports: QuickFileReports = {
         lines: [],
         subtotal_gbp: 38000,
         subtotal_label: "Gross profit",
+        is_total: false,
       },
       {
         key: "LessExpenses",
         label: "Less: Expenses",
         lines: [{ nominal_code: "7000", label: "Rent", amount_gbp: 18000 }],
         subtotal_gbp: 18000,
+        is_total: false,
       },
       {
         key: "NetProfit",
@@ -67,12 +71,14 @@ const fullReports: QuickFileReports = {
         label: "Turnover",
         lines: [{ nominal_code: "4000", label: "Sales", amount_gbp: 120000 }],
         subtotal_gbp: 120000,
+        is_total: false,
       },
       {
         key: "LessCostofSales",
         label: "Less: Cost of sales",
         lines: [{ nominal_code: "5000", label: "Purchases", amount_gbp: 24000 }],
         subtotal_gbp: 24000,
+        is_total: false,
       },
       {
         key: "GrossProfit",
@@ -80,12 +86,14 @@ const fullReports: QuickFileReports = {
         lines: [],
         subtotal_gbp: 96000,
         subtotal_label: "Gross profit",
+        is_total: false,
       },
       {
         key: "LessExpenses",
         label: "Less: Expenses",
         lines: [{ nominal_code: "7000", label: "Rent", amount_gbp: 48000 }],
         subtotal_gbp: 48000,
+        is_total: false,
       },
       {
         key: "NetProfit",
@@ -113,6 +121,7 @@ const fullReports: QuickFileReports = {
         label: "Fixed assets",
         lines: [{ nominal_code: "1000", label: "Plant and machinery", amount_gbp: 15000 }],
         subtotal_gbp: 15000,
+        is_total: false,
       },
       {
         key: "CurrentAssets",
@@ -122,6 +131,7 @@ const fullReports: QuickFileReports = {
           { nominal_code: "1201", label: "Bank current account", amount_gbp: 16117 },
         ],
         subtotal_gbp: 25000,
+        is_total: false,
       },
       {
         key: "CurrentLiabilities",
@@ -131,12 +141,14 @@ const fullReports: QuickFileReports = {
           { nominal_code: "2201", label: "VAT liability", amount_gbp: 3000 },
         ],
         subtotal_gbp: 8000,
+        is_total: false,
       },
       {
         key: "LongTermLiabilities",
         label: "Creditors: amounts falling due after one year",
         lines: [{ nominal_code: "2300", label: "Bank loan", amount_gbp: 12000 }],
         subtotal_gbp: 12000,
+        is_total: false,
       },
       {
         key: "CapitalAndReserves",
@@ -186,12 +198,14 @@ describe("quickfile-statement-rows", () => {
             label: "Turnover",
             lines: [{ nominal_code: "4000", label: "Sales", amount_gbp: 0 }],
             subtotal_gbp: 0,
+            is_total: false,
           },
           {
             key: "LessCostofSales",
             label: "Less: Cost of sales",
             lines: [],
             subtotal_gbp: 0,
+            is_total: false,
           },
           {
             key: "GrossProfit",
@@ -199,12 +213,14 @@ describe("quickfile-statement-rows", () => {
             lines: [],
             subtotal_gbp: 0,
             subtotal_label: "Gross profit",
+        is_total: false,
           },
           {
             key: "LessExpenses",
             label: "Less: Expenses",
             lines: [],
             subtotal_gbp: 0,
+            is_total: false,
           },
           {
             key: "NetProfit",

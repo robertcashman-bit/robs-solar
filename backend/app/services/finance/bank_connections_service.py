@@ -127,7 +127,9 @@ async def _matching_liabilities(
     return [row for row in rows.all() if _matches_keywords(row.name, bank.account_keywords)]
 
 
-def _sum_balances(accounts: list[FinanceAccountRow], liabilities: list[FinanceLiabilityRow]) -> float:
+def _sum_balances(
+    accounts: list[FinanceAccountRow], liabilities: list[FinanceLiabilityRow]
+) -> float:
     total = sum(account.balance_gbp for account in accounts)
     total += sum(liability.balance_gbp for liability in liabilities)
     return round(total, 2)
@@ -148,7 +150,8 @@ async def _build_open_banking_connection(
             method=bank.method,
             status=BankConnectionStatus.NOT_CONFIGURED,
             status_message=(
-                "Open Banking is not set up yet. Complete Open Banking Settings once, then return here."
+                "Open Banking is not set up yet. Complete Open Banking Settings once, "
+                "then return here."
             ),
         )
 
@@ -161,12 +164,12 @@ async def _build_open_banking_connection(
     ]
     accounts = await _matching_accounts(db, bank)
     ob_accounts = [
-        account
-        for account in accounts
-        if account.source == FinanceAccountSource.OPEN_BANKING.value
+        account for account in accounts if account.source == FinanceAccountSource.OPEN_BANKING.value
     ]
     balance = _sum_balances(ob_accounts, [])
-    institution = linked[0].institution_name if linked else (pending[0].institution_name if pending else "")
+    institution = (
+        linked[0].institution_name if linked else (pending[0].institution_name if pending else "")
+    )
 
     if expired and not linked:
         return BankConnectionItem(
@@ -204,7 +207,9 @@ async def _build_open_banking_connection(
             label=bank.label,
             method=bank.method,
             status=BankConnectionStatus.AWAITING_LOGIN,
-            status_message="Bank login started but not finished. Complete authorisation or try again.",
+            status_message=(
+                "Bank login started but not finished. Complete authorisation or try again."
+            ),
             institution=institution,
             account_count=0,
             balance_gbp=0.0,
@@ -264,7 +269,9 @@ async def _build_quickfile_connection(
         label=bank.label,
         method=bank.method,
         status=BankConnectionStatus.NOT_CONNECTED,
-        status_message="QuickFile is connected but this account has not synced yet. Run a business sync.",
+        status_message=(
+            "QuickFile is connected but this account has not synced yet. Run a business sync."
+        ),
         institution="QuickFile",
         account_count=0,
         balance_gbp=0.0,
@@ -275,9 +282,7 @@ async def _build_manual_connection(db: AsyncSession, bank: TargetBank) -> BankCo
     accounts = await _matching_accounts(db, bank)
     liabilities = await _matching_liabilities(db, bank)
     manual_accounts = [
-        account
-        for account in accounts
-        if account.source == FinanceAccountSource.MANUAL.value
+        account for account in accounts if account.source == FinanceAccountSource.MANUAL.value
     ]
     balance = _sum_balances(manual_accounts, liabilities)
     count = len(manual_accounts) + len(liabilities)
@@ -299,7 +304,9 @@ async def _build_manual_connection(db: AsyncSession, bank: TargetBank) -> BankCo
         label=bank.label,
         method=bank.method,
         status=BankConnectionStatus.NOT_CONNECTED,
-        status_message="Not added yet. Add Funding Circle as a manual loan on the Connect banks page.",
+        status_message=(
+            "Not added yet. Add Funding Circle as a manual loan on the Connect banks page."
+        ),
         institution="Manual",
         account_count=0,
         balance_gbp=0.0,
@@ -327,9 +334,7 @@ async def get_connections(db: AsyncSession) -> list[BankConnectionItem]:
                 )
             )
         elif bank.method == BankConnectionMethod.QUICKFILE:
-            items.append(
-                await _build_quickfile_connection(db, bank, last_sync_at=qf_last_sync)
-            )
+            items.append(await _build_quickfile_connection(db, bank, last_sync_at=qf_last_sync))
         else:
             items.append(await _build_manual_connection(db, bank))
     return items
@@ -342,7 +347,7 @@ async def disconnect(db: AsyncSession, connection_id: str) -> bool:
     if bank.method != BankConnectionMethod.OPEN_BANKING:
         return False
 
-    config = await open_banking_settings_service.get_config(db)
+    await open_banking_settings_service.get_config(db)
     requisitions = await open_banking_settings_service.list_requisitions(db)
     remaining = [
         req

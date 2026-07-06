@@ -1,7 +1,5 @@
 """Unit tests for Open Banking adapter factory."""
 
-import pytest
-
 from app.integrations.open_banking.enable_banking_adapter import EnableBankingAdapter
 from app.integrations.open_banking.factory import get_open_banking_adapter
 from app.integrations.open_banking.gocardless_adapter import GoCardlessOpenBankingAdapter
@@ -44,9 +42,7 @@ def test_gocardless_linked_status() -> None:
         OpenBankingConfig(provider="gocardless", secret_id="a", secret_key="b")
     )
     assert not adapter.is_linked(
-        OpenBankingRequisition(
-            id="1", institution_id="X", institution_name="X", status="CR"
-        )
+        OpenBankingRequisition(id="1", institution_id="X", institution_name="X", status="CR")
     )
     assert adapter.is_linked(
         OpenBankingRequisition(

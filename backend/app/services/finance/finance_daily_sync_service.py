@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 from app.config import settings
 from app.db.session import SessionLocal
@@ -18,7 +17,7 @@ from app.services.quickfile_settings_service import quickfile_settings_service
 
 logger = logging.getLogger(__name__)
 
-_sync_task: Optional[asyncio.Task] = None
+_sync_task: asyncio.Task | None = None
 
 
 async def _mark_expired_sessions(db) -> None:
@@ -39,7 +38,9 @@ async def _mark_expired_sessions(db) -> None:
             await client.get_session(req.id)
         except EnableBankingError as exc:
             message = str(exc).lower()
-            if any(token in message for token in ("401", "403", "expired", "unauthorized", "forbidden")):
+            if any(
+                token in message for token in ("401", "403", "expired", "unauthorized", "forbidden")
+            ):
                 req.status = "EXPIRED"
                 changed = True
                 logger.info("Open Banking consent expired for %s", req.institution_name)
@@ -95,7 +96,7 @@ async def _sync_loop() -> None:
         await asyncio.sleep(interval_seconds)
 
 
-def start_finance_daily_sync() -> Optional[asyncio.Task]:
+def start_finance_daily_sync() -> asyncio.Task | None:
     global _sync_task
     if not settings.finance_daily_sync_enabled:
         return None

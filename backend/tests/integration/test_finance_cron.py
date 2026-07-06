@@ -11,7 +11,9 @@ async def test_cron_daily_sync_requires_secret(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_cron_daily_sync_with_valid_secret(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_cron_daily_sync_with_valid_secret(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from app.config import settings
 
     monkeypatch.setattr(settings, "cron_secret", "test-cron-secret")
@@ -27,7 +29,9 @@ async def test_cron_daily_sync_with_valid_secret(client: AsyncClient, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_cron_daily_sync_rejects_wrong_secret(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_cron_daily_sync_rejects_wrong_secret(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from app.config import settings
 
     monkeypatch.setattr(settings, "cron_secret", "test-cron-secret")

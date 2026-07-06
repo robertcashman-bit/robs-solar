@@ -69,9 +69,7 @@ class EnableBankingClient:
 
     def _build_jwt(self) -> str:
         if not self._config.application_id or not self._config.private_key_pem:
-            raise EnableBankingError(
-                "Enable Banking requires application_id and private_key_pem"
-            )
+            raise EnableBankingError("Enable Banking requires application_id and private_key_pem")
         now = datetime.now(timezone.utc)
         payload = {
             "iss": JWT_ISS,
@@ -108,9 +106,7 @@ class EnableBankingClient:
             headers["Content-Type"] = "application/json"
         url = f"{ENABLE_BASE}{path}"
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.request(
-                method, url, headers=headers, json=json, params=params
-            )
+            response = await client.request(method, url, headers=headers, json=json, params=params)
         if response.status_code >= 400:
             detail = response.text[:500]
             raise EnableBankingError(f"Enable Banking {response.status_code}: {detail}")
@@ -123,9 +119,7 @@ class EnableBankingClient:
         body = await self._request("GET", "/application")
         return {"ok": True, "application_name": str(body.get("name") or "")}
 
-    async def list_aspsps(
-        self, *, country: str = "GB", query: str = ""
-    ) -> list[dict[str, Any]]:
+    async def list_aspsps(self, *, country: str = "GB", query: str = "") -> list[dict[str, Any]]:
         params: dict[str, str] = {}
         if country:
             params["country"] = country.upper()
@@ -163,9 +157,9 @@ class EnableBankingClient:
         redirect_url: str,
         state: str,
     ) -> dict[str, Any]:
-        valid_until = (
-            datetime.now(timezone.utc) + timedelta(days=90)
-        ).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        valid_until = (datetime.now(timezone.utc) + timedelta(days=90)).strftime(
+            "%Y-%m-%dT%H:%M:%S.000000+00:00"
+        )
         body = await self._request(
             "POST",
             "/auth",
@@ -198,8 +192,8 @@ class EnableBankingClient:
             query["date_from"] = date_from
         else:
             query["date_from"] = (
-                datetime.now(timezone.utc) - timedelta(days=90)
-            ).date().isoformat()
+                (datetime.now(timezone.utc) - timedelta(days=90)).date().isoformat()
+            )
 
         all_transactions: list[dict[str, Any]] = []
         continuation_key: str | None = None
@@ -214,9 +208,7 @@ class EnableBankingClient:
             )
             transactions = body.get("transactions")
             if isinstance(transactions, list):
-                all_transactions.extend(
-                    item for item in transactions if isinstance(item, dict)
-                )
+                all_transactions.extend(item for item in transactions if isinstance(item, dict))
             continuation_key = body.get("continuation_key")
             if not continuation_key:
                 break

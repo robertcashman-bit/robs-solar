@@ -132,9 +132,7 @@ class SunsynkConnectAdapter(InverterAdapter):
                 continue
             except httpx.HTTPError as exc:
                 raise AdapterError(f"Sunsynk request failed: {exc}") from exc
-        raise AdapterError(
-            f"Sunsynk request timed out after {attempts} attempt(s)"
-        ) from last_exc
+        raise AdapterError(f"Sunsynk request timed out after {attempts} attempt(s)") from last_exc
 
     def _token_valid(self) -> bool:
         return bool(self._token) and time.monotonic() < self._token_expiry
@@ -639,9 +637,7 @@ class SunsynkConnectAdapter(InverterAdapter):
             )
             if is_live_mode():
                 stmt = stmt.where(MetricSampleRow.data_source == DATA_SOURCE_LIVE)
-            result = await db.execute(
-                stmt.order_by(MetricSampleRow.timestamp.desc()).limit(120)
-            )
+            result = await db.execute(stmt.order_by(MetricSampleRow.timestamp.desc()).limit(120))
             rows = result.all()
         if len(rows) < 3:
             return None

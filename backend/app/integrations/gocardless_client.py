@@ -224,9 +224,7 @@ class GoCardlessClient:
             return None
 
         account = (
-            details_body.get("account")
-            if isinstance(details_body.get("account"), dict)
-            else {}
+            details_body.get("account") if isinstance(details_body.get("account"), dict) else {}
         )
         name = str(account.get("name") or account.get("product") or institution_name).strip()
         cash_type = str(account.get("cashAccountType") or "")

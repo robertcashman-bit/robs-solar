@@ -15,24 +15,23 @@ from app.integrations.quickfile_provider import QuickFileProvider
 from app.integrations.registry import integration_registry
 from app.middleware.rate_limit import enforce_write_rate_limit
 from app.schemas.finance import (
+    BankConnectionsResponse,
     BusinessFinanceSnapshot,
     BusinessFinanceSnapshotCreate,
-    BankConnectionsResponse,
     CashflowForecastEntry,
     CashflowForecastEntryCreate,
-    CashflowForecastResponse,
     CashflowForecastsResponse,
-    FinanceDailySyncResult,
     FinanceAccount,
     FinanceAccountCreate,
     FinanceAccountUpdate,
+    FinanceDailySyncResult,
     FinanceLiability,
-    FinanceTransaction,
     FinanceLiabilityCreate,
     FinanceLiabilityUpdate,
     FinanceOverviewResponse,
     FinanceReportsResponse,
     FinanceScope,
+    FinanceTransaction,
     HistoricFinanceSeedResponse,
     MonthlyBudgetLine,
     MonthlyBudgetLineCreate,
@@ -55,9 +54,11 @@ from app.schemas.finance import (
 )
 from app.services.finance.bank_connections_service import (
     TARGET_BANKS,
-    disconnect as disconnect_bank_connection,
     get_connections,
     list_transactions,
+)
+from app.services.finance.bank_connections_service import (
+    disconnect as disconnect_bank_connection,
 )
 from app.services.finance.debt_strategy_service import recommend_debt_strategy
 from app.services.finance.finance_accounts_service import finance_accounts_service
@@ -70,8 +71,8 @@ from app.services.finance.finance_overview_service import finance_overview_servi
 from app.services.finance.finance_reports_service import finance_reports_service
 from app.services.finance.historic_finance_seed import seed_historic_finance
 from app.services.finance.open_banking_sync_service import open_banking_sync_service
-from app.services.finance.quickfile_sync_service import quickfile_sync_service
 from app.services.finance.quickfile_reports_service import quickfile_reports_service
+from app.services.finance.quickfile_sync_service import quickfile_sync_service
 from app.services.open_banking_settings_service import open_banking_settings_service
 from app.services.open_banking_setup_validation import (
     classify_test_error,

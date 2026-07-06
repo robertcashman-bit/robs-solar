@@ -1,6 +1,5 @@
 """Integration tests for peak import guard API."""
 
-
 import pytest
 from httpx import AsyncClient
 

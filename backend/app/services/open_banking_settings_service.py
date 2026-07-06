@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models import AppSettingRow
-from app.integrations.open_banking.factory import get_open_banking_adapter, is_connection_linked
+from app.integrations.open_banking.factory import is_connection_linked
 from app.schemas.finance import (
     OpenBankingConfig,
     OpenBankingConfigStatus,
@@ -57,10 +57,22 @@ class OpenBankingSettingsService:
         provider = stored.provider or env.provider
         # Hosted deploys may have ephemeral SQLite — prefer explicit env credentials.
         env_has_credentials = bool(env.application_id and env.private_key_pem)
-        application_id = env.application_id if env_has_credentials else (stored.application_id or env.application_id)
-        private_key_pem = env.private_key_pem if env_has_credentials else (stored.private_key_pem or env.private_key_pem)
-        environment = env.environment if env_has_credentials else (stored.environment or env.environment)
-        redirect_url = env.redirect_url if env_has_credentials else (stored.redirect_url or env.redirect_url)
+        application_id = (
+            env.application_id
+            if env_has_credentials
+            else (stored.application_id or env.application_id)
+        )
+        private_key_pem = (
+            env.private_key_pem
+            if env_has_credentials
+            else (stored.private_key_pem or env.private_key_pem)
+        )
+        environment = (
+            env.environment if env_has_credentials else (stored.environment or env.environment)
+        )
+        redirect_url = (
+            env.redirect_url if env_has_credentials else (stored.redirect_url or env.redirect_url)
+        )
         return OpenBankingConfig(
             provider=provider,
             application_id=application_id,

@@ -1,7 +1,5 @@
 """Unit tests for Enable Banking client."""
 
-from datetime import datetime, timezone
-
 import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -126,7 +124,9 @@ async def test_list_aspsps_authorize_and_transactions() -> None:
         url = f"https://api.enablebanking.com{path}"
         transport = httpx.MockTransport(handler)
         async with httpx.AsyncClient(transport=transport) as http_client:
-            response = await http_client.request(method, url, headers=headers, json=json, params=params)
+            response = await http_client.request(
+                method, url, headers=headers, json=json, params=params
+            )
         if response.status_code >= 400:
             raise EnableBankingError(response.text)
         return response.json()

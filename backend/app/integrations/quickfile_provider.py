@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from app.integrations.base import BaseFinanceProvider, IntegrationNotConfiguredError
-from datetime import datetime, timezone
-
 from app.integrations.quickfile_client import QuickFileClient, QuickFileError, _nominal_code_key
 from app.integrations.quickfile_reports import parse_balance_sheet_full
 from app.schemas.finance import FinanceAccountType, FinanceScope, QuickFileConfig
@@ -70,9 +69,7 @@ class QuickFileProvider(BaseFinanceProvider):
 
     def _ensure_configured(self) -> None:
         if not (
-            self._config.account_number
-            and self._config.api_key
-            and self._config.application_id
+            self._config.account_number and self._config.api_key and self._config.application_id
         ):
             raise IntegrationNotConfiguredError(
                 "QuickFile is not configured. Set QUICKFILE_* env vars or save "

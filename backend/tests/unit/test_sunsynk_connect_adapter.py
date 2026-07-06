@@ -110,6 +110,7 @@ LOW_LOAD_FLOW_RESPONSE = {
     },
 }
 
+
 def _low_load_handler(request: httpx.Request) -> httpx.Response:
     path = request.url.path
     if path == "/anonymous/publicKey":
@@ -318,9 +319,7 @@ async def test_set_tou_bands_writes_both_grid_flags(monkeypatch: pytest.MonkeyPa
 async def test_set_tou_bands_blocked_without_flags() -> None:
     adapter = SunsynkConnectAdapter(client=_client(_ok_handler))
     with pytest.raises(UnsupportedWriteError):
-        await adapter.set_tou_bands(
-            TouBandsRequest(bands=[TouBandWrite(slot=1, start="00:00")])
-        )
+        await adapter.set_tou_bands(TouBandsRequest(bands=[TouBandWrite(slot=1, start="00:00")]))
 
 
 @pytest.mark.asyncio
@@ -415,9 +414,7 @@ async def test_set_battery_control_does_not_apply_grid_charge_current(
     monkeypatch.setattr(settings, "enable_live_writes", True)
     monkeypatch.setattr(settings, "sunsynk_enable_unverified_writes", True)
     adapter = SunsynkConnectAdapter(client=_client(handler))
-    result = await adapter.set_battery_control(
-        BatteryControlRequest(grid_charge_current_a=30)
-    )
+    result = await adapter.set_battery_control(BatteryControlRequest(grid_charge_current_a=30))
     assert result["grid_charge_current_a_applied"] is False
     assert "gridChargeCurrent" not in captured
 

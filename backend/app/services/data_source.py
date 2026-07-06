@@ -14,9 +14,7 @@ DATA_SOURCE_SIMULATED = "simulated"
 
 def current_data_source() -> str:
     return (
-        DATA_SOURCE_SIMULATED
-        if settings.adapter_mode.lower() == "simulator"
-        else DATA_SOURCE_LIVE
+        DATA_SOURCE_SIMULATED if settings.adapter_mode.lower() == "simulator" else DATA_SOURCE_LIVE
     )
 
 

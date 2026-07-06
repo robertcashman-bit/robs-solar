@@ -135,9 +135,7 @@ BS_FIXTURE = {
 
 
 def test_parse_profit_and_loss_full_extracts_all_lines_and_subtotals() -> None:
-    result = parse_profit_and_loss_full(
-        PL_FIXTURE, from_date="2026-01-01", to_date="2026-01-31"
-    )
+    result = parse_profit_and_loss_full(PL_FIXTURE, from_date="2026-01-01", to_date="2026-01-31")
 
     assert result["turnover_gbp"] == 50000.0
     assert result["cost_of_sales_gbp"] == 12000.0
@@ -202,7 +200,14 @@ def test_parse_balance_sheet_full_extracts_all_lines() -> None:
 
 def test_parse_profit_and_loss_full_handles_empty_breakdown() -> None:
     result = parse_profit_and_loss_full(
-        {"Totals": {"Turnover": 1000.0, "LessCostofSales": 0, "LessExpenses": 0, "NetProfit": 1000.0}},
+        {
+            "Totals": {
+                "Turnover": 1000.0,
+                "LessCostofSales": 0,
+                "LessExpenses": 0,
+                "NetProfit": 1000.0,
+            }
+        },
         from_date="2026-01-01",
         to_date="2026-01-31",
     )

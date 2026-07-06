@@ -110,17 +110,13 @@ class FinanceInsightsService:
             .offset(1)
             .limit(1)
         )
-        if (
-            prior_snap
-            and overview.credit_card_balances_gbp > prior_snap.monthly_spending_gbp * 0.5
-        ):
+        if prior_snap and overview.credit_card_balances_gbp > prior_snap.monthly_spending_gbp * 0.5:
             candidates.append(
                 (
                     FinanceInsightCategory.DEBT.value,
                     FinanceInsightSeverity.WARNING.value,
                     "Credit card balances are increasing",
-                    "Credit card total is high relative to recent spending — "
-                    "review repayments.",
+                    "Credit card total is high relative to recent spending — review repayments.",
                 )
             )
 

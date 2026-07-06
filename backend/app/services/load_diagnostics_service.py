@@ -14,7 +14,6 @@ can say "unknown" instead of implying a real zero reading.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,11 +36,11 @@ from app.services.live_metrics_cache import live_metrics_cache
 
 def _field(
     label: str,
-    value: Optional[float],
+    value: float | None,
     *,
     origin: LoadFieldOrigin,
-    source_field: Optional[str] = None,
-    note: Optional[str] = None,
+    source_field: str | None = None,
+    note: str | None = None,
 ) -> LoadFieldStatus:
     return LoadFieldStatus(
         label=label,
@@ -52,7 +51,9 @@ def _field(
     )
 
 
-def _power_flow_fields(metrics: LiveMetrics, *, origin: LoadFieldOrigin) -> dict[str, LoadFieldStatus]:
+def _power_flow_fields(
+    metrics: LiveMetrics, *, origin: LoadFieldOrigin
+) -> dict[str, LoadFieldStatus]:
     battery_value = metrics.battery_power_w
     battery_origin = origin if battery_value is not None else LoadFieldOrigin.UNKNOWN
     battery_note = None if battery_value is not None else "Adapter did not report battery power"
@@ -97,7 +98,7 @@ def _sample_to_fields(sample: MetricSampleRow) -> dict[str, LoadFieldStatus]:
 
 def _raw_payload_from_adapter(
     adapter: InverterAdapter,
-) -> tuple[Optional[dict], Optional[datetime], Optional[str]]:
+) -> tuple[dict | None, datetime | None, str | None]:
     """Best-effort raw payload from adapters that expose one (currently Sunsynk).
 
     Returns (raw_payload, captured_at, note). Never fabricates a payload for
@@ -117,17 +118,17 @@ class LoadDiagnosticsService:
     async def get_diagnostics(
         self,
         adapter: InverterAdapter,
-        db: Optional[AsyncSession] = None,
+        db: AsyncSession | None = None,
     ) -> LoadDiagnostics:
         now = datetime.now(timezone.utc)
         adapter_mode = settings.adapter_mode
         data_source = current_data_source()
 
         cached_metrics = live_metrics_cache.peek()
-        metrics: Optional[LiveMetrics] = cached_metrics
+        metrics: LiveMetrics | None = cached_metrics
         is_cached = cached_metrics is not None
         cache_age_seconds = live_metrics_cache.age_seconds() if cached_metrics is not None else None
-        stale_note: Optional[str] = None
+        stale_note: str | None = None
 
         if metrics is None:
             try:
@@ -182,13 +183,22 @@ class LoadDiagnosticsService:
                     battery_power_w=sample.battery_power_w or 0.0,
                 )
                 is_cached = True
-                cache_age_seconds = (now - sample.timestamp.replace(tzinfo=timezone.utc)).total_seconds() \
-                    if sample.timestamp.tzinfo is None \
+                cache_age_seconds = (
+                    (now - sample.timestamp.replace(tzinfo=timezone.utc)).total_seconds()
+                    if sample.timestamp.tzinfo is None
                     else (now - sample.timestamp).total_seconds()
-                stale_note = stale_note or "Showing last known database sample (live fetch unavailable)."
+                )
+                stale_note = (
+                    stale_note or "Showing last known database sample (live fetch unavailable)."
+                )
             else:
                 unknown = _field("Unknown", None, origin=LoadFieldOrigin.UNKNOWN)
-                fields = {"pv": unknown, "battery": unknown, "grid_import": unknown, "grid_export": unknown}
+                fields = {
+                    "pv": unknown,
+                    "battery": unknown,
+                    "grid_import": unknown,
+                    "grid_export": unknown,
+                }
                 house_load_w = 0.0
                 house_load_source = HouseLoadSource.MINIMAL
                 house_load_at = None

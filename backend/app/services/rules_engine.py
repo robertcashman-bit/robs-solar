@@ -126,9 +126,7 @@ class RulesEngine:
             from app.schemas.domain import AutoScheduleConfigRequest
 
             enabled = rule.action_value if rule.action_value is not None else True
-            await auto_schedule_service.set_config(
-                db, AutoScheduleConfigRequest(enabled=enabled)
-            )
+            await auto_schedule_service.set_config(db, AutoScheduleConfigRequest(enabled=enabled))
             return
 
         if (

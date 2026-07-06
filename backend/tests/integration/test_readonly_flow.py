@@ -24,9 +24,7 @@ async def test_login_success(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_login_failure(client: AsyncClient) -> None:
-    response = await client.post(
-        "/auth/login", json={"username": "admin", "password": "wrong"}
-    )
+    response = await client.post("/auth/login", json={"username": "admin", "password": "wrong"})
     assert response.status_code == 401
 
 

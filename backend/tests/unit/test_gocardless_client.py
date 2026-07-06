@@ -60,7 +60,9 @@ async def test_generate_token_and_list_institutions() -> None:
                 token = await client._ensure_access_token()
                 headers["Authorization"] = f"Bearer {token}"
             url = f"https://bankaccountdata.gocardless.com/api/v2{path}"
-            response = await http_client.request(method, url, headers=headers, json=json, params=params)
+            response = await http_client.request(
+                method, url, headers=headers, json=json, params=params
+            )
             if response.status_code >= 400:
                 from app.integrations.gocardless_client import GoCardlessError
 

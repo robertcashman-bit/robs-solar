@@ -235,11 +235,7 @@ class OctopusClient:
 
     async def _obtain_kraken_token(self) -> str:
         now = datetime.now(timezone.utc)
-        if (
-            self._kraken_token
-            and self._kraken_token_expires
-            and now < self._kraken_token_expires
-        ):
+        if self._kraken_token and self._kraken_token_expires and now < self._kraken_token_expires:
             return self._kraken_token
         if not self._creds.api_key:
             raise ValueError("Octopus API key not configured")
@@ -380,9 +376,7 @@ class OctopusClient:
             response.raise_for_status()
             body = response.json()
             if body.get("errors"):
-                raise ValueError(
-                    body["errors"][0].get("message", "Smart device query failed")
-                )
+                raise ValueError(body["errors"][0].get("message", "Smart device query failed"))
             data = body.get("data") or {}
             account = data.get("account") or {}
             device_id = ""
@@ -447,9 +441,7 @@ class OctopusClient:
             response.raise_for_status()
             body = response.json()
             if body.get("errors"):
-                raise ValueError(
-                    body["errors"][0].get("message", "Live telemetry query failed")
-                )
+                raise ValueError(body["errors"][0].get("message", "Live telemetry query failed"))
             rows = (body.get("data") or {}).get("smartMeterTelemetry") or []
             latest = None
             for row in rows:
@@ -464,9 +456,7 @@ class OctopusClient:
             except (TypeError, ValueError):
                 return OctopusLiveDemand(available=False)
             try:
-                read_at = datetime.fromisoformat(
-                    str(latest["readAt"]).replace("Z", "+00:00")
-                )
+                read_at = datetime.fromisoformat(str(latest["readAt"]).replace("Z", "+00:00"))
             except ValueError:
                 read_at = None
             return OctopusLiveDemand(
@@ -532,10 +522,7 @@ class OctopusClient:
             return None
 
         async def fetch() -> float | None:
-            url = (
-                f"/products/{product_code}/electricity-tariffs/"
-                f"{tariff_code}/standard-unit-rates/"
-            )
+            url = f"/products/{product_code}/electricity-tariffs/{tariff_code}/standard-unit-rates/"
             response = await self._client.get(url, params={"page_size": 10})
             response.raise_for_status()
             results = response.json().get("results", [])

@@ -80,9 +80,7 @@ async def _summary_from_rows(
 
     tariff = await tariff_service.get_tariff(db)
 
-    cheap_import, peak_import = _split_import_kwh(
-        rows, tariff.off_peak_start, tariff.off_peak_end
-    )
+    cheap_import, peak_import = _split_import_kwh(rows, tariff.off_peak_start, tariff.off_peak_end)
     battery_charge = rows[-1].daily_battery_charge_kwh if rows else 0.0
     battery_discharge = rows[-1].daily_battery_discharge_kwh if rows else 0.0
     battery_charge = battery_charge or 0.0

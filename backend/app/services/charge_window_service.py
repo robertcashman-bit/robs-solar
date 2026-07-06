@@ -104,10 +104,7 @@ def _peak_import_message(
     if next_cheap_start is not None:
         local = to_tariff(next_cheap_start)
         label = "off-peak" if next_cheap_source == "off-peak" else "smart-charge"
-        next_hint = (
-            f" Next cheap {label} window from "
-            f"{local.strftime('%H:%M')}."
-        )
+        next_hint = f" Next cheap {label} window from {local.strftime('%H:%M')}."
 
     if holding:
         return (
@@ -180,9 +177,7 @@ def evaluate_charge_window(
     window_end = active_band.end if active_band else ""
     target_soc = active_band.target_soc_pct if active_band else None
 
-    next_start, next_source = next_cheap_window_start(
-        now, offpeak_start, offpeak_end, planned
-    )
+    next_start, next_source = next_cheap_window_start(now, offpeak_start, offpeak_end, planned)
     next_cheap_start = next_start.isoformat() if next_start else None
 
     base = dict(
@@ -201,17 +196,17 @@ def evaluate_charge_window(
     if cheap_now and importing:
         label = "overnight off-peak" if cheap_source == "off-peak" else "smart-charge"
         cap_text = f"{target_soc}%" if target_soc is not None else "its reserve"
-        end_label = offpeak_end if cheap_source == "off-peak" else (
-            next(
-                (
-                    to_tariff(w.end).strftime("%H:%M")
-                    for w in planned
-                    if w.start <= now < w.end
-                ),
-                None,
+        end_label = (
+            offpeak_end
+            if cheap_source == "off-peak"
+            else (
+                next(
+                    (to_tariff(w.end).strftime("%H:%M") for w in planned if w.start <= now < w.end),
+                    None,
+                )
+                or window_end
+                or "the window end"
             )
-            or window_end
-            or "the window end"
         )
         message = (
             f"Importing {grid_import_w / 1000:.1f} kW from the grid on cheap power "

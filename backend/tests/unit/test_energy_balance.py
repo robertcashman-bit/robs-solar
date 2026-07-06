@@ -47,13 +47,16 @@ def test_sunsynk_flow_scenario(scenario: dict) -> None:
     if scenario.get("skip_balance_check"):
         return
 
-    assert _balance_error(
-        pv=metrics.pv_power_w,
-        grid_import=metrics.grid_import_w,
-        grid_export=metrics.grid_export_w,
-        battery=metrics.battery_power_w,
-        house_load=metrics.house_load_w,
-    ) < 2
+    assert (
+        _balance_error(
+            pv=metrics.pv_power_w,
+            grid_import=metrics.grid_import_w,
+            grid_export=metrics.grid_export_w,
+            battery=metrics.battery_power_w,
+            house_load=metrics.house_load_w,
+        )
+        < 2
+    )
 
 
 def test_low_load_metrics_for_frontend() -> None:

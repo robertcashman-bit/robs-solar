@@ -28,9 +28,7 @@ class DailySavingsService:
         warnings = await system_warnings_service.evaluate(db)
         now = datetime.now(timezone.utc)
 
-        row = await db.scalar(
-            select(DailySavingsRow).where(DailySavingsRow.date == today)
-        )
+        row = await db.scalar(select(DailySavingsRow).where(DailySavingsRow.date == today))
         warnings_json = json.dumps([w.model_dump() for w in warnings.warnings])
         score = summary.optimisation_score.total if summary.optimisation_score else 0
 
@@ -79,11 +77,7 @@ class DailySavingsService:
         warnings = json.loads(warnings_json or "[]")
         peak_discharge_ok = True
         for w in warnings:
-            text = (
-                f"{w.get('title', '')} {w.get('message', '')}"
-                if isinstance(w, dict)
-                else str(w)
-            )
+            text = f"{w.get('title', '')} {w.get('message', '')}" if isinstance(w, dict) else str(w)
             if "discharg" in text.lower() or "peak" in text.lower():
                 peak_discharge_ok = False
                 break
@@ -94,9 +88,7 @@ class DailySavingsService:
         )
         sample_list = list(samples.all())
         avg_soc = (
-            sum(s.battery_soc_pct for s in sample_list) / len(sample_list)
-            if sample_list
-            else 0.0
+            sum(s.battery_soc_pct for s in sample_list) / len(sample_list) if sample_list else 0.0
         )
 
         payload = {

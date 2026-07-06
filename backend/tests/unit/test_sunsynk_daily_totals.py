@@ -30,12 +30,9 @@ def test_integrate_day_series_five_minute_cadence() -> None:
     # Realistic partial-day feed: 5-minute spacing. A steady 6 kW import for one
     # hour (12 samples) should be ~6 kWh regardless of how many samples exist.
     records = [
-        {"time": f"{(i * 5) // 60:02d}:{(i * 5) % 60:02d}", "value": "6000"}
-        for i in range(12)
+        {"time": f"{(i * 5) // 60:02d}:{(i * 5) % 60:02d}", "value": "6000"} for i in range(12)
     ]
-    totals = SunsynkConnectAdapter._integrate_day_series(
-        [{"label": "Grid", "records": records}]
-    )
+    totals = SunsynkConnectAdapter._integrate_day_series([{"label": "Grid", "records": records}])
     # 12 samples * 5min * 6000W -> 6.0 kWh
     assert abs(totals["import"] - 6.0) < 0.01
 

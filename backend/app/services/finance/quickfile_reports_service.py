@@ -37,12 +37,8 @@ class QuickFileReportsService:
         month_start = _month_start(now)
         year_start = _year_start(now)
 
-        pl_month_body = await client.fetch_profit_and_loss(
-            from_date=month_start, to_date=today
-        )
-        pl_ytd_body = await client.fetch_profit_and_loss(
-            from_date=year_start, to_date=today
-        )
+        pl_month_body = await client.fetch_profit_and_loss(from_date=month_start, to_date=today)
+        pl_ytd_body = await client.fetch_profit_and_loss(from_date=year_start, to_date=today)
         bs_body = await client.fetch_balance_sheet(to_date=today)
 
         synced_at = now.isoformat()
@@ -60,9 +56,7 @@ class QuickFileReportsService:
         )
 
     async def get_stored_reports(self, db: AsyncSession) -> QuickFileReportsResponse | None:
-        row = await db.scalar(
-            select(AppSettingRow).where(AppSettingRow.key == _REPORTS_KEY)
-        )
+        row = await db.scalar(select(AppSettingRow).where(AppSettingRow.key == _REPORTS_KEY))
         if row is None:
             return None
         try:
@@ -74,9 +68,7 @@ class QuickFileReportsService:
         self, db: AsyncSession, reports: QuickFileReportsResponse
     ) -> QuickFileReportsResponse:
         payload = reports.model_dump(mode="json")
-        row = await db.scalar(
-            select(AppSettingRow).where(AppSettingRow.key == _REPORTS_KEY)
-        )
+        row = await db.scalar(select(AppSettingRow).where(AppSettingRow.key == _REPORTS_KEY))
         encoded = json.dumps(payload)
         if row is None:
             db.add(AppSettingRow(key=_REPORTS_KEY, value=encoded))
@@ -121,9 +113,7 @@ class QuickFileReportsService:
             "source": "quickfile",
             "profit_and_loss_month": pl.model_dump(),
             "profit_and_loss_ytd": (
-                reports.profit_and_loss_ytd.model_dump()
-                if reports.profit_and_loss_ytd
-                else None
+                reports.profit_and_loss_ytd.model_dump() if reports.profit_and_loss_ytd else None
             ),
             "balance_sheet": bs.model_dump() if bs else None,
         }
