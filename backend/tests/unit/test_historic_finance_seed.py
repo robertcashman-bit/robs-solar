@@ -13,6 +13,7 @@ def test_account_is_historic() -> None:
     assert account_is_historic(FinanceAccountSource.MANUAL) is True
     assert account_is_historic(FinanceAccountSource.QUICKFILE) is False
     assert account_is_historic(FinanceAccountSource.OPEN_BANKING) is False
+    assert account_is_historic(FinanceAccountSource.LUNCH_FLOW) is False
 
 
 @pytest.mark.asyncio

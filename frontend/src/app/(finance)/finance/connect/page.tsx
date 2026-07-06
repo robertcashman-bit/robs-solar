@@ -24,7 +24,7 @@ function ConnectBanksContent() {
       <PageHeader
         eyebrow="Finance"
         title="Connect banks"
-        description="Link Lloyds, MBNA, Virgin Money (personal), Capital on Tap (QuickFile), and Funding Circle (manual). Use the menu item Connect banks anytime to return here."
+        description="Link Lloyds, MBNA, Virgin Money via Lunch Flow (personal), Capital on Tap (QuickFile), and Funding Circle (manual). Use the menu item Connect banks anytime to return here."
       />
       <div className="mt-6">
         <BankConnectionsHub />

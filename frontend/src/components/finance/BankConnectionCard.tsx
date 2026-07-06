@@ -14,6 +14,7 @@ type BankConnectionCardProps = {
   connection: BankConnectionItem;
   writable: boolean;
   busy: boolean;
+  personalProvider?: "enable_banking" | "lunch_flow";
   onConnect: () => void;
   onDisconnect: () => void;
   onSync: () => void;
@@ -23,6 +24,7 @@ export function BankConnectionCard({
   connection,
   writable,
   busy,
+  personalProvider = "enable_banking",
   onConnect,
   onDisconnect,
   onSync,
@@ -54,7 +56,9 @@ export function BankConnectionCard({
             <h3 className="font-semibold">{connection.label}</h3>
             <p className="text-xs text-[var(--muted)]">
               {connection.method === "open_banking"
-                ? "Open Banking"
+                ? personalProvider === "lunch_flow"
+                  ? "Lunch Flow"
+                  : "Open Banking"
                 : connection.method === "quickfile"
                   ? "QuickFile"
                   : "Manual balance"}
@@ -84,9 +88,13 @@ export function BankConnectionCard({
       </dl>
 
       {connection.status === "not_configured" ? (
-        <Link href="/finance/open-banking/settings" className="text-sm underline">
-          Open Banking Settings →
-        </Link>
+        personalProvider === "lunch_flow" ? (
+          <p className="text-sm text-[var(--muted)]">Add your Lunch Flow API key above.</p>
+        ) : (
+          <Link href="/finance/open-banking/settings" className="text-sm underline">
+            Open Banking Settings →
+          </Link>
+        )
       ) : null}
 
       {writable ? (

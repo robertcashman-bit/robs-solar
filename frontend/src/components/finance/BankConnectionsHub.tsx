@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { z } from "zod";
 
 import { BankConnectionCard } from "@/components/finance/BankConnectionCard";
+import { LunchFlowSettingsForm } from "@/components/finance/LunchFlowSettingsForm";
 import {
   CONNECTION_SEARCH,
   ENABLE_BANKING_CP_URL,
@@ -15,11 +16,13 @@ import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import {
   bankConnectionsResponseSchema,
+  lunchFlowConfigStatusSchema,
   openBankingConfigStatusSchema,
   openBankingConnectResponseSchema,
   openBankingInstitutionSchema,
   openBankingSyncResultSchema,
   type BankConnectionItem,
+  type LunchFlowConfigStatus,
   type OpenBankingConfigStatus,
 } from "@/lib/finance-schemas";
 import { canWrite } from "@/lib/permissions";
@@ -36,6 +39,7 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
 
   const [connections, setConnections] = useState<BankConnectionItem[]>([]);
   const [obStatus, setObStatus] = useState<OpenBankingConfigStatus | null>(null);
+  const [lfStatus, setLfStatus] = useState<LunchFlowConfigStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -43,19 +47,23 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
 
   const obConfigured = obStatus?.configured ?? false;
   const obNeedsActivation = obConfigured && obStatus?.provider_ready === false;
+  const lfConfigured = lfStatus?.configured ?? false;
+  const useLunchFlow = lfConfigured;
 
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     setError(null);
     try {
-      const [cards, statusResponse] = await Promise.all([
+      const [cards, statusResponse, lfResponse] = await Promise.all([
         apiClient.get<unknown>("/finance/bank-connections"),
         apiClient.get<unknown>("/finance/integrations/open-banking/status"),
+        apiClient.get<unknown>("/finance/integrations/lunch-flow/status"),
       ]);
       const parsed = bankConnectionsResponseSchema.parse(cards);
       setConnections(parsed.connections);
       setObStatus(openBankingConfigStatusSchema.parse(statusResponse));
+      setLfStatus(lunchFlowConfigStatusSchema.parse(lfResponse));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Could not load your bank connections. Try again shortly.",
@@ -178,6 +186,11 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
 
   function handleConnect(connection: BankConnectionItem) {
     if (connection.method === "open_banking") {
+      if (useLunchFlow) {
+        window.open("https://lunchflow.app/dashboard", "_blank", "noopener,noreferrer");
+        setMessage("Connect your bank at Lunch Flow, then press Sync now here.");
+        return;
+      }
       void connectOpenBanking(connection.id);
       return;
     }
@@ -188,22 +201,25 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
 
   return (
     <div className="space-y-6">
+      <LunchFlowSettingsForm onSaved={() => void load()} readOnly={readOnly} />
+
       <p className="text-sm text-[var(--muted)]">
-        Connect your accounts once — balances and transactions refresh automatically every day. You
-        only ever log in on your bank&apos;s own secure page.
+        {useLunchFlow
+          ? "Personal banks sync via Lunch Flow — balances and transactions refresh automatically every day."
+          : "Connect your accounts once — balances and transactions refresh automatically every day."}
       </p>
 
-      {!obConfigured ? (
+      {!useLunchFlow && !obConfigured ? (
         <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-          Before connecting personal banks, an admin needs to complete{" "}
+          Alternatively, an admin can complete{" "}
           <Link href="/finance/open-banking/settings" className="font-medium underline">
             Open Banking Settings
           </Link>{" "}
-          once.
+          (Enable Banking — currently blocked for new UK banks).
         </p>
       ) : null}
 
-      {obNeedsActivation ? (
+      {!useLunchFlow && obNeedsActivation ? (
         <section className="rounded-xl border border-amber-300/40 bg-amber-500/10 px-4 py-4 text-sm text-amber-950 dark:text-amber-100">
           <h2 className="font-semibold">Open Banking activation required</h2>
           <p className="mt-2">
@@ -276,6 +292,7 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
               connection={connection}
               writable={writable}
               busy={busyId === connection.id || busyId === "finalize"}
+              personalProvider={useLunchFlow ? "lunch_flow" : "enable_banking"}
               onConnect={() => handleConnect(connection)}
               onDisconnect={() => void disconnectConnection(connection.id)}
               onSync={() => void syncConnection(connection.id)}

@@ -7,7 +7,9 @@ describe("OpenBankingSetupInstructions", () => {
   it("shows the setup guide title and Enable Banking steps", () => {
     render(<OpenBankingSetupInstructions redirectUrlExample="https://example.com/callback" />);
     expect(screen.getByText("Open Banking Setup Instructions")).toBeInTheDocument();
-    expect(screen.getByText(/Enable Banking \(recommended for UK banks\)/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Enable Banking \(only supported provider for new UK personal banks\)/),
+    ).toBeInTheDocument();
     expect(screen.getAllByText("Client ID").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Client Secret").length).toBeGreaterThan(0);
   });

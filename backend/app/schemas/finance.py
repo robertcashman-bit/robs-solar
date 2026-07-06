@@ -34,11 +34,16 @@ class FinanceAccountSource(str, Enum):
     MANUAL = "manual"
     OPEN_BANKING = "open_banking"
     QUICKFILE = "quickfile"
+    LUNCH_FLOW = "lunch_flow"
 
 
 def account_is_historic(source: FinanceAccountSource) -> bool:
     """True when balance is manually entered rather than synced live."""
-    return source not in (FinanceAccountSource.QUICKFILE, FinanceAccountSource.OPEN_BANKING)
+    return source not in (
+        FinanceAccountSource.QUICKFILE,
+        FinanceAccountSource.OPEN_BANKING,
+        FinanceAccountSource.LUNCH_FLOW,
+    )
 
 
 class DebtType(str, Enum):
@@ -428,6 +433,22 @@ class QuickFileSyncResult(BaseModel):
     message: str
 
 
+class LunchFlowConfig(BaseModel):
+    api_key: str = ""
+
+
+class LunchFlowConfigStatus(BaseModel):
+    api_key_set: bool = False
+    configured: bool = False
+    last_sync_at: str | None = None
+
+
+class LunchFlowSyncResult(BaseModel):
+    accounts_synced: int
+    transactions_synced: int = 0
+    message: str
+
+
 class OpenBankingConfig(BaseModel):
     provider: Literal["enable_banking", "gocardless"] = "enable_banking"
     application_id: str = ""
@@ -589,6 +610,7 @@ class BankConnectionStatus(str, Enum):
 
 class FinanceDailySyncResult(BaseModel):
     open_banking: str = ""
+    lunch_flow: str = ""
     quickfile: str = ""
     ok: bool = True
 

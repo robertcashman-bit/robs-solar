@@ -10,6 +10,7 @@ from app.auth.dependencies import require_admin, require_viewer
 from app.auth.sessions import SessionData
 from app.db.session import get_db
 from app.integrations.base import IntegrationNotConfiguredError
+from app.integrations.lunch_flow_client import LunchFlowClient, LunchFlowError
 from app.integrations.open_banking_provider import OpenBankingProvider
 from app.integrations.quickfile_provider import QuickFileProvider
 from app.integrations.registry import integration_registry
@@ -33,6 +34,9 @@ from app.schemas.finance import (
     FinanceScope,
     FinanceTransaction,
     HistoricFinanceSeedResponse,
+    LunchFlowConfig,
+    LunchFlowConfigStatus,
+    LunchFlowSyncResult,
     MonthlyBudgetLine,
     MonthlyBudgetLineCreate,
     MonthlyBudgetLineUpdate,
@@ -70,9 +74,11 @@ from app.services.finance.finance_liabilities_service import finance_liabilities
 from app.services.finance.finance_overview_service import finance_overview_service
 from app.services.finance.finance_reports_service import finance_reports_service
 from app.services.finance.historic_finance_seed import seed_historic_finance
+from app.services.finance.lunch_flow_sync_service import lunch_flow_sync_service
 from app.services.finance.open_banking_sync_service import open_banking_sync_service
 from app.services.finance.quickfile_reports_service import quickfile_reports_service
 from app.services.finance.quickfile_sync_service import quickfile_sync_service
+from app.services.lunch_flow_settings_service import lunch_flow_settings_service
 from app.services.open_banking_settings_service import open_banking_settings_service
 from app.services.open_banking_setup_validation import (
     classify_test_error,
@@ -91,7 +97,7 @@ router = APIRouter(prefix="/finance", tags=["finance"])
 async def finance_cron_daily_sync(
     _: None = Depends(require_cron_secret),
 ) -> FinanceDailySyncResult:
-    """Vercel Cron entry point — refreshes Open Banking and QuickFile once per day."""
+    """Vercel Cron entry point — refreshes Lunch Flow, Open Banking and QuickFile once per day."""
     return await finance_sync_once()
 
 
@@ -134,6 +140,18 @@ async def bank_connection_sync(
         raise HTTPException(status_code=404, detail="Bank connection not found")
 
     if bank.method.value == "open_banking":
+        lf_status = await lunch_flow_settings_service.get_status(db)
+        if lf_status.configured:
+            config = await lunch_flow_settings_service.get_config(db)
+            try:
+                result = await lunch_flow_sync_service.sync(db, config)
+                return OpenBankingSyncResult(
+                    accounts_synced=result.accounts_synced,
+                    message=result.message,
+                )
+            except IntegrationNotConfiguredError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         config = await open_banking_settings_service.get_config(db)
         try:
             return await open_banking_sync_service.sync(db, config)
@@ -480,6 +498,56 @@ async def quickfile_sync(
     config = await quickfile_settings_service.get_config(db)
     try:
         return await quickfile_sync_service.sync(db, config)
+    except IntegrationNotConfiguredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/integrations/lunch-flow/status", response_model=LunchFlowConfigStatus)
+async def lunch_flow_status(
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> LunchFlowConfigStatus:
+    return await lunch_flow_settings_service.get_status(db)
+
+
+@router.put("/integrations/lunch-flow/settings", response_model=LunchFlowConfigStatus)
+async def lunch_flow_save_settings(
+    request: Request,
+    body: LunchFlowConfig,
+    session: SessionData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> LunchFlowConfigStatus:
+    await enforce_write_rate_limit(request)
+    return await lunch_flow_settings_service.set_config(db, body)
+
+
+@router.post("/integrations/lunch-flow/test")
+async def lunch_flow_test_connection(
+    request: Request,
+    session: SessionData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    await enforce_write_rate_limit(request)
+    config = await lunch_flow_settings_service.get_config(db)
+    if not config.api_key:
+        raise HTTPException(status_code=400, detail="Lunch Flow API key is required")
+    client = LunchFlowClient(config)
+    try:
+        return await client.test_connection()
+    except LunchFlowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/integrations/lunch-flow/sync", response_model=LunchFlowSyncResult)
+async def lunch_flow_sync(
+    request: Request,
+    session: SessionData = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> LunchFlowSyncResult:
+    await enforce_write_rate_limit(request)
+    config = await lunch_flow_settings_service.get_config(db)
+    try:
+        return await lunch_flow_sync_service.sync(db, config)
     except IntegrationNotConfiguredError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

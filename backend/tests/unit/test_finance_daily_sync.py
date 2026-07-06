@@ -10,6 +10,7 @@ from app.services.finance import finance_daily_sync_service
 @pytest.mark.asyncio
 async def test_sync_once_calls_configured_integrations() -> None:
     ob_result = type("Result", (), {"message": "ob ok"})()
+    lf_result = type("Result", (), {"message": "lf ok"})()
     qf_result = type("Result", (), {"message": "qf ok", "accounts_synced": 2})()
 
     with (
@@ -34,6 +35,21 @@ async def test_sync_once_calls_configured_integrations() -> None:
             new=AsyncMock(return_value=ob_result),
         ) as ob_sync,
         patch.object(
+            finance_daily_sync_service.lunch_flow_settings_service,
+            "get_status",
+            new=AsyncMock(return_value=type("Status", (), {"configured": True})()),
+        ),
+        patch.object(
+            finance_daily_sync_service.lunch_flow_settings_service,
+            "get_config",
+            new=AsyncMock(return_value=object()),
+        ),
+        patch.object(
+            finance_daily_sync_service.lunch_flow_sync_service,
+            "sync",
+            new=AsyncMock(return_value=lf_result),
+        ) as lf_sync,
+        patch.object(
             finance_daily_sync_service.quickfile_settings_service,
             "get_config",
             new=AsyncMock(return_value=object()),
@@ -52,6 +68,7 @@ async def test_sync_once_calls_configured_integrations() -> None:
         await finance_daily_sync_service.sync_once()
 
     ob_sync.assert_awaited_once()
+    lf_sync.assert_awaited_once()
     qf_sync.assert_awaited_once()
 
 
@@ -74,6 +91,11 @@ async def test_sync_once_returns_structured_result() -> None:
             return_value=False,
         ),
         patch.object(
+            finance_daily_sync_service.lunch_flow_settings_service,
+            "get_status",
+            new=AsyncMock(return_value=type("Status", (), {"configured": False})()),
+        ),
+        patch.object(
             finance_daily_sync_service.quickfile_settings_service,
             "get_config",
             new=AsyncMock(return_value=object()),
@@ -88,6 +110,7 @@ async def test_sync_once_returns_structured_result() -> None:
 
     assert result.ok is True
     assert "skipped" in result.open_banking.lower()
+    assert "skipped" in result.lunch_flow.lower()
 
 
 @pytest.mark.asyncio

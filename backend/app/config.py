@@ -147,6 +147,9 @@ class Settings(BaseSettings):
     open_banking_secret_key: str = ""
     open_banking_redirect_url: str = "http://127.0.0.1:3000/open-banking/callback"
 
+    # Personal banks via Lunch Flow (API key — connect banks at lunchflow.app)
+    lunch_flow_api_key: str = ""
+
     # Finance background sync (Open Banking + QuickFile)
     finance_daily_sync_enabled: bool = True
     finance_daily_sync_interval_hours: int = 24

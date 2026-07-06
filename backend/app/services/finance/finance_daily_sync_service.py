@@ -10,8 +10,10 @@ from app.db.session import SessionLocal
 from app.integrations.base import IntegrationNotConfiguredError
 from app.integrations.enable_banking_client import EnableBankingClient, EnableBankingError
 from app.schemas.finance import FinanceDailySyncResult
+from app.services.finance.lunch_flow_sync_service import lunch_flow_sync_service
 from app.services.finance.open_banking_sync_service import open_banking_sync_service
 from app.services.finance.quickfile_sync_service import quickfile_sync_service
+from app.services.lunch_flow_settings_service import lunch_flow_settings_service
 from app.services.open_banking_settings_service import open_banking_settings_service
 from app.services.quickfile_settings_service import quickfile_settings_service
 
@@ -68,6 +70,23 @@ async def sync_once() -> FinanceDailySyncResult:
                 logger.warning("Open Banking daily sync failed: %s", exc)
         else:
             result.open_banking = "Open Banking not configured — skipped"
+
+        lf_status = await lunch_flow_settings_service.get_status(db)
+        if lf_status.configured:
+            try:
+                lf_config = await lunch_flow_settings_service.get_config(db)
+                sync_result = await lunch_flow_sync_service.sync(db, lf_config)
+                result.lunch_flow = sync_result.message
+                logger.info("Finance daily sync (Lunch Flow): %s", sync_result.message)
+            except IntegrationNotConfiguredError as exc:
+                result.lunch_flow = str(exc)
+                logger.debug("Lunch Flow daily sync skipped: %s", exc)
+            except Exception as exc:
+                result.lunch_flow = "Daily sync failed"
+                result.ok = False
+                logger.warning("Lunch Flow daily sync failed: %s", exc)
+        else:
+            result.lunch_flow = "Lunch Flow not configured — skipped"
 
         qf_config = await quickfile_settings_service.get_config(db)
         qf_status = await quickfile_settings_service.get_status(db)

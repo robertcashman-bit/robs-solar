@@ -262,6 +262,18 @@ export const quickFileSyncResultSchema = z.object({
   message: z.string(),
 });
 
+export const lunchFlowConfigStatusSchema = z.object({
+  api_key_set: z.boolean(),
+  configured: z.boolean(),
+  last_sync_at: z.string().nullable().optional(),
+});
+
+export const lunchFlowSyncResultSchema = z.object({
+  accounts_synced: z.number(),
+  transactions_synced: z.number().optional(),
+  message: z.string(),
+});
+
 export const openBankingConfigStatusSchema = z.object({
   provider: z.enum(["enable_banking", "gocardless"]).default("enable_banking"),
   application_id: z.string(),
@@ -368,6 +380,7 @@ export type QuickFileProfitAndLossSummary = z.infer<typeof quickFileProfitAndLos
 export type QuickFileBalanceSheetSummary = z.infer<typeof quickFileBalanceSheetSummarySchema>;
 export type QuickFileReports = z.infer<typeof quickFileReportsSchema>;
 export type QuickFileConfigStatus = z.infer<typeof quickFileConfigStatusSchema>;
+export type LunchFlowConfigStatus = z.infer<typeof lunchFlowConfigStatusSchema>;
 export type QuickFileSyncResult = z.infer<typeof quickFileSyncResultSchema>;
 export type OpenBankingConfigStatus = z.infer<typeof openBankingConfigStatusSchema>;
 export type OpenBankingTestResult = z.infer<typeof openBankingTestResultSchema>;

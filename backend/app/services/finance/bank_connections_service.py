@@ -17,6 +17,7 @@ from app.schemas.finance import (
     FinanceAccountSource,
     OpenBankingRequisition,
 )
+from app.services.lunch_flow_settings_service import lunch_flow_settings_service
 from app.services.open_banking_settings_service import open_banking_settings_service
 from app.services.quickfile_settings_service import quickfile_settings_service
 
@@ -133,6 +134,61 @@ def _sum_balances(
     total = sum(account.balance_gbp for account in accounts)
     total += sum(liability.balance_gbp for liability in liabilities)
     return round(total, 2)
+
+
+async def _build_lunch_flow_connection(
+    db: AsyncSession,
+    bank: TargetBank,
+    *,
+    last_sync_at: str | None,
+) -> BankConnectionItem:
+    status = await lunch_flow_settings_service.get_status(db)
+    if not status.configured:
+        return BankConnectionItem(
+            id=bank.id,
+            label=bank.label,
+            method=bank.method,
+            status=BankConnectionStatus.NOT_CONFIGURED,
+            status_message=(
+                "Lunch Flow is not set up yet. Add your API key on the Connect banks page."
+            ),
+        )
+
+    accounts = await _matching_accounts(db, bank)
+    lf_accounts = [
+        account for account in accounts if account.source == FinanceAccountSource.LUNCH_FLOW.value
+    ]
+    balance = _sum_balances(lf_accounts, [])
+    institution = lf_accounts[0].provider if lf_accounts else "Lunch Flow"
+
+    if lf_accounts:
+        message = "Synced from Lunch Flow."
+        if last_sync_at:
+            message = f"Synced from Lunch Flow. Last synced {last_sync_at}."
+        return BankConnectionItem(
+            id=bank.id,
+            label=bank.label,
+            method=bank.method,
+            status=BankConnectionStatus.CONNECTED,
+            status_message=message,
+            last_sync_at=_format_sync_time(last_sync_at),
+            institution=institution,
+            account_count=len(lf_accounts),
+            balance_gbp=balance,
+        )
+
+    return BankConnectionItem(
+        id=bank.id,
+        label=bank.label,
+        method=bank.method,
+        status=BankConnectionStatus.NOT_CONNECTED,
+        status_message=(
+            "Connect this bank at lunchflow.app, then press Sync here to import balances."
+        ),
+        institution="Lunch Flow",
+        account_count=0,
+        balance_gbp=0.0,
+    )
 
 
 async def _build_open_banking_connection(
@@ -316,23 +372,31 @@ async def _build_manual_connection(db: AsyncSession, bank: TargetBank) -> BankCo
 async def get_connections(db: AsyncSession) -> list[BankConnectionItem]:
     config = await open_banking_settings_service.get_config(db)
     requisitions = await open_banking_settings_service.list_requisitions(db)
+    lf_status = await lunch_flow_settings_service.get_status(db)
     ob_sync_row = await open_banking_settings_service._get_row(db, "open_banking_last_sync_at")
+    lf_sync_row = await lunch_flow_settings_service._get_row(db, "lunch_flow_last_sync_at")
     qf_sync_row = await quickfile_settings_service._get_row(db, "quickfile_last_sync_at")
     ob_last_sync = ob_sync_row.value if ob_sync_row else None
+    lf_last_sync = lf_sync_row.value if lf_sync_row else None
     qf_last_sync = qf_sync_row.value if qf_sync_row else None
 
     items: list[BankConnectionItem] = []
     for bank in TARGET_BANKS.values():
         if bank.method == BankConnectionMethod.OPEN_BANKING:
-            items.append(
-                await _build_open_banking_connection(
-                    db,
-                    bank,
-                    config=config,
-                    requisitions=requisitions,
-                    last_sync_at=ob_last_sync,
+            if lf_status.configured:
+                items.append(
+                    await _build_lunch_flow_connection(db, bank, last_sync_at=lf_last_sync)
                 )
-            )
+            else:
+                items.append(
+                    await _build_open_banking_connection(
+                        db,
+                        bank,
+                        config=config,
+                        requisitions=requisitions,
+                        last_sync_at=ob_last_sync,
+                    )
+                )
         elif bank.method == BankConnectionMethod.QUICKFILE:
             items.append(await _build_quickfile_connection(db, bank, last_sync_at=qf_last_sync))
         else:
@@ -362,7 +426,10 @@ async def disconnect(db: AsyncSession, connection_id: str) -> bool:
     now = datetime.now(timezone.utc)
     accounts = await _matching_accounts(db, bank)
     for account in accounts:
-        if account.source == FinanceAccountSource.OPEN_BANKING.value:
+        if account.source in (
+            FinanceAccountSource.OPEN_BANKING.value,
+            FinanceAccountSource.LUNCH_FLOW.value,
+        ):
             account.is_active = False
             account.updated_at = now
     await db.commit()
