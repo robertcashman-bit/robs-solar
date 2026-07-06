@@ -51,6 +51,20 @@ async def test_test_connection_invalid_key() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_test_connection_forbidden_surfaces_api_message() -> None:
+    # Live API returns 403 "Invalid credentials." for a bad key.
+    respx.get("https://www.lunchflow.app/api/v1/accounts").mock(
+        return_value=httpx.Response(
+            403, json={"error": "Forbidden", "message": "Invalid credentials."}
+        )
+    )
+    client = LunchFlowClient(LunchFlowConfig(api_key="bad"))
+    with pytest.raises(LunchFlowError, match="Invalid credentials"):
+        await client.test_connection()
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_account_balance_and_transactions() -> None:
     respx.get("https://www.lunchflow.app/api/v1/accounts/7/balance").mock(
         return_value=httpx.Response(

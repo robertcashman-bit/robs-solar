@@ -102,3 +102,75 @@ async def test_sync_imports_accounts_and_transactions() -> None:
         assert len(pending) == 1
         # Null transaction id must not produce a bare "lunchflow:11:" external id.
         assert pending[0].external_id != "lunchflow:11:"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_retires_disconnected_accounts_and_skips_non_gbp() -> None:
+    respx.get("https://www.lunchflow.app/api/v1/accounts").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": 21,
+                        "name": "Old Lloyds current",
+                        "institution_name": "Lloyds Bank",
+                        "institution_logo": "",
+                        "provider": "gocardless",
+                        "status": "DISCONNECTED",
+                    },
+                    {
+                        "id": 22,
+                        "name": "Euro account",
+                        "institution_name": "Virgin Money",
+                        "institution_logo": "",
+                        "provider": "gocardless",
+                        "currency": "EUR",
+                        "status": "ACTIVE",
+                    },
+                ],
+                "total": 2,
+            },
+        )
+    )
+
+    from datetime import datetime, timezone
+
+    async with SessionLocal() as db:
+        await db.execute(delete(FinanceTransactionRow))
+        await db.execute(delete(FinanceAccountRow))
+        await db.commit()
+
+        now = datetime.now(timezone.utc)
+        db.add(
+            FinanceAccountRow(
+                scope="personal",
+                account_type="current",
+                name="Old Lloyds current",
+                provider="Lloyds Bank",
+                balance_gbp=900.0,
+                source=FinanceAccountSource.LUNCH_FLOW.value,
+                external_id="lunchflow:21",
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await db.commit()
+
+        result = await lunch_flow_sync_service.sync(db, LunchFlowConfig(api_key="secret"))
+        assert result.accounts_synced == 0
+        assert "disconnected" in result.message
+        assert "non-GBP" in result.message
+
+        stale = await db.scalar(
+            select(FinanceAccountRow).where(FinanceAccountRow.external_id == "lunchflow:21")
+        )
+        assert stale is not None
+        assert stale.is_active is False
+
+        euro = await db.scalar(
+            select(FinanceAccountRow).where(FinanceAccountRow.external_id == "lunchflow:22")
+        )
+        assert euro is None

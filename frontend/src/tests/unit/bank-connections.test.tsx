@@ -55,4 +55,28 @@ describe("BankConnectionCard", () => {
     expect(screen.getByRole("button", { name: "Sync now" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
   });
+
+  it("hides disconnect for Lunch Flow-backed connections", () => {
+    const connected: BankConnectionItem = {
+      ...baseConnection,
+      status: "connected",
+      status_message: "Synced from Lunch Flow.",
+      account_count: 1,
+      balance_gbp: 1200,
+    };
+    render(
+      <BankConnectionCard
+        connection={connected}
+        writable
+        busy={false}
+        personalProvider="lunch_flow"
+        onConnect={vi.fn()}
+        onDisconnect={vi.fn()}
+        onSync={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Lunch Flow")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sync now" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Disconnect" })).not.toBeInTheDocument();
+  });
 });
