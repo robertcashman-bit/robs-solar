@@ -210,20 +210,31 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
             {obStatus?.readiness_message ??
               "Your provider accepted the credentials but the app is not fully active yet."}
           </p>
+          <p className="mt-2 rounded-lg border border-amber-400/30 bg-amber-500/5 px-3 py-2">
+            <strong>UK banks (Lloyds, MBNA, Virgin):</strong> your Enable Banking account currently
+            lists <strong>zero GB banks</strong>, so those cannot be connected via Enable Banking.
+            For UK personal accounts, switch provider to{" "}
+            <strong>GoCardless / Nordigen</strong> in{" "}
+            <Link href="/finance/open-banking/settings" className="font-medium underline">
+              Open Banking Settings
+            </Link>{" "}
+            (free Bank Account Data tier).
+          </p>
           <ol className="mt-3 list-decimal space-y-1 pl-5">
             <li>
               Sign in at{" "}
               <a
-                href={ENABLE_BANKING_CP_URL}
+                href="https://enablebanking.com/sign-in/?next=%2Fcp%2Fapplications"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium underline"
               >
                 Enable Banking Control Panel
-              </a>
+              </a>{" "}
+              using <strong>robertdavidcashman@gmail.com</strong> (magic link — not AOL)
             </li>
-            <li>Open your production app and choose activate by linking accounts</li>
-            <li>Return here and press Connect on each bank</li>
+            <li>Open <strong>Rob&apos;s Finance Production</strong> → Activate by linking accounts</li>
+            <li>Return here and press Connect on each bank (or use GoCardless for UK banks)</li>
           </ol>
           <div className="mt-3 flex flex-wrap gap-2">
             <a

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Check production Enable Banking app status and print activation steps.
+"""Enable Banking production diagnostics, sign-in, and activation helper.
 
-Uses the saved Firebase refresh token (robertdavidcashman@gmail.com) for CP API
-access. Restricted Production activation still requires linking a real bank
-account through Enable Banking's authorisation UI — that step cannot be completed
-via API alone.
+Uses the saved Firebase refresh token (robertdavidcashman@gmail.com) for Control
+Panel API access. Discovered CP endpoints (not the public AIS API):
+  GET  /api/aspsps              (Firebase token)
+  POST /api/link_accounts       (Firebase token — starts bank linking / activation)
 """
 
 from __future__ import annotations
@@ -14,14 +14,17 @@ import json
 import sys
 import webbrowser
 from pathlib import Path
+from urllib.parse import urlencode
 
 import httpx
 
 ROOT = Path(__file__).resolve().parent.parent
 SECRETS = ROOT / "backend" / ".secrets" / "enable_banking"
 FIREBASE_API_KEY = "AIzaSyBn8fvjRYQKslskRaO3cblUjmcyl5b9o-c"
-CP_APPLICATIONS = "https://enablebanking.com/cp/applications"
-PRODUCTION_KID = "fd4c8a86-6433-4f04-9086-7f7a44d69e8c"
+CP_SIGN_IN = "https://enablebanking.com/sign-in/?next=%2Fcp%2Fapplications"
+CP_APP_URL = "https://enablebanking.com/cp/applications"
+SIGN_IN_EMAIL = "robertdavidcashman@gmail.com"
+TARGET_BANKS = ("Lloyds", "MBNA", "Virgin Money", "Halifax", "Monzo", "Starling")
 
 
 def firebase_session() -> tuple[str, dict[str, object]]:
@@ -39,6 +42,21 @@ def firebase_session() -> tuple[str, dict[str, object]]:
     return str(data["id_token"]), data
 
 
+def send_sign_in_link(email: str) -> None:
+    response = httpx.post(
+        f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_API_KEY}",
+        json={
+            "requestType": "EMAIL_SIGNIN",
+            "email": email,
+            "continueUrl": CP_APP_URL,
+            "canHandleCodeInApp": False,
+        },
+        timeout=60,
+    )
+    response.raise_for_status()
+    print(f"Sign-in link sent to {email} — check inbox and spam.")
+
+
 def list_applications(id_token: str) -> list[dict[str, object]]:
     response = httpx.get(
         "https://enablebanking.com/api/applications",
@@ -52,11 +70,54 @@ def list_applications(id_token: str) -> list[dict[str, object]]:
     return payload
 
 
-def find_production_app(apps: list[dict[str, object]]) -> dict[str, object] | None:
-    for app in apps:
-        if app.get("environment") == "PRODUCTION":
-            return app
-    return None
+def cp_aspsps(id_token: str, *, country: str = "GB") -> list[dict[str, object]]:
+    response = httpx.get(
+        "https://enablebanking.com/api/aspsps",
+        headers={"Authorization": f"Bearer {id_token}", "Accept": "application/json"},
+        params={"country": country, "psu_type": "personal"},
+        timeout=90,
+    )
+    response.raise_for_status()
+    rows = response.json().get("aspsps", [])
+    return rows if isinstance(rows, list) else []
+
+
+def start_link_accounts(
+    id_token: str,
+    *,
+    app_id: str,
+    country: str,
+    aspsp_name: str,
+) -> str:
+    body = urlencode(
+        {
+            "country": country,
+            "aspsp": aspsp_name,
+            "appId": app_id,
+            "psuType": "personal",
+            "redirectUrl": "https://enablebanking.com/api/auth_redirect",
+        }
+    )
+    response = httpx.post(
+        "https://enablebanking.com/api/link_accounts",
+        headers={
+            "Authorization": f"Bearer {id_token}",
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        content=body,
+        timeout=90,
+    )
+    if response.status_code >= 400:
+        raise httpx.HTTPStatusError(
+            f"link_accounts failed: {response.text[:300]}",
+            request=response.request,
+            response=response,
+        )
+    url = response.json().get("url")
+    if not url:
+        raise SystemExit(f"link_accounts returned no URL: {response.text[:300]}")
+    return str(url)
 
 
 def hosted_readiness(backend_url: str) -> dict[str, object]:
@@ -71,28 +132,11 @@ def hosted_readiness(backend_url: str) -> dict[str, object]:
         return status.json()
 
 
-def firebase_browser_storage(session: dict[str, object]) -> str:
-    """Build localStorage payload for Enable Banking Firebase web auth."""
-    import base64
-
-    id_token = str(session["id_token"])
-    payload = id_token.split(".")[1] + "=="
-    claims = json.loads(base64.urlsafe_b64decode(payload))
-    expiration_ms = int(claims.get("exp", 0)) * 1000
-    auth_user = {
-        "uid": session.get("user_id") or claims.get("user_id") or claims.get("sub"),
-        "email": claims.get("email"),
-        "emailVerified": bool(claims.get("email_verified")),
-        "isAnonymous": False,
-        "providerData": [],
-        "stsTokenManager": {
-            "refreshToken": session.get("refresh_token"),
-            "accessToken": session.get("access_token") or id_token,
-            "expirationTime": expiration_ms,
-        },
-    }
-    storage_key = f"firebase:authUser:{FIREBASE_API_KEY}:[DEFAULT]"
-    return json.dumps({storage_key: json.dumps(auth_user)})
+def find_production_app(apps: list[dict[str, object]]) -> dict[str, object] | None:
+    for app in apps:
+        if app.get("environment") == "PRODUCTION":
+            return app
+    return None
 
 
 def main() -> int:
@@ -103,18 +147,29 @@ def main() -> int:
         help="Hosted backend base URL",
     )
     parser.add_argument(
-        "--open-cp",
+        "--send-sign-in-link",
         action="store_true",
-        help="Open Enable Banking Control Panel in the default browser",
+        help="Email a Control Panel magic sign-in link to robertdavidcashman@gmail.com",
     )
     parser.add_argument(
-        "--print-browser-auth",
+        "--open-cp",
         action="store_true",
-        help="Print Firebase localStorage JSON for manual browser session injection",
+        help="Open Enable Banking sign-in in the default browser",
+    )
+    parser.add_argument(
+        "--start-link",
+        metavar="BANK",
+        default="",
+        help="Start CP account linking (e.g. 'Revolut' with --link-country IE)",
+    )
+    parser.add_argument(
+        "--link-country",
+        default="IE",
+        help="Country code for --start-link (default IE — GB has no banks on this account)",
     )
     args = parser.parse_args()
 
-    id_token, session = firebase_session()
+    id_token, _session = firebase_session()
     apps = list_applications(id_token)
     production = find_production_app(apps)
     if production is None:
@@ -123,48 +178,95 @@ def main() -> int:
 
     name = production.get("name")
     active = production.get("active")
-    kid = production.get("kid")
-    print(f"Signed in as: robertdavidcashman@gmail.com")
+    kid = str(production.get("kid") or "")
+
+    print(f"Signed in (API) as: {SIGN_IN_EMAIL}")
     print(f"Production app: {name}")
-    print(f"Application ID (kid): {kid}")
-    print(f"CP active flag: {active}")
+    print(f"Application ID: {kid}")
+    print(f"Active in Enable Banking: {active}")
+
+    gb_banks = cp_aspsps(id_token, country="GB")
+    uk_matches = [
+        row["name"]
+        for row in gb_banks
+        if any(needle.lower() in str(row.get("name", "")).lower() for needle in TARGET_BANKS)
+    ]
+    print(f"\nUK (GB) banks available on your Enable account: {len(gb_banks)}")
+    if uk_matches:
+        print("  Matches for Lloyds/MBNA/Virgin:", ", ".join(uk_matches))
+    else:
+        print(
+            "  No Lloyds, MBNA, Virgin Money, Monzo, or Starling listed under GB.\n"
+            "  Enable Banking on your account does not currently offer UK open banking.\n"
+            "  For Lloyds / MBNA / Virgin, switch Open Banking provider to GoCardless\n"
+            "  (Bank Account Data) in /finance/open-banking/settings — free for personal use."
+        )
 
     try:
         readiness = hosted_readiness(args.backend_url)
-        print("\nHosted readiness:")
-        print(json.dumps(
-            {
-                "provider_ready": readiness.get("provider_ready"),
-                "readiness_status": readiness.get("readiness_status"),
-                "readiness_message": readiness.get("readiness_message"),
-            },
-            indent=2,
-        ))
+        print("\nHosted app readiness:")
+        print(
+            json.dumps(
+                {
+                    "provider_ready": readiness.get("provider_ready"),
+                    "readiness_status": readiness.get("readiness_status"),
+                    "readiness_message": readiness.get("readiness_message"),
+                },
+                indent=2,
+            )
+        )
     except httpx.HTTPError as exc:
         print(f"\nCould not query hosted readiness: {exc}", file=sys.stderr)
 
-    if active:
-        print("\nProduction app is already active in Enable Banking.")
+    if args.send_sign_in_link:
+        send_sign_in_link(SIGN_IN_EMAIL)
+
+    if args.start_link:
+        if not kid:
+            print("Missing application kid.", file=sys.stderr)
+            return 1
+        try:
+            bank_url = start_link_accounts(
+                id_token,
+                app_id=kid,
+                country=args.link_country.upper(),
+                aspsp_name=args.start_link,
+            )
+            print(f"\nBank linking URL ({args.link_country} / {args.start_link}):")
+            print(bank_url)
+            if args.open_cp:
+                webbrowser.open(bank_url)
+        except httpx.HTTPError as exc:
+            print(f"\nCould not start account linking: {exc}", file=sys.stderr)
+            return 1
+
+    if not active:
+        print(
+            "\n--- Control Panel access ---\n"
+            f"1. Sign in at {CP_SIGN_IN}\n"
+            f"   Use {SIGN_IN_EMAIL} (not AOL — the app is registered under Gmail).\n"
+            "2. Check Gmail for the magic link (run with --send-sign-in-link if needed).\n"
+            f"3. Open Applications → '{name}' → Activate by linking accounts.\n"
+            "4. Pick a bank Enable actually lists (GB is empty on your account; try IE Revolut\n"
+            "   if you have it: --start-link Revolut --link-country IE).\n"
+            "5. After activation, return to https://robs-solar.vercel.app/finance/connect"
+        )
+    elif gb_banks:
+        print("\nApp is active and UK banks are listed — connect at /finance/connect")
+    else:
+        print(
+            "\nApp may be active but UK banks are still unavailable on Enable Banking.\n"
+            "Use GoCardless for Lloyds / MBNA / Virgin Money."
+        )
+
+    if args.open_cp and not args.start_link:
+        webbrowser.open(CP_SIGN_IN)
+
+    if active and gb_banks:
         return 0
-
-    print(
-        "\nActivation requires linking at least one real bank account in the Control Panel.\n"
-        "Enable Banking does not expose a public API for this step — complete it in the CP UI:"
-    )
-    print(f"  1. Open {CP_APPLICATIONS}")
-    print(f"  2. Open '{name}'")
-    print("  3. Click 'Activate by linking accounts'")
-    print("  4. Sign in at Lloyds, MBNA, or Virgin Money and authorise access")
-    print("  5. Return to https://robs-solar.vercel.app/finance/connect")
-
-    if args.print_browser_auth:
-        print("\nFirebase localStorage injection payload:")
-        print(firebase_browser_storage(session))
-
-    if args.open_cp:
-        webbrowser.open(CP_APPLICATIONS)
-
-    return 2 if not active else 0
+    if active and not gb_banks:
+        return 3
+    return 2
 
 
 if __name__ == "__main__":
