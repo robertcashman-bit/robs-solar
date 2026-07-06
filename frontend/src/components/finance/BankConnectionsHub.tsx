@@ -211,14 +211,16 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
               "Your provider accepted the credentials but the app is not fully active yet."}
           </p>
           <p className="mt-2 rounded-lg border border-amber-400/30 bg-amber-500/5 px-3 py-2">
-            <strong>UK banks (Lloyds, MBNA, Virgin):</strong> your Enable Banking account currently
-            lists <strong>zero GB banks</strong>, so those cannot be connected via Enable Banking.
-            For UK personal accounts, switch provider to{" "}
-            <strong>GoCardless / Nordigen</strong> in{" "}
-            <Link href="/finance/open-banking/settings" className="font-medium underline">
-              Open Banking Settings
-            </Link>{" "}
-            (free Bank Account Data tier).
+            <strong>UK banks not listed yet?</strong> Your Enable account currently shows zero GB banks.
+            Email{" "}
+            <a href="mailto:support.api@enablebanking.com" className="font-medium underline">
+              support.api@enablebanking.com
+            </a>{" "}
+            and ask them to enable GB coverage and help activate app{" "}
+            <code className="rounded bg-[var(--surface-sunken)] px-1 text-xs">
+              fd4c8a86-6433-4f04-9086-7f7a44d69e8c
+            </code>{" "}
+            for restricted personal use (Lloyds, MBNA, Virgin Money).
           </p>
           <ol className="mt-3 list-decimal space-y-1 pl-5">
             <li>
@@ -234,7 +236,7 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
               using <strong>robertdavidcashman@gmail.com</strong> (magic link — not AOL)
             </li>
             <li>Open <strong>Rob&apos;s Finance Production</strong> → Activate by linking accounts</li>
-            <li>Return here and press Connect on each bank (or use GoCardless for UK banks)</li>
+            <li>Return here and press Connect on each bank once Enable confirms GB access</li>
           </ol>
           <div className="mt-3 flex flex-wrap gap-2">
             <a

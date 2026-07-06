@@ -14,51 +14,33 @@ export function OpenBankingSetupInstructions({
       <div className="mt-4 space-y-6 text-[var(--muted)]">
         <section>
           <h3 className="font-medium text-[var(--foreground)]">
-            GoCardless / Nordigen (recommended for UK banks — Lloyds, MBNA, Virgin)
+            Enable Banking (only supported provider for new UK personal banks)
           </h3>
-          <ol className="mt-2 list-decimal space-y-2 pl-5">
-            <li>
-              Sign up at{" "}
-              <a
-                href="https://bankaccountdata.gocardless.com/overview/"
-                className="underline"
-                target="_blank"
-                rel="noreferrer"
-              >
-                GoCardless Bank Account Data
-              </a>{" "}
-              (free for personal use).
-            </li>
-            <li>
-              Create credentials and choose <strong>GoCardless / Nordigen</strong> as provider in the
-              form below.
-            </li>
-            <li>
-              Paste <strong>Secret ID</strong> as Client ID and <strong>Secret key</strong> as Client
-              Secret. Use the same redirect URL as Enable Banking.
-            </li>
-            <li>Test connection, then connect Lloyds, MBNA and Virgin on the Connect banks page.</li>
-          </ol>
-        </section>
-
-        <section>
-          <h3 className="font-medium text-[var(--foreground)]">Enable Banking (EU banks — no GB on default account)</h3>
+          <p className="mt-1">
+            GoCardless Bank Account Data no longer accepts new signups. Enable Banking is the provider
+            this app uses for Lloyds, MBNA and Virgin Money — but your account must be{" "}
+            <strong>activated</strong> and Enable must enable <strong>GB (UK) banks</strong> on your
+            account (contact{" "}
+            <a href="mailto:support.api@enablebanking.com" className="underline">
+              support.api@enablebanking.com
+            </a>
+            ).
+          </p>
           <ol className="mt-2 list-decimal space-y-2 pl-5">
             <li>
               Sign in at{" "}
               <a
-                href="https://enablebanking.com/sign-in/"
+                href="https://enablebanking.com/sign-in/?next=%2Fcp%2Fapplications"
                 className="underline"
                 target="_blank"
                 rel="noreferrer"
               >
                 Enable Banking Control Panel
-              </a>
-              .
+              </a>{" "}
+              using <strong>robertdavidcashman@gmail.com</strong> (magic link — not AOL).
             </li>
             <li>
-              Create an app (Sandbox first, then Restricted Production for real banks like Lloyds, Virgin,
-              MBNA).
+              Open <strong>Rob&apos;s Finance Production</strong> → <strong>Activate by linking accounts</strong>.
             </li>
             <li>
               Generate an RSA key pair locally and upload the <strong>public certificate</strong> (.crt) to

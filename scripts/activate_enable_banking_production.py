@@ -24,6 +24,7 @@ FIREBASE_API_KEY = "AIzaSyBn8fvjRYQKslskRaO3cblUjmcyl5b9o-c"
 CP_SIGN_IN = "https://enablebanking.com/sign-in/?next=%2Fcp%2Fapplications"
 CP_APP_URL = "https://enablebanking.com/cp/applications"
 SIGN_IN_EMAIL = "robertdavidcashman@gmail.com"
+SUPPORT_EMAIL = "support.api@enablebanking.com"
 TARGET_BANKS = ("Lloyds", "MBNA", "Virgin Money", "Halifax", "Monzo", "Starling")
 
 
@@ -132,6 +133,30 @@ def hosted_readiness(backend_url: str) -> dict[str, object]:
         return status.json()
 
 
+def support_email_draft(*, app_id: str, app_name: str, gb_count: int) -> str:
+    return f"""To: {SUPPORT_EMAIL}
+Subject: Enable GB banks + activate production app for restricted personal use
+
+Hello,
+
+I am using Enable Banking for a personal finance dashboard (non-commercial, own accounts only).
+
+Application: {app_name}
+Application ID: {app_id}
+Account email: {SIGN_IN_EMAIL}
+Redirect URL: https://robs-solar.vercel.app/open-banking/callback
+
+I need help with two things:
+1. Activate my production application in restricted mode (Activate by linking accounts).
+2. Enable GB (UK) bank coverage — my Control Panel currently lists {gb_count} GB ASPSPs, but I need Lloyds Bank, MBNA and Virgin Money.
+
+I cannot access the Control Panel reliably and GoCardless Bank Account Data is closed to new signups, so Enable Banking is my only option.
+
+Thank you,
+Rob
+"""
+
+
 def find_production_app(apps: list[dict[str, object]]) -> dict[str, object] | None:
     for app in apps:
         if app.get("environment") == "PRODUCTION":
@@ -167,6 +192,11 @@ def main() -> int:
         default="IE",
         help="Country code for --start-link (default IE — GB has no banks on this account)",
     )
+    parser.add_argument(
+        "--draft-support-email",
+        action="store_true",
+        help="Print an email to support.api@enablebanking.com requesting GB access",
+    )
     args = parser.parse_args()
 
     id_token, _session = firebase_session()
@@ -198,8 +228,9 @@ def main() -> int:
         print(
             "  No Lloyds, MBNA, Virgin Money, Monzo, or Starling listed under GB.\n"
             "  Enable Banking on your account does not currently offer UK open banking.\n"
-            "  For Lloyds / MBNA / Virgin, switch Open Banking provider to GoCardless\n"
-            "  (Bank Account Data) in /finance/open-banking/settings — free for personal use."
+            "  GoCardless Bank Account Data is closed to new signups (mid-2025).\n"
+            "  Email support.api@enablebanking.com and ask them to enable GB banks and\n"
+            "  help activate your production app for restricted personal use."
         )
 
     try:
@@ -217,6 +248,10 @@ def main() -> int:
         )
     except httpx.HTTPError as exc:
         print(f"\nCould not query hosted readiness: {exc}", file=sys.stderr)
+
+    if args.draft_support_email:
+        print("\n--- Copy/paste support email ---\n")
+        print(support_email_draft(app_id=kid, app_name=str(name), gb_count=len(gb_banks)))
 
     if args.send_sign_in_link:
         send_sign_in_link(SIGN_IN_EMAIL)
@@ -256,7 +291,7 @@ def main() -> int:
     else:
         print(
             "\nApp may be active but UK banks are still unavailable on Enable Banking.\n"
-            "Use GoCardless for Lloyds / MBNA / Virgin Money."
+            "Contact support.api@enablebanking.com to request GB bank access."
         )
 
     if args.open_cp and not args.start_link:
