@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import delete, select
 
-from app.db.models import FinanceAccountRow, FinanceTransactionRow
+from app.db.models import FinanceAccountRow
 from app.db.session import SessionLocal
 from app.schemas.finance import (
     BankConnectionMethod,
