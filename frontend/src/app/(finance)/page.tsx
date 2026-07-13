@@ -16,6 +16,7 @@ import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import {
   bankConnectionsResponseSchema,
+  lunchFlowConfigStatusSchema,
   openBankingConfigStatusSchema,
   type BankConnectionItem,
 } from "@/lib/finance-schemas";
@@ -30,19 +31,22 @@ export default function FinanceOverviewPage() {
   const [bankConnections, setBankConnections] = useState<BankConnectionItem[]>([]);
   const [obConfigured, setObConfigured] = useState(true);
   const [obReady, setObReady] = useState<boolean | null>(null);
+  const [lunchFlowActive, setLunchFlowActive] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     void (async () => {
       try {
-        const [cards, ob] = await Promise.all([
+        const [cards, ob, lunchFlow] = await Promise.all([
           apiClient.get<unknown>("/finance/bank-connections"),
           apiClient.get<unknown>("/finance/integrations/open-banking/status"),
+          apiClient.get<unknown>("/finance/integrations/lunch-flow/status"),
         ]);
         setBankConnections(bankConnectionsResponseSchema.parse(cards).connections);
         const parsedOb = openBankingConfigStatusSchema.parse(ob);
         setObConfigured(parsedOb.configured);
         setObReady(parsedOb.provider_ready ?? null);
+        setLunchFlowActive(lunchFlowConfigStatusSchema.parse(lunchFlow).configured);
       } catch {
         setBankConnections([]);
       }
@@ -80,6 +84,7 @@ export default function FinanceOverviewPage() {
             connections={bankConnections}
             obConfigured={obConfigured}
             obReady={obReady}
+            lunchFlowActive={lunchFlowActive}
           />
           <FinanceAlertsPanel insights={overview.insights} />
           <FinanceAiAdviceCard canUse={canWrite(user)} />

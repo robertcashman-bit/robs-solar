@@ -8,13 +8,22 @@ type FinanceConnectBannerProps = {
   connections: BankConnectionItem[];
   obConfigured: boolean;
   obReady?: boolean | null;
+  lunchFlowActive?: boolean;
 };
 
 export function FinanceConnectBanner({
   connections,
   obConfigured,
   obReady = null,
+  lunchFlowActive = false,
 }: FinanceConnectBannerProps) {
+  // Personal banks are handled by Lunch Flow. When it is configured, the legacy
+  // Enable Banking / Open Banking activation prompts are obsolete noise, so we
+  // suppress this banner entirely and let the Connect banks page manage links.
+  if (lunchFlowActive) {
+    return null;
+  }
+
   const openBanking = connections.filter((c) => c.method === "open_banking");
   const needsConnect = openBanking.some(
     (c) => c.status === "not_connected" || c.status === "needs_reconnection",
