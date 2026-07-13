@@ -100,10 +100,12 @@ const quickfileReports: QuickFileReports = {
 };
 
 describe("FinanceOverviewView", () => {
-  it("links to business page instead of showing QuickFile reports", () => {
+  it("shows personal and business as two side-by-side panels", () => {
     render(<FinanceOverviewView overview={overview} accounts={accounts} />);
-    expect(screen.getByText("Open business finance")).toBeInTheDocument();
-    expect(screen.getByText("Personal accounts & net worth")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Personal finances" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Business finances" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Personal" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Business" })).toBeInTheDocument();
     expect(screen.getByText("Main current")).toBeInTheDocument();
   });
 });
