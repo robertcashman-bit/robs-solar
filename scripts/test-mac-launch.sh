@@ -7,11 +7,16 @@
 #   3. backend running under the wrong CPU arch (x86_64 vs arm64)
 #   4. lightningcss/oxide native binary missing -> 500 on first paint
 #   5. launcher not restarting when the frontend is up but the backend is down
+#   6. frontend left unsupervised (nohup) so it died and the cached PWA shell
+#      threw "Failed to fetch" on every /backend call; now a launchd KeepAlive
+#      agent, and health checks are bounded so a hung port can't wedge launch
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LAUNCH="$ROOT/scripts/mac-launch.sh"
 DEV="$ROOT/scripts/dev.sh"
+FE_SERVICE="$ROOT/scripts/frontend-service.sh"
+FE_PLIST="$ROOT/scripts/launchd/com.robssolar.frontend.plist"
 
 fail=0
 pass() { printf 'ok   - %s\n' "$1"; }
@@ -50,6 +55,21 @@ else
   bad "launcher is_up no longer uses the exit-code curl check"
 fi
 
+# --- 2b. health checks are bounded so a hung server can't wedge the launcher -
+# Regression for the Dock hang: a zombie next-server held :3000 but never
+# responded, and is_up()'s curl had no --max-time, so the launcher blocked
+# forever and the Dock icon appeared to do nothing.
+if grep -q -- '--max-time' "$LAUNCH"; then
+  pass "launcher health checks use --max-time (cannot hang on a dead port)"
+else
+  bad "launcher health check missing --max-time (can hang on an unresponsive port)"
+fi
+if grep -q 'clear_hung_frontend' "$LAUNCH"; then
+  pass "launcher clears a hung frontend before starting"
+else
+  bad "launcher missing hung-frontend cleanup"
+fi
+
 # --- 3. backend pinned to native arch in dev.sh ------------------------------
 if grep -Eq 'arch -arm64[^\n]*uvicorn' "$DEV"; then
   pass "dev.sh pins uvicorn to arm64"
@@ -85,15 +105,52 @@ if grep -q 'rm -rf "$ROOT/frontend/.next"' "$LAUNCH"; then
 else
   pass "launcher no longer wipes .next"
 fi
-if grep -Eq 'run start -- --port 3000' "$LAUNCH"; then
-  pass "launcher serves production build (next start)"
+if grep -Eq 'run start -- --port 3000' "$FE_SERVICE"; then
+  pass "frontend service serves production build (next start)"
 else
-  bad "launcher no longer starts the frontend in production mode (next start)"
+  bad "frontend service no longer starts the frontend in production mode (next start)"
 fi
 if [[ -x "$ROOT/scripts/build-frontend.sh" ]]; then
   pass "build-frontend.sh exists and is executable"
 else
   bad "missing executable: $ROOT/scripts/build-frontend.sh"
+fi
+
+# --- 5c. frontend is supervised by launchd, not a fire-and-forget nohup ------
+# Regression for the "Failed to fetch" outage: the frontend used to be launched
+# as `nohup npm run start &` with no supervisor, so it died with its parent
+# process group (or on sleep/crash). The cached PWA shell then loaded but every
+# /backend/* API call failed with "Failed to fetch". It now runs as a launchd
+# KeepAlive agent like the backend.
+if [[ -x "$FE_SERVICE" ]]; then
+  pass "frontend-service.sh exists and is executable"
+else
+  bad "missing executable: $FE_SERVICE"
+fi
+if [[ -f "$FE_PLIST" ]]; then
+  pass "frontend launchd plist exists"
+else
+  bad "missing frontend launchd plist: $FE_PLIST"
+fi
+if grep -q '<key>KeepAlive</key>' "$FE_PLIST" 2>/dev/null; then
+  pass "frontend launchd agent uses KeepAlive (survives crash/sleep)"
+else
+  bad "frontend launchd agent missing KeepAlive"
+fi
+if grep -q 'frontend-service.sh' "$FE_PLIST" 2>/dev/null; then
+  pass "frontend launchd agent runs frontend-service.sh"
+else
+  bad "frontend launchd plist does not reference frontend-service.sh"
+fi
+if grep -q 'ensure_frontend_agent' "$LAUNCH"; then
+  pass "launcher supervises frontend via launchd agent"
+else
+  bad "launcher no longer ensures the frontend launchd agent"
+fi
+if grep -Eq 'nohup[^\n]*run start' "$LAUNCH"; then
+  bad "launcher still starts the frontend with an unsupervised nohup"
+else
+  pass "launcher no longer starts the frontend with nohup (supervised instead)"
 fi
 
 # --- 6. dry-run: don't crash when the stack is already up --------------------
