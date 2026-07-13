@@ -60,7 +60,13 @@ class LunchFlowClient:
         body = await self._get("/accounts")
         accounts = body.get("accounts") if isinstance(body, dict) else []
         count = len(accounts) if isinstance(accounts, list) else 0
-        return {"accounts": count}
+        result: dict[str, object] = {"accounts": count}
+        if count == 0:
+            result["hint"] = (
+                "Lunch Flow returned 0 accounts. Open Destinations → your API destination "
+                "→ Account Access and enable the bank account."
+            )
+        return result
 
     async def list_accounts(self) -> list[dict[str, Any]]:
         body = await self._get("/accounts")

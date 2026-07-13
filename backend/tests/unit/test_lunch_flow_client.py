@@ -12,6 +12,18 @@ from app.schemas.finance import LunchFlowConfig
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_test_connection_zero_accounts_includes_hint() -> None:
+    respx.get("https://www.lunchflow.app/api/v1/accounts").mock(
+        return_value=httpx.Response(200, json={"accounts": []})
+    )
+    client = LunchFlowClient(LunchFlowConfig(api_key="test-key"))
+    result = await client.test_connection()
+    assert result["accounts"] == 0
+    assert "Account Access" in str(result.get("hint") or "")
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_list_accounts_success() -> None:
     respx.get("https://www.lunchflow.app/api/v1/accounts").mock(
         return_value=httpx.Response(

@@ -71,10 +71,17 @@ export function LunchFlowSettingsForm({ onSaved, readOnly = false }: LunchFlowSe
     setMessage(null);
     setError(null);
     try {
-      const result = await apiClient.post<{ accounts: number }>(
+      const result = await apiClient.post<{ accounts: number; hint?: string }>(
         "/finance/integrations/lunch-flow/test",
       );
-      setMessage(`Connected — ${result.accounts} account(s) found in Lunch Flow.`);
+      if (result.accounts === 0) {
+        setMessage(
+          result.hint ??
+            "Connected — 0 account(s) found. Enable them under Destinations → API → Account Access.",
+        );
+      } else {
+        setMessage(`Connected — ${result.accounts} account(s) found in Lunch Flow.`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Connection test failed");
     } finally {
@@ -126,7 +133,11 @@ export function LunchFlowSettingsForm({ onSaved, readOnly = false }: LunchFlowSe
         <li>
           Add an API destination (Destinations → Add → API) and copy the API key
         </li>
-        <li>Paste the key below, then press Sync now on each bank card</li>
+        <li>
+          Open that destination → <strong>Account Access</strong> and enable each bank account
+          (accounts are hidden from the API until toggled on)
+        </li>
+        <li>Paste the key below, then press Sync all</li>
       </ol>
 
       {configured ? (

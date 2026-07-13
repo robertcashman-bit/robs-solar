@@ -87,3 +87,5 @@ services:
         sync: false
       - key: OPEN_BANKING_REDIRECT_URL
         sync: false
+      - key: LUNCH_FLOW_API_KEY
+        sync: false

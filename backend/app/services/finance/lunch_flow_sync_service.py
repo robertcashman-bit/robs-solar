@@ -168,6 +168,11 @@ class LunchFlowSyncService:
         message = f"Synced {synced_accounts} personal account(s) from Lunch Flow"
         if synced_accounts > 0:
             message += "; historic placeholders retired"
+        else:
+            message += (
+                ". No accounts exposed via API — open Destinations → your API destination "
+                "→ Account Access and enable the bank account, then sync again"
+            )
         if synced_transactions:
             message += f"; {synced_transactions} transaction(s) imported"
         if disconnected_accounts:

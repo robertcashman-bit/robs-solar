@@ -183,7 +183,8 @@ async def _build_lunch_flow_connection(
         method=bank.method,
         status=BankConnectionStatus.NOT_CONNECTED,
         status_message=(
-            "Connect this bank at lunchflow.app, then press Sync here to import balances."
+            "Connect this bank at lunchflow.app, enable it under Destinations → API → "
+            "Account Access, then press Sync here to import balances."
         ),
         institution="Lunch Flow",
         account_count=0,
