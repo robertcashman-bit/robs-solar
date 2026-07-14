@@ -6,7 +6,7 @@ setup("authenticate as admin", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill("change-me-admin");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible({
     timeout: 60_000,
   });
