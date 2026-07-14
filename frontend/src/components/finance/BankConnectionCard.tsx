@@ -97,8 +97,8 @@ export function BankConnectionCard({
         personalProvider === "lunch_flow" ? (
           <p className="text-sm text-[var(--muted)]">Add your Lunch Flow API key above.</p>
         ) : (
-          <Link href="/finance/open-banking/settings" className="text-sm underline">
-            Open Banking Settings →
+          <Link href="/finance/connect#open-banking-setup" className="text-sm underline">
+            Open Banking setup →
           </Link>
         )
       ) : null}

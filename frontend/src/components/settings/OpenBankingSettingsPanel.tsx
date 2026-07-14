@@ -44,8 +44,8 @@ export function OpenBankingSettingsPanel({ readOnly = false }: OpenBankingSettin
         <div>
           <h2 className="text-lg font-semibold">Open Banking (personal)</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Connect Lloyds, Virgin, MBNA and other personal accounts. Configuration is managed on the
-            dedicated setup page with plain-English fields and step-by-step instructions.
+            Connect Lloyds, Virgin, MBNA and other personal accounts. Credentials and linking live on
+            the Connect banks page.
           </p>
         </div>
         <span
@@ -83,11 +83,8 @@ export function OpenBankingSettingsPanel({ readOnly = false }: OpenBankingSettin
       ) : null}
 
       <div className="flex flex-wrap gap-2">
-        <Link href="/finance/open-banking/setup" className="solar-btn-primary">
-          Open full setup page →
-        </Link>
-        <Link href="/finance/connect" className="solar-btn-secondary">
-          Connect banks
+        <Link href="/finance/connect" className="solar-btn-primary">
+          Connect banks →
         </Link>
       </div>
 

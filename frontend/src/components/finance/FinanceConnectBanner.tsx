@@ -73,9 +73,6 @@ export function FinanceConnectBanner({
           <strong>Connect banks</strong> page — use the menu item with the wallet icon.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Link href="/finance/open-banking/settings" className="solar-btn-secondary text-sm">
-            Open Banking Settings (admin, once)
-          </Link>
           <Link href="/finance/connect" className="solar-btn-primary text-sm">
             Connect banks →
           </Link>

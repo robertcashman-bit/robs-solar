@@ -20,7 +20,6 @@ import { InstallAppBanner } from "@/components/shared/InstallAppBanner";
 const navItems = [
   { href: "/", label: "Overview", icon: GaugeIcon },
   { href: "/finance/connect", label: "Connect banks", icon: WalletIcon, highlight: true },
-  { href: "/finance/open-banking/setup", label: "OB Setup", icon: SettingsIcon, adminOnly: true },
   { href: "/finance/personal", label: "Personal", icon: WalletIcon },
   { href: "/finance/business", label: "Business", icon: WalletIcon },
   { href: "/finance/debts", label: "Debts", icon: WalletIcon },
@@ -46,6 +45,13 @@ function isNavActive(pathname: string, href: string): boolean {
   }
   if (href === "/energy") {
     return pathname === "/energy" || pathname.startsWith("/energy/");
+  }
+  if (href === "/finance/connect") {
+    return (
+      pathname === href ||
+      pathname.startsWith(`${href}/`) ||
+      pathname.startsWith("/finance/open-banking")
+    );
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }

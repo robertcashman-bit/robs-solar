@@ -116,7 +116,7 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
 
   async function connectOpenBanking(connectionId: string) {
     if (!obConfigured) {
-      setError("Open Banking is not set up yet. Complete Open Banking Setup first.");
+      setError("Open Banking is not set up yet. Complete the Open Banking credentials section above first.");
       return;
     }
     if (obNeedsActivation) {
@@ -212,8 +212,8 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
       {!useLunchFlow && !obConfigured ? (
         <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
           Alternatively, an admin can complete{" "}
-          <Link href="/finance/open-banking/settings" className="font-medium underline">
-            Open Banking Settings
+          <Link href="/finance/connect#open-banking-setup" className="font-medium underline">
+            Open Banking setup
           </Link>{" "}
           (Enable Banking — currently blocked for new UK banks).
         </p>
@@ -263,8 +263,8 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
             >
               Open Enable Banking CP
             </a>
-            <Link href="/finance/open-banking/settings" className="solar-btn-secondary text-sm">
-              Open Banking Settings
+            <Link href="/finance/connect#open-banking-setup" className="solar-btn-secondary text-sm">
+              Open Banking setup
             </Link>
           </div>
         </section>

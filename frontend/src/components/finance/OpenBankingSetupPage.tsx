@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { z } from "zod";
@@ -20,6 +19,8 @@ import {
 
 type OpenBankingSetupPageProps = {
   readOnly?: boolean;
+  /** When false, OAuth finalize is left to a sibling (e.g. BankConnectionsHub). */
+  handleOAuthCallback?: boolean;
 };
 
 const POPULAR_BANKS = [
@@ -40,7 +41,10 @@ function testBannerClass(status: OpenBankingTestResult["status"]): string {
 }
 
 /** Plain-English Open Banking setup: credentials, test, and bank connect. */
-export function OpenBankingSetupPage({ readOnly = false }: OpenBankingSetupPageProps) {
+export function OpenBankingSetupPage({
+  readOnly = false,
+  handleOAuthCallback = true,
+}: OpenBankingSetupPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -114,7 +118,7 @@ export function OpenBankingSetupPage({ readOnly = false }: OpenBankingSetupPageP
         const result = openBankingSyncResultSchema.parse(data);
         setMessage(result.message || "Bank account connected successfully.");
         await load();
-        router.replace("/finance/open-banking/setup");
+        router.replace("/finance/connect");
       } catch {
         setError("Bank requires reconnection. Press Connect and sign in again at your bank.");
       } finally {
@@ -125,14 +129,14 @@ export function OpenBankingSetupPage({ readOnly = false }: OpenBankingSetupPageP
   );
 
   useEffect(() => {
-    if (readOnly) return;
+    if (readOnly || !handleOAuthCallback) return;
     const callback = searchParams.get("open_banking");
     const lookup = searchParams.get("state") || searchParams.get("ref");
     const code = searchParams.get("code");
     if (callback === "callback" && lookup) {
       void finalizeConnection(lookup, code);
     }
-  }, [readOnly, searchParams, finalizeConnection]);
+  }, [readOnly, handleOAuthCallback, searchParams, finalizeConnection]);
 
   function buildPayload() {
     return {
@@ -260,24 +264,14 @@ export function OpenBankingSetupPage({ readOnly = false }: OpenBankingSetupPageP
   return (
     <div className="space-y-6">
       <p className="text-sm text-[var(--muted)]">
-        One-time setup for UK Open Banking (Lloyds, MBNA, Virgin Money, and more). After saving,
-        test your connection and connect each bank. Day-to-day bank management lives on{" "}
-        <Link href="/finance/connect" className="underline">
-          Connect banks
-        </Link>
-        .
+        One-time Open Banking credentials for UK banks (Lloyds, MBNA, Virgin Money, and more). Save
+        and test below, then connect each bank from the cards further down this page.
       </p>
 
       {readOnly ? (
         <p className="rounded-lg border border-[var(--border)] bg-[var(--surface-sunken)] px-3 py-2 text-sm text-[var(--muted)]">
-          Admin access is required to change settings.{" "}
-          {configured ? (
-            <Link href="/finance/connect" className="underline">
-              Connect banks
-            </Link>
-          ) : (
-            "Ask an admin to complete setup."
-          )}
+          Admin access is required to change Open Banking credentials.
+          {configured ? " You can still view linked banks below." : " Ask an admin to complete setup."}
         </p>
       ) : null}
 

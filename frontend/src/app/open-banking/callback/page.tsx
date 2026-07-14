@@ -10,7 +10,7 @@ function OpenBankingCallbackInner() {
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("open_banking", "callback");
-    router.replace(`/finance/open-banking/setup?${params.toString()}`);
+    router.replace(`/finance/connect?${params.toString()}`);
   }, [router, searchParams]);
 
   return (
