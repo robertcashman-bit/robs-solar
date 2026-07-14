@@ -14,12 +14,7 @@ const energyItems = [
   { href: "/energy/diagnostics", label: "Diagnostics" },
 ];
 
-type EnergySubNavProps = {
-  /** Retained for call-site compatibility; energy nav is viewable by all signed-in roles. */
-  isAdmin?: boolean;
-};
-
-export function EnergySubNav(_props: EnergySubNavProps = {}) {
+export function EnergySubNav() {
   const pathname = usePathname();
   if (!pathname.startsWith("/energy")) {
     return null;

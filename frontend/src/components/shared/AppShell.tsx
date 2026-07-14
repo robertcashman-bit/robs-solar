@@ -189,7 +189,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">
         {user ? <InstallAppBanner /> : null}
-        {user ? <EnergySubNav isAdmin={canWrite(user)} /> : null}
+        {user ? <EnergySubNav /> : null}
         {children}
       </main>
 

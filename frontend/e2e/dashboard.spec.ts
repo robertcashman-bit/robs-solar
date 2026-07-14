@@ -14,11 +14,12 @@ test("app boot and login shows energy dashboard", async ({ page }) => {
   }
 });
 
-test("viewer cannot access controls page", async ({ page }) => {
+test("viewer can view display-only inverter settings", async ({ page }) => {
   await loginAsViewer(page);
   await page.goto("/energy/controls");
-  await expect(page.getByRole("heading", { name: "Controls" })).not.toBeVisible({
+  await expect(page.getByRole("heading", { name: "Inverter settings" })).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  await expect(page.getByText(/Display only/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Confirm write" })).toHaveCount(0);
 });

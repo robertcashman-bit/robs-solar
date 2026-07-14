@@ -14,9 +14,11 @@ test("PWA manifest is served", async ({ request }) => {
   }
 });
 
-test("admin can view automation rules on controls page", async ({ page }) => {
+test("admin sees display-only inverter settings page", async ({ page }) => {
   await gotoWhenAuthed(page, "/energy/controls");
-  await expect(page.getByText("Automation rules")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Inverter settings" })).toBeVisible();
+  await expect(page.getByText(/Display only/i)).toBeVisible();
+  await expect(page.getByText("Automation rules")).toHaveCount(0);
 });
 
 test("analytics shows bill reconciliation section", async ({ page }) => {

@@ -8,7 +8,10 @@ export async function expectFinanceOverviewAfterLogin(page: Page) {
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible({
     timeout: LOGIN_TIMEOUT,
   });
-  await expect(page.getByRole("heading", { name: "Balances" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Personal" })).toBeVisible({
+    timeout: LOGIN_TIMEOUT,
+  });
+  await expect(page.getByRole("heading", { name: "Business" })).toBeVisible({
     timeout: LOGIN_TIMEOUT,
   });
 }
@@ -55,7 +58,7 @@ export async function openFinanceOverview(page: Page) {
 /** Open settings on the Energy / Solar tab. */
 export async function openEnergySettings(page: Page) {
   await gotoWhenAuthed(page, "/settings");
-  await page.getByRole("button", { name: "Energy / Solar" }).click();
+  await page.getByRole("tab", { name: "Energy / Solar" }).click();
 }
 
 /** Open the energy dashboard with a pre-authenticated admin session. */
