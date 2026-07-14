@@ -144,6 +144,10 @@ async def test_uses_live_metrics_cache_when_fresh() -> None:
 async def test_falls_back_to_last_db_sample_when_live_fetch_fails() -> None:
     from app.services.metric_sampler import record_sample
 
+    async with SessionLocal() as db:
+        await db.execute(delete(MetricSampleRow))
+        await db.commit()
+
     metrics = _metrics(house_load_w=777.0, pv_power_w=10.0, grid_import_w=800.0)
     await record_sample(metrics, adapter_mode="sunsynk_connect", data_source="live")
 

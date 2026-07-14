@@ -39,7 +39,13 @@ async def test_admin_battery_plan_has_decision_picture(client: AsyncClient) -> N
 
 
 @pytest.mark.asyncio
-async def test_daytime_floor_persists_across_reads_and_restart(client: AsyncClient) -> None:
+async def test_daytime_floor_persists_across_reads_and_restart(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "read_only", False)
     session = await login(client, "admin", "admin-pass")
     csrf = session["csrf_token"]
 
@@ -64,7 +70,13 @@ async def test_daytime_floor_persists_across_reads_and_restart(client: AsyncClie
 
 
 @pytest.mark.asyncio
-async def test_floor_at_95_is_rejected(client: AsyncClient) -> None:
+async def test_floor_at_95_is_rejected(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "read_only", False)
     session = await login(client, "admin", "admin-pass")
     csrf = session["csrf_token"]
     resp = await client.post(
