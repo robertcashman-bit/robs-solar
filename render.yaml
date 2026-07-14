@@ -1,5 +1,9 @@
 # Render blueprint — connect this repo at https://dashboard.render.com/blueprint
 # and Render will create the always-on API service with persistent SQLite storage.
+#
+# Solar/energy integration is DISPLAY-ONLY in production: this service reads live
+# Sunsynk metrics but never writes inverter settings (export limit, TOU, battery,
+# operating mode, auto-align, or peak-import guard remediations).
 services:
   - type: web
     name: robs-solar-api
@@ -37,7 +41,7 @@ services:
       - key: TARIFF_TIMEZONE
         value: Europe/London
       - key: PEAK_IMPORT_GUARD_ENABLED
-        value: "true"
+        value: "false"
       - key: SUNSYNK_ENABLE_UNVERIFIED_WRITES
         value: "false"
       - key: AI_ENABLED

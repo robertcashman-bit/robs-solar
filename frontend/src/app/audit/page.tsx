@@ -18,6 +18,7 @@ export default function AuditPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,11 +36,14 @@ export default function AuditPage() {
       return;
     }
     void (async () => {
+      setLoadingData(true);
       try {
         const data = auditListSchema.parse(await apiClient.get("/audit"));
         setEntries(data.entries);
       } catch (fetchError) {
         setError(fetchError instanceof Error ? fetchError.message : "Failed to load audit log");
+      } finally {
+        setLoadingData(false);
       }
     })();
   }, [user]);
@@ -54,15 +58,15 @@ export default function AuditPage() {
 
   return (
     <AppShell>
-      <div className="space-y-6">
+      <div className="solar-page">
         <PageHeader
           eyebrow="Security"
           icon={<ShieldIcon size={22} />}
           title="Audit log"
-          description="Every attempted and successful control action."
+          description="Every attempted and successful control action on your energy system."
         />
         {error ? <ErrorBanner message={error} /> : null}
-        <AuditTable entries={entries} />
+        <AuditTable entries={entries} loading={loadingData} />
       </div>
     </AppShell>
   );

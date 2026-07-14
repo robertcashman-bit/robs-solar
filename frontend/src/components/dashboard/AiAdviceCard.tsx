@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { summariseApplyResult } from "@/lib/ai-apply";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { apiClient } from "@/lib/api-client";
 import {
   aiAssessmentSchema,
   aiStatusSchema,
@@ -15,10 +14,10 @@ import {
 import { BoltIcon } from "@/components/shared/icons";
 
 const ACTION_LABELS: Record<AiProposedAction["kind"], string> = {
-  set_tou_bands: "Update charge schedule",
-  set_export_limit: "Set export limit",
-  set_operating_mode: "Set operating mode",
-  set_auto_schedule: "Update auto-align",
+  set_tou_bands: "Suggested charge schedule",
+  set_export_limit: "Suggested export limit",
+  set_operating_mode: "Suggested operating mode",
+  set_auto_schedule: "Suggested auto-align",
 };
 
 type AiAdviceCardProps = {
@@ -30,7 +29,6 @@ export function AiAdviceCard({ canControl }: AiAdviceCardProps) {
   const [assessment, setAssessment] = useState<AiAssessment | null>(null);
   const [assessing, setAssessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [applied, setApplied] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!canControl) return;
@@ -56,20 +54,6 @@ export function AiAdviceCard({ canControl }: AiAdviceCardProps) {
       setError(e instanceof Error ? e.message : "Assessment failed");
     } finally {
       setAssessing(false);
-    }
-  };
-
-  const applyAction = async (action: AiProposedAction, key: string) => {
-    setApplied((prev) => ({ ...prev, [key]: "applying" }));
-    try {
-      const raw = await apiClient.post(action.endpoint, action.body);
-      setApplied((prev) => ({
-        ...prev,
-        [key]: summariseApplyResult(action, raw),
-      }));
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Failed to apply";
-      setApplied((prev) => ({ ...prev, [key]: msg }));
     }
   };
 
@@ -108,7 +92,7 @@ export function AiAdviceCard({ canControl }: AiAdviceCardProps) {
           <div>
             <p className="text-sm font-semibold">AI settings check</p>
             <p className="mt-0.5 text-sm text-[var(--muted)]">
-              Ask whether your schedule and battery settings are optimal right now.
+              Advice only — suggestions are never written to the inverter from this app.
             </p>
           </div>
         </div>
@@ -143,17 +127,9 @@ export function AiAdviceCard({ canControl }: AiAdviceCardProps) {
                 {ACTION_LABELS[topAction.kind] ?? topAction.kind}
               </p>
               <p className="mt-0.5 text-sm text-[var(--muted)]">{topAction.summary}</p>
-              <button
-                type="button"
-                className="solar-btn-primary mt-2 text-xs"
-                disabled={applied["top"] === "applying"}
-                onClick={() => void applyAction(topAction, "top")}
-              >
-                {applied["top"] === "applying" ? "Applying…" : "Confirm & apply"}
-              </button>
-              {applied["top"] && applied["top"] !== "applying" ? (
-                <p className="mt-1 text-xs text-[var(--muted)]">{applied["top"]}</p>
-              ) : null}
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                Suggestion only — apply in Simple Solar or Sunsynk Connect if needed.
+              </p>
             </div>
           ) : null}
         </div>

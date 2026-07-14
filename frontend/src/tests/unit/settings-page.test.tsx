@@ -49,8 +49,9 @@ describe("SettingsPage", () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
     expect(await screen.findByText("Safety & configuration")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Energy / Solar" }));
+    await user.click(screen.getByRole("tab", { name: "Energy / Solar" }));
     expect(screen.getByText("Remote access")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "System status" })).toBeInTheDocument();
     expect(screen.getAllByText("simulator").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Simulated data")).toBeInTheDocument();
     expect(screen.getByText(/Live writes disabled/i)).toBeInTheDocument();

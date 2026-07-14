@@ -1,11 +1,10 @@
 import { AppShell } from "@/components/shared/AppShell";
+import { PageLoading } from "@/components/shared/PageLoading";
 
 export function AuthLoadingShell() {
   return (
     <AppShell>
-      <p className="text-sm text-[var(--muted)]" role="status" aria-label="Loading session">
-        Loading session…
-      </p>
+      <PageLoading label="Loading session" rows={2} />
     </AppShell>
   );
 }

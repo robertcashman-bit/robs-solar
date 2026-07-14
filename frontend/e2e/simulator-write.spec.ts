@@ -2,15 +2,10 @@ import { expect, test } from "@playwright/test";
 
 import { gotoWhenAuthed } from "./helpers";
 
-test("simulator export limit write appears in audit log", async ({ page }) => {
+test("inverter settings page is display-only with no export write form", async ({ page }) => {
   await gotoWhenAuthed(page, "/energy/controls");
-  await expect(page.getByRole("heading", { name: "Controls" })).toBeVisible();
-
-  await page.getByLabel("Export limit (W)").fill("2500");
-  await page.getByRole("button", { name: "Review change" }).first().click();
-  await page.getByRole("button", { name: "Confirm write" }).click();
-  await expect(page.getByText(/Export limit set to 2500 W/i)).toBeVisible();
-
-  await gotoWhenAuthed(page, "/audit");
-  await expect(page.getByRole("cell", { name: "set_export_limit" }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Inverter settings" })).toBeVisible();
+  await expect(page.getByText(/Display only/i)).toBeVisible();
+  await expect(page.getByLabel("Export limit (W)")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Confirm write" })).toHaveCount(0);
 });

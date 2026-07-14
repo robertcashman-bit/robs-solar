@@ -9,16 +9,17 @@ const energyItems = [
   { href: "/energy/octopus", label: "Octopus" },
   { href: "/energy/forecast", label: "Forecast" },
   { href: "/energy/scheduler", label: "Scheduler" },
-  { href: "/energy/controls", label: "Controls", adminOnly: true },
-  { href: "/energy/assistant", label: "Assistant", adminOnly: true },
+  { href: "/energy/controls", label: "Inverter settings" },
+  { href: "/energy/assistant", label: "Assistant" },
   { href: "/energy/diagnostics", label: "Diagnostics" },
 ];
 
 type EnergySubNavProps = {
+  /** Retained for call-site compatibility; energy nav is viewable by all signed-in roles. */
   isAdmin?: boolean;
 };
 
-export function EnergySubNav({ isAdmin = false }: EnergySubNavProps) {
+export function EnergySubNav(_props: EnergySubNavProps = {}) {
   const pathname = usePathname();
   if (!pathname.startsWith("/energy")) {
     return null;
@@ -27,30 +28,29 @@ export function EnergySubNav({ isAdmin = false }: EnergySubNavProps) {
   return (
     <nav
       aria-label="Energy section"
-      className="mb-6 flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1"
+      className="mb-6 -mx-1 overflow-x-auto px-1 pb-1"
     >
-      {energyItems.map((item) => {
-        if (item.adminOnly && !isAdmin) {
-          return null;
-        }
-        const active =
-          pathname === item.href ||
-          (item.href !== "/energy" && pathname.startsWith(item.href));
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={active ? "page" : undefined}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              active
-                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                : "text-[var(--muted)] hover:text-[var(--foreground)]"
-            }`}
-          >
-            {item.label}
-          </Link>
-        );
-      })}
+      <div className="flex min-w-max gap-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1">
+        {energyItems.map((item) => {
+          const active =
+            pathname === item.href ||
+            (item.href !== "/energy" && pathname.startsWith(item.href));
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                active
+                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                  : "text-[var(--muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
     </nav>
   );
 }

@@ -7,8 +7,8 @@ import { GaugeIcon, ChartIcon, SunIcon } from "@/components/shared/icons";
 const actions = [
   {
     href: "/energy/scheduler",
-    label: "Overnight charge",
-    desc: "Schedule cheap-period charging",
+    label: "TOU schedule",
+    desc: "View live bands and price timeline",
     icon: GaugeIcon,
   },
   {
@@ -20,13 +20,13 @@ const actions = [
   {
     href: "/energy/forecast",
     label: "Solar forecast",
-    desc: "Skip grid charge if sunny",
+    desc: "Today’s expected generation",
     icon: SunIcon,
   },
   {
     href: "/energy/controls",
-    label: "Battery limits",
-    desc: "Charge / discharge caps",
+    label: "Inverter settings",
+    desc: "Read-only live schedule and mode",
     icon: GaugeIcon,
   },
 ];

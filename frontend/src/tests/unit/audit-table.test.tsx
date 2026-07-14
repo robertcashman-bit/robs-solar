@@ -6,7 +6,7 @@ import { AuditTable } from "@/components/audit/AuditTable";
 describe("AuditTable", () => {
   it("renders empty state", () => {
     render(<AuditTable entries={[]} />);
-    expect(screen.getByText("No audit entries yet.")).toBeInTheDocument();
+    expect(screen.getByText("No audit entries yet")).toBeInTheDocument();
   });
 
   it("renders audit rows", () => {

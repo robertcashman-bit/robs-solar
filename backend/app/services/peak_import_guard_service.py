@@ -200,7 +200,8 @@ class PeakImportGuardService:
             return
 
         if (
-            safety_settings_service.effective_read_only()
+            settings.is_production
+            or safety_settings_service.effective_read_only()
             or not safety_settings_service.effective_enable_live_writes()
         ):
             return

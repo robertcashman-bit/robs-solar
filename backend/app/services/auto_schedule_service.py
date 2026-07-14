@@ -202,15 +202,19 @@ class AutoScheduleService:
             return await self.get_status(db)
 
         if (
-            safety_settings_service.effective_read_only()
+            settings.is_production
+            or safety_settings_service.effective_read_only()
             or not safety_settings_service.effective_enable_live_writes()
         ):
-            self._last_run_message = "Writes disabled (read-only or live writes off)"
+            self._last_run_message = (
+                "Writes disabled (production display-only, read-only, or live writes off)"
+            )
             # This is the most common reason a correct schedule is never applied,
             # so log it at WARNING rather than letting it fail silently.
             logger.warning(
                 "Auto-align computed a schedule but did not write it: live writes are "
-                "disabled (read_only=%s, enable_live_writes=%s).",
+                "disabled (production=%s, read_only=%s, enable_live_writes=%s).",
+                settings.is_production,
                 safety_settings_service.effective_read_only(),
                 safety_settings_service.effective_enable_live_writes(),
             )

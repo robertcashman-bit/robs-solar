@@ -2,11 +2,11 @@ import { expect, test } from "@playwright/test";
 
 import { gotoWhenAuthed } from "./helpers";
 
-test("admin sees auto-align panel on scheduler page", async ({ page }) => {
+test("auto-align write panel is not shown on the display-only scheduler", async ({ page }) => {
   await gotoWhenAuthed(page, "/energy/scheduler");
-  await expect(page.getByRole("heading", { name: "Time-of-use scheduler" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Time-of-use schedule" })).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Auto-align battery to IOG windows" }),
-  ).toBeVisible({ timeout: 15000 });
-  await expect(page.getByRole("button", { name: /Enable auto-align/i })).toBeVisible();
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Enable auto-align/i })).toHaveCount(0);
 });

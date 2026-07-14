@@ -29,6 +29,9 @@ async def test_admin_can_toggle_peak_import_guard(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "read_only", False)
     session = await login(client, "admin", "admin-pass")
     csrf = session["csrf_token"]
 

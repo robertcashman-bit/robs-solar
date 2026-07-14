@@ -398,6 +398,42 @@ body {
   transform: translateY(0);
 }
 
+.solar-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-elevated);
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+  box-shadow: var(--shadow-sm);
+  transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.solar-btn-secondary:hover:not(:disabled) {
+  background: var(--surface-solid);
+  border-color: var(--solar);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.solar-btn-secondary:active:not(:disabled) {
+  transform: translateY(0);
+}
+.solar-btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* --------------------------- Page layout --------------------------- */
+.solar-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
 /* --------------------------- Status --------------------------- */
 .solar-status-pill {
   display: inline-flex;

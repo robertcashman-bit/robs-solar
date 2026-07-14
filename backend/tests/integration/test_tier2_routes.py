@@ -55,7 +55,10 @@ async def test_safety_settings_admin(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_rules_crud(client: AsyncClient) -> None:
+async def test_rules_crud(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "read_only", False)
     session = await login(client, "admin", "admin-pass")
     headers = {"X-CSRF-Token": session["csrf_token"]}
     create = await client.post(

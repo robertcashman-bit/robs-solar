@@ -6,7 +6,10 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
+import { InfoBanner } from "@/components/shared/InfoBanner";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { PageLoading } from "@/components/shared/PageLoading";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import { SettingsIcon, ShieldIcon } from "@/components/shared/icons";
 import { FinanceSettingsPanel } from "@/components/settings/FinanceSettingsPanel";
 import { OctopusSettingsForm } from "@/components/settings/OctopusSettingsForm";
@@ -35,20 +38,14 @@ import {
   type TariffSettings,
 } from "@/lib/schemas";
 
-function StatusBadge({ enabled, label }: { enabled: boolean; label: string }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-        enabled
-          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-          : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-      }`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${enabled ? "bg-emerald-500" : "bg-amber-500"}`} />
-      {label}
-    </span>
-  );
-}
+const ENERGY_SECTIONS = [
+  { id: "energy-status", label: "System status" },
+  { id: "energy-hardware", label: "Hardware" },
+  { id: "energy-tariff", label: "Tariff" },
+  { id: "energy-integrations", label: "Integrations" },
+  { id: "energy-safety", label: "Safety" },
+  { id: "energy-backup", label: "Backup" },
+] as const;
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -135,27 +132,39 @@ export default function SettingsPage() {
 
   return (
     <AppShell>
-      <div className="space-y-6">
+      <div className="solar-page">
         <PageHeader
           eyebrow="Configuration"
           icon={<ShieldIcon size={22} />}
           title="Safety & configuration"
-          description="Backend adapter mode and safety flags. Live writes remain opt-in via environment variables."
+          description="Manage finance integrations and energy system settings. Live writes remain opt-in via environment variables."
         />
 
         {error ? <ErrorBanner message={error} /> : null}
 
-        <div className="flex gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1">
+        <div
+          role="tablist"
+          aria-label="Settings sections"
+          className="flex gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1"
+        >
           <button
             type="button"
-            className={`rounded-lg px-4 py-2 text-sm font-medium ${settingsTab === "finance" ? "bg-emerald-500 text-white" : ""}`}
+            role="tab"
+            aria-selected={settingsTab === "finance"}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              settingsTab === "finance" ? "bg-emerald-500 text-white" : "text-[var(--muted)]"
+            }`}
             onClick={() => setSettingsTab("finance")}
           >
             Finance
           </button>
           <button
             type="button"
-            className={`rounded-lg px-4 py-2 text-sm font-medium ${settingsTab === "energy" ? "bg-amber-500 text-white" : ""}`}
+            role="tab"
+            aria-selected={settingsTab === "energy"}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              settingsTab === "energy" ? "bg-amber-500 text-white" : "text-[var(--muted)]"
+            }`}
             onClick={() => setSettingsTab("energy")}
           >
             Energy / Solar
@@ -166,21 +175,33 @@ export default function SettingsPage() {
 
         {settingsTab === "energy" ? (
           <>
+            <nav aria-label="Energy settings sections" className="flex flex-wrap gap-2">
+              {ENERGY_SECTIONS.map((section) => (
+                <a
+                  key={section.id}
+                  href={`#${section.id}`}
+                  className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs font-medium text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+                >
+                  {section.label}
+                </a>
+              ))}
+            </nav>
+
         {inverterAccess && !inverterAccess.write_allowed ? (
           <InstallerAccessPanel plantName={inverterAccess.plant_name || "Greenacre"} />
         ) : null}
 
         {!liveWritesEnabled ? (
-          <p className="rounded-xl border border-amber-300/40 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <InfoBanner variant="warning">
             Live writes disabled — set ENABLE_LIVE_WRITES=true (and Sunsynk unverified flag if using
             Sunsynk) in backend/.env to allow non-simulator live writes.
-          </p>
+          </InfoBanner>
         ) : null}
 
         {capabilities?.read_only ? (
-          <p className="rounded-xl border border-sky-300/40 bg-sky-50/80 px-4 py-3 text-sm text-sky-900 dark:bg-sky-950/30 dark:text-sky-200">
+          <InfoBanner variant="info">
             Read-only mode is enabled — all control writes are blocked at the API layer.
-          </p>
+          </InfoBanner>
         ) : null}
 
         {capabilities ? (
@@ -192,11 +213,25 @@ export default function SettingsPage() {
         ) : null}
 
         {capabilities ? (
-          <section className="solar-card">
-            <div className="mb-4 flex flex-wrap gap-2">
-              <StatusBadge enabled={!capabilities.read_only} label={capabilities.read_only ? "Read-only" : "Writes allowed"} />
-              <StatusBadge enabled={capabilities.enable_live_writes} label={capabilities.enable_live_writes ? "Live writes on" : "Live writes off"} />
-              <StatusBadge enabled={capabilities.sunsynk_enable_unverified_writes} label={capabilities.sunsynk_enable_unverified_writes ? "Sunsynk writes on" : "Sunsynk writes off"} />
+          <section id="energy-status" className="solar-card scroll-mt-24">
+            <h3 className="solar-section-title">System status</h3>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <StatusBadge
+                label={capabilities.read_only ? "Read-only" : "Writes allowed"}
+                tone={capabilities.read_only ? "warning" : "positive"}
+              />
+              <StatusBadge
+                label={capabilities.enable_live_writes ? "Live writes on" : "Live writes off"}
+                tone={capabilities.enable_live_writes ? "positive" : "warning"}
+              />
+              <StatusBadge
+                label={
+                  capabilities.sunsynk_enable_unverified_writes
+                    ? "Sunsynk writes on"
+                    : "Sunsynk writes off"
+                }
+                tone={capabilities.sunsynk_enable_unverified_writes ? "positive" : "warning"}
+              />
             </div>
             <dl className="grid gap-5 sm:grid-cols-2">
               <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
@@ -258,10 +293,10 @@ export default function SettingsPage() {
             </dl>
           </section>
         ) : (
-          <p className="text-sm text-[var(--muted)]">Loading configuration...</p>
+          <PageLoading label="Loading configuration" rows={1} />
         )}
 
-        <section className="solar-card">
+        <section id="energy-hardware" className="solar-card scroll-mt-24">
           <h3 className="solar-section-title">System hardware</h3>
           <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
             <div>
@@ -289,7 +324,8 @@ export default function SettingsPage() {
         </section>
 
         {tariff ? (
-          <TariffSettingsForm
+          <div id="energy-tariff" className="scroll-mt-24">
+            <TariffSettingsForm
             initial={tariff}
             readOnly={!canWrite(user)}
             onSubmit={async (updated) => {
@@ -299,10 +335,13 @@ export default function SettingsPage() {
               setTariff(result);
             }}
           />
+          </div>
         ) : null}
 
         {canWrite(user) && octopus ? (
-          <OctopusSettingsForm initial={octopus} onSaved={(status) => setOctopus(status)} />
+          <div id="energy-integrations" className="scroll-mt-24">
+            <OctopusSettingsForm initial={octopus} onSaved={(status) => setOctopus(status)} />
+          </div>
         ) : null}
 
         {canWrite(user) && notifications ? (
@@ -318,7 +357,8 @@ export default function SettingsPage() {
         ) : null}
 
         {canWrite(user) && safety ? (
-          <SafetySettingsPanel
+          <div id="energy-safety" className="scroll-mt-24">
+            <SafetySettingsPanel
             initial={safety}
             onSubmit={async (update) => {
               const result = safetySettingsSchema.parse(
@@ -329,6 +369,7 @@ export default function SettingsPage() {
               setCapabilities(capabilitiesResponseSchema.parse(capsData));
             }}
           />
+          </div>
         ) : null}
 
         {canWrite(user) && optimisationMode ? (
@@ -336,7 +377,7 @@ export default function SettingsPage() {
         ) : null}
 
         {canWrite(user) ? (
-          <section className="solar-card space-y-3">
+          <section id="energy-backup" className="solar-card scroll-mt-24 space-y-3">
             <h3 className="solar-section-title">Configuration backup</h3>
             <p className="text-sm text-[var(--muted)]">
               Export tariff and recent snapshots as JSON. Restore applies tariff only (adapter mode

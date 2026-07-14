@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { summariseApplyResult } from "@/lib/ai-apply";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { apiClient } from "@/lib/api-client";
 import {
   aiAssessmentSchema,
   aiChatResponseSchema,
@@ -20,13 +19,18 @@ type ChatTurn = {
 };
 
 const ACTION_LABELS: Record<AiProposedAction["kind"], string> = {
-  set_tou_bands: "Update charge schedule",
-  set_export_limit: "Set export limit",
-  set_operating_mode: "Set operating mode",
-  set_auto_schedule: "Update auto-align",
+  set_tou_bands: "Suggested charge schedule",
+  set_export_limit: "Suggested export limit",
+  set_operating_mode: "Suggested operating mode",
+  set_auto_schedule: "Suggested auto-align",
 };
 
-export function AssistantPanel() {
+type AssistantPanelProps = {
+  /** When true, proposed actions are shown as advice only — never applied. */
+  adviceOnly?: boolean;
+};
+
+export function AssistantPanel({ adviceOnly = true }: AssistantPanelProps) {
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [assessment, setAssessment] = useState<AiAssessment | null>(null);
   const [assessing, setAssessing] = useState(false);
@@ -34,7 +38,6 @@ export function AssistantPanel() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [applied, setApplied] = useState<Record<string, string>>({});
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -90,58 +93,30 @@ export function AssistantPanel() {
     }
   };
 
-  const applyAction = async (action: AiProposedAction, key: string) => {
-    setError(null);
-    setApplied((prev) => ({ ...prev, [key]: "applying" }));
-    try {
-      const raw = await apiClient.post(action.endpoint, action.body);
-      setApplied((prev) => ({ ...prev, [key]: summariseApplyResult(action, raw) }));
-    } catch (e) {
-      const msg =
-        e instanceof ApiError ? `${e.message} (HTTP ${e.status})` : "Failed to apply change";
-      setApplied((prev) => ({ ...prev, [key]: msg }));
-    }
-  };
-
-  const renderActions = (actions: AiProposedAction[] | undefined, scope: string) => {
+  const renderActions = (actions: AiProposedAction[] | undefined) => {
     if (!actions || actions.length === 0) {
       return null;
     }
     return (
       <div className="mt-3 space-y-3">
-        {actions.map((action, idx) => {
-          const key = `${scope}-${idx}`;
-          const state = applied[key];
-          return (
-            <div key={key} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
-              <p className="text-sm font-semibold">{ACTION_LABELS[action.kind] ?? action.kind}</p>
-              <p className="mt-0.5 text-sm">{action.summary}</p>
-              {action.reason ? (
-                <p className="mt-1 text-xs text-[var(--muted)]">Why: {action.reason}</p>
-              ) : null}
-              <pre className="mt-2 overflow-x-auto rounded bg-[var(--surface-elevated)] p-2 text-xs text-[var(--muted)]">
-                {JSON.stringify(action.body, null, 2)}
-              </pre>
-              <div className="mt-2 flex items-center gap-3">
-                <button
-                  type="button"
-                  className="solar-btn-primary text-xs"
-                  disabled={state === "applying" || (state?.startsWith("Applied") ?? false)}
-                  onClick={() => void applyAction(action, key)}
-                >
-                  {state === "applying" ? "Applying…" : "Confirm & apply"}
-                </button>
-                {state && state !== "applying" ? (
-                  <span
-                    className={`text-xs ${state.startsWith("Applied") ? "text-emerald-500" : "text-red-500"}`}
-                  >
-                    {state}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
+        {actions.map((action, idx) => (
+          <div key={idx} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+            <p className="text-sm font-semibold">{ACTION_LABELS[action.kind] ?? action.kind}</p>
+            <p className="mt-0.5 text-sm">{action.summary}</p>
+            {action.reason ? (
+              <p className="mt-1 text-xs text-[var(--muted)]">Why: {action.reason}</p>
+            ) : null}
+            <pre className="mt-2 overflow-x-auto rounded bg-[var(--surface-elevated)] p-2 text-xs text-[var(--muted)]">
+              {JSON.stringify(action.body, null, 2)}
+            </pre>
+            {adviceOnly ? (
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                Suggestion only — apply this in Simple Solar or Sunsynk Connect if you want to
+                change the inverter.
+              </p>
+            ) : null}
+          </div>
+        ))}
       </div>
     );
   };
@@ -172,8 +147,8 @@ export function AssistantPanel() {
           <div>
             <p className="text-sm font-semibold">Are my settings optimal right now?</p>
             <p className="text-xs text-[var(--muted)]">
-              The assistant reads live metrics, tariff, and your schedule, then proposes changes you
-              confirm.
+              The assistant reads live metrics, tariff, and your schedule, then suggests changes.
+              Nothing is written to the inverter from this app.
             </p>
           </div>
           <button
@@ -201,7 +176,7 @@ export function AssistantPanel() {
                 ))}
               </ul>
             ) : null}
-            {renderActions(assessment.proposed_actions, "assess")}
+            {renderActions(assessment.proposed_actions)}
           </div>
         ) : null}
       </div>
@@ -227,7 +202,7 @@ export function AssistantPanel() {
                 }`}
               >
                 <p className="whitespace-pre-wrap">{turn.content}</p>
-                {turn.role === "assistant" ? renderActions(turn.actions, `chat-${idx}`) : null}
+                {turn.role === "assistant" ? renderActions(turn.actions) : null}
               </div>
             </div>
           ))}

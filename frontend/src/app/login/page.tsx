@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ErrorBanner } from "@/components/shared/Banners";
-import { WalletIcon } from "@/components/shared/icons";
+import { PageLoading } from "@/components/shared/PageLoading";
+import { SunIcon, WalletIcon } from "@/components/shared/icons";
 import { useAuth } from "@/lib/auth-context";
 
 // Convenience default for this single-user personal dashboard so Rob can sign
@@ -25,7 +27,17 @@ export default function LoginPage() {
     }
   }, [loading, user, router]);
 
-  if (!loading && user) {
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          <PageLoading label="Checking session" rows={1} />
+        </div>
+      </div>
+    );
+  }
+
+  if (user) {
     return null;
   }
 
@@ -48,22 +60,30 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
+    <div className="flex min-h-screen items-center justify-center px-4 py-8">
       <form
         onSubmit={(event) => void handleSubmit(event)}
-        className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-8 shadow-xl backdrop-blur-xl"
+        className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-xl backdrop-blur-xl sm:p-8"
         style={{ boxShadow: "var(--shadow-lg)" }}
+        aria-labelledby="login-heading"
       >
         <div className="flex flex-col items-center text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-lg">
-            <WalletIcon size={28} />
+          <div className="flex items-center gap-2">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-lg">
+              <WalletIcon size={24} />
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 text-white shadow-lg">
+              <SunIcon size={24} />
+            </div>
           </div>
           <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
             Rob&apos;s Finance
           </p>
-          <h1 className="mt-1 text-2xl font-bold">Sign in</h1>
+          <h1 id="login-heading" className="mt-1 text-2xl font-bold">
+            Sign in
+          </h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Personal and business finance dashboard.
+            Personal finance, business tracking, and home energy monitoring.
           </p>
         </div>
 
@@ -73,7 +93,7 @@ export default function LoginPage() {
           onClick={() => void signIn(QUICK_ADMIN)}
           className="solar-btn-primary mt-8 w-full"
         >
-          {submitting ? "Signing in..." : "Sign in as admin (one tap)"}
+          {submitting ? "Signing in…" : "Sign in as admin (one tap)"}
         </button>
 
         <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-wide text-[var(--muted)]">
@@ -89,6 +109,7 @@ export default function LoginPage() {
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             autoComplete="username"
+            required
           />
         </label>
 
@@ -100,6 +121,7 @@ export default function LoginPage() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoComplete="current-password"
+            required
           />
         </label>
 
@@ -114,8 +136,20 @@ export default function LoginPage() {
           disabled={submitting}
           className="solar-btn-secondary mt-6 w-full"
         >
-          {submitting ? "Signing in..." : "Sign in"}
+          {submitting ? "Signing in…" : "Sign in"}
         </button>
+
+        <p className="mt-6 text-center text-xs text-[var(--muted)]">
+          By signing in you agree to our{" "}
+          <Link href="/terms" className="underline hover:text-[var(--foreground)]">
+            terms
+          </Link>{" "}
+          and{" "}
+          <Link href="/privacy" className="underline hover:text-[var(--foreground)]">
+            privacy policy
+          </Link>
+          .
+        </p>
       </form>
     </div>
   );

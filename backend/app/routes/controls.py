@@ -55,8 +55,28 @@ async def _ensure_writes_allowed(
     action: str,
     payload: dict,
 ) -> None:
+    from app.config import settings
+
     validate_csrf(request, session)
     await enforce_write_rate_limit(request)
+
+    # Hard production lock: solar/energy is display-only in the cloud.
+    if settings.is_production:
+        await audit_service.record(
+            db,
+            username=session.username,
+            role=session.role,
+            action=action,
+            request_payload=payload,
+            validation_result="blocked_production_display_only",
+            adapter_response="Production energy integration is display-only",
+            outcome=AuditOutcome.REJECTED,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Energy controls are display-only in production",
+        )
+
     safety = await safety_settings_service.get_settings(db)
     if safety.read_only:
         await audit_service.record(
@@ -209,8 +229,9 @@ async def set_auto_schedule(
     session: SessionData = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AutoScheduleStatus:
-    validate_csrf(request, session)
-    await enforce_write_rate_limit(request)
+    await _ensure_writes_allowed(
+        request, session, db, action="set_auto_schedule", payload=body.model_dump()
+    )
     await auto_schedule_service.set_config(db, body)
     await audit_service.record(
         db,
@@ -244,9 +265,10 @@ async def set_peak_import_guard(
     session: SessionData = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> PeakImportGuardStatus:
-    validate_csrf(request, session)
-    await enforce_write_rate_limit(request)
-    status = await peak_import_guard_service.set_config(db, body)
+    await _ensure_writes_allowed(
+        request, session, db, action="set_peak_import_guard", payload=body.model_dump()
+    )
+    status_payload = await peak_import_guard_service.set_config(db, body)
     await audit_service.record(
         db,
         username=session.username,
@@ -257,7 +279,7 @@ async def set_peak_import_guard(
         adapter_response=None,
         outcome=AuditOutcome.SUCCESS,
     )
-    return status
+    return status_payload
 
 
 @router.get("/rules", response_model=AutomationRulesResponse)
@@ -276,8 +298,9 @@ async def add_rule(
     session: SessionData = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AutomationRulesResponse:
-    validate_csrf(request, session)
-    await enforce_write_rate_limit(request)
+    await _ensure_writes_allowed(
+        request, session, db, action="add_rule", payload=body.model_dump()
+    )
     return await rules_engine.add_rule(db, body)
 
 
@@ -288,6 +311,7 @@ async def delete_rule(
     session: SessionData = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AutomationRulesResponse:
-    validate_csrf(request, session)
-    await enforce_write_rate_limit(request)
+    await _ensure_writes_allowed(
+        request, session, db, action="delete_rule", payload={"rule_id": rule_id}
+    )
     return await rules_engine.delete_rule(db, rule_id)

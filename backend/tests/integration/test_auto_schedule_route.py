@@ -59,7 +59,10 @@ async def test_enabling_auto_schedule_triggers_immediate_realign(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from app.config import settings
     from app.services.auto_schedule_service import auto_schedule_service
+
+    monkeypatch.setattr(settings, "read_only", False)
 
     run_calls: list[bool] = []
     original_run_once = auto_schedule_service.run_once
@@ -89,7 +92,10 @@ async def test_disabling_auto_schedule_skips_immediate_realign(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from app.config import settings
     from app.services.auto_schedule_service import auto_schedule_service
+
+    monkeypatch.setattr(settings, "read_only", False)
 
     run_calls: list[bool] = []
 

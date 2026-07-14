@@ -1,11 +1,16 @@
+import { LegalPageLayout } from "@/components/shared/LegalPageLayout";
+
 export default function PrivacyPage() {
   return (
-    <main className="mx-auto max-w-2xl space-y-4 p-6 text-sm leading-relaxed">
-      <h1 className="text-2xl font-semibold">Privacy policy</h1>
-      <p className="text-[var(--muted)]">Rob&apos;s Finance — personal use only</p>
+    <LegalPageLayout title="Privacy policy" subtitle="Rob's Finance — personal use only">
       <p>
-        This app is a private finance dashboard. Bank connection data is read-only and used
-        solely to display your account balances and transactions within the app.
+        This app is a private dashboard for personal finance and home energy monitoring. Bank
+        connection data is read-only and used solely to display your account balances and
+        transactions within the app.
+      </p>
+      <p>
+        Energy data from your inverter is stored locally on your backend server and used only to
+        display generation, consumption, and savings insights within the app.
       </p>
       <p>
         Open Banking credentials and session tokens are stored securely on the backend server.
@@ -16,6 +21,6 @@ export default function PrivacyPage() {
         For questions about this policy, contact the account owner via the email registered with
         Enable Banking.
       </p>
-    </main>
+    </LegalPageLayout>
   );
 }

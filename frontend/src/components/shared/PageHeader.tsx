@@ -10,20 +10,24 @@ type PageHeaderProps = {
 
 export function PageHeader({ eyebrow, title, description, icon, actions }: PageHeaderProps) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
-      <div className="flex items-start gap-4">
+    <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+      <div className="flex min-w-0 items-start gap-4">
         {icon ? (
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400/20 to-orange-500/20 text-[var(--solar-dark)] ring-1 ring-[var(--border)]">
             {icon}
           </div>
         ) : null}
-        <div>
+        <div className="min-w-0">
           <p className="solar-eyebrow text-[var(--solar-dark)]">{eyebrow}</p>
-          <h2 className="mt-1 text-3xl font-bold tracking-tight">{title}</h2>
-          {description ? <p className="mt-1 text-sm text-[var(--muted)]">{description}</p> : null}
+          <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
+          {description ? (
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[var(--muted)]">{description}</p>
+          ) : null}
         </div>
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
-    </div>
+      {actions ? (
+        <div className="flex w-full shrink-0 flex-wrap gap-2 sm:w-auto sm:justify-end">{actions}</div>
+      ) : null}
+    </header>
   );
 }

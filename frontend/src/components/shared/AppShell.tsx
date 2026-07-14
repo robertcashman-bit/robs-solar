@@ -50,10 +50,15 @@ function isNavActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function isEnergySection(pathname: string): boolean {
+  return pathname === "/energy" || pathname.startsWith("/energy/");
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { user, logout, loading } = useAuth();
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const inEnergySection = isEnergySection(pathname);
 
   useEffect(() => {
     setTheme(readStoredTheme());
@@ -85,17 +90,40 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col text-[var(--foreground)]">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-[var(--surface-solid)] focus:px-4 focus:py-2 focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
       <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface-elevated)]/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <Link href="/" className="group flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-md transition-transform group-hover:scale-105">
-              <WalletIcon size={20} />
+          <Link
+            href={inEnergySection ? "/energy" : "/"}
+            className="group flex items-center gap-3"
+          >
+            <div
+              className={`flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-md transition-transform group-hover:scale-105 ${
+                inEnergySection
+                  ? "bg-gradient-to-br from-amber-400 to-orange-600"
+                  : "bg-gradient-to-br from-emerald-400 to-teal-600"
+              }`}
+            >
+              {inEnergySection ? <SunIcon size={20} /> : <WalletIcon size={20} />}
             </div>
             <div>
-              <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400">
+              <p
+                className={`text-[0.65rem] font-bold uppercase tracking-[0.14em] ${
+                  inEnergySection
+                    ? "text-amber-700 dark:text-amber-400"
+                    : "text-emerald-700 dark:text-emerald-400"
+                }`}
+              >
                 Rob&apos;s Finance
               </p>
-              <h1 className="text-sm font-semibold leading-tight tracking-tight">Finance Dashboard</h1>
+              <p className="text-sm font-semibold leading-tight tracking-tight">
+                {inEnergySection ? "Energy & Solar" : "Finance Dashboard"}
+              </p>
             </div>
           </Link>
 
@@ -135,10 +163,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
               <Link
                 href="/alerts"
-                className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)]"
-                aria-label="Alerts"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)]"
+                aria-label="View alerts"
               >
                 <AlertIcon size={16} />
+                <span className="hidden sm:inline">Alerts</span>
               </Link>
 
               <span className="hidden items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium shadow-sm md:inline-flex">
@@ -158,7 +187,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">
+      <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">
         {user ? <InstallAppBanner /> : null}
         {user ? <EnergySubNav isAdmin={canWrite(user)} /> : null}
         {children}
