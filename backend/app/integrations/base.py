@@ -43,12 +43,3 @@ class OpenBankingProvider(BaseFinanceProvider):
     async def sync_transactions(self, *, since: str | None = None) -> list[dict[str, Any]]:
         raise IntegrationNotConfiguredError("Open Banking is not configured.")
 
-
-class TeslaProvider(BaseFinanceProvider):
-    name = "tesla"
-
-    async def sync_accounts(self) -> list[dict[str, Any]]:
-        raise IntegrationNotConfiguredError("Tesla API integration is not yet available.")
-
-    async def sync_transactions(self, *, since: str | None = None) -> list[dict[str, Any]]:
-        raise IntegrationNotConfiguredError("Tesla API integration is not yet available.")

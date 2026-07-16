@@ -62,15 +62,26 @@ Key backend settings:
 
 | Route | Description |
 |-------|-------------|
-| `/` | Live dashboard (WebSocket with polling fallback) |
-| `/analytics` | Historical charts and savings summary |
-| `/octopus` | Agile half-hourly prices (requires `OCTOPUS_API_KEY`) |
-| `/forecast` | 3-day solar generation forecast (Open-Meteo) |
-| `/scheduler` | TOU schedule presets and timeline (admin) |
-| `/controls` | Export limit, mode, battery, force charge/discharge (admin) |
+| `/` | Finance overview (balances, debts, cash flow, alerts) |
+| `/finance/connect` | Connect banks (Lunch Flow / Open Banking) and QuickFile |
+| `/finance/personal` | Personal accounts and balances |
+| `/finance/business` | Business accounts (QuickFile) |
+| `/finance/debts` | Liabilities and payoff strategy |
+| `/finance/cash-flow` | 30/60/90-day cash-flow forecast |
+| `/finance/budget` | Monthly budget lines |
+| `/finance/reports` | Monthly finance + energy savings report |
+| `/finance/assistant` | Finance AI assistant (admin) |
+| `/energy` | Live energy dashboard (WebSocket with polling fallback) |
+| `/energy/analytics` | Historical charts and savings summary |
+| `/energy/octopus` | Agile half-hourly prices (requires `OCTOPUS_API_KEY`) |
+| `/energy/forecast` | 3-day solar generation forecast (Open-Meteo) |
+| `/energy/scheduler` | TOU strategy previews (display-only) |
+| `/energy/controls` | Live inverter settings view (display-only) |
+| `/energy/assistant` | Energy AI assistant (admin) |
+| `/energy/diagnostics` | Load / house CT diagnostics |
 | `/alerts` | SOC, import, pricing, and connectivity alerts |
 | `/audit` | Control write audit log (admin) |
-| `/settings` | Safety flags, hardware info, tariff, backup/restore |
+| `/settings` | Safety flags, hardware info, tariff, integrations |
 
 ## Modbus TCP discovery
 

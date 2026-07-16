@@ -1,56 +1,17 @@
-import { useState } from "react";
-
 import type { SellOpportunity } from "@/lib/schemas";
-import { apiClient, ApiError } from "@/lib/api-client";
-import { controlWriteResultSchema } from "@/lib/schemas";
 
 import { ArrowUpIcon } from "@/components/shared/icons";
 
 type SellOpportunityCardProps = {
   opportunity: SellOpportunity | null;
-  canControl: boolean;
+  canControl?: boolean;
   onRefresh?: () => void | Promise<void>;
 };
 
-export function SellOpportunityCard({
-  opportunity,
-  canControl,
-  onRefresh,
-}: SellOpportunityCardProps) {
-  const [busy, setBusy] = useState<"sell" | "stop" | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [errored, setErrored] = useState(false);
-
+export function SellOpportunityCard({ opportunity }: SellOpportunityCardProps) {
   if (!opportunity || !opportunity.configured) {
     return null;
   }
-
-  const applyMode = async (mode: "feed_in" | "self_use", kind: "sell" | "stop") => {
-    setBusy(kind);
-    setFeedback(null);
-    setErrored(false);
-    try {
-      const result = controlWriteResultSchema.parse(
-        await apiClient.post("/controls/operating-mode", { mode }),
-      );
-      if (!result.success) {
-        throw new ApiError(result.message ?? "Inverter rejected the change", 502);
-      }
-      setFeedback(
-        mode === "feed_in"
-          ? "Selling to grid — inverter switched to Feed-in mode."
-          : "Stopped selling — inverter back to self-use.",
-      );
-      if (onRefresh) {
-        await onRefresh();
-      }
-    } catch (err) {
-      setErrored(true);
-      setFeedback(err instanceof Error ? err.message : "Could not change inverter mode.");
-    } finally {
-      setBusy(null);
-    }
-  };
 
   const worth = opportunity.worth_selling;
 
@@ -85,38 +46,11 @@ export function SellOpportunityCard({
               {opportunity.estimated_value_gbp.toFixed(2)}
             </p>
           ) : null}
-          {feedback ? (
-            <p
-              className={`mt-2 text-xs font-medium ${
-                errored ? "text-rose-600 dark:text-rose-400" : "text-emerald-700 dark:text-emerald-300"
-              }`}
-            >
-              {feedback}
-            </p>
-          ) : null}
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            Advice only — switch to Feed-in or Self-use in Simple Solar or Sunsynk Connect.
+          </p>
         </div>
       </div>
-
-      {canControl ? (
-        <div className="flex shrink-0 gap-2">
-          <button
-            type="button"
-            onClick={() => applyMode("feed_in", "sell")}
-            disabled={busy !== null || !worth}
-            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy === "sell" ? "Switching…" : "Sell now"}
-          </button>
-          <button
-            type="button"
-            onClick={() => applyMode("self_use", "stop")}
-            disabled={busy !== null}
-            className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-[var(--foreground)] transition hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/5"
-          >
-            {busy === "stop" ? "Switching…" : "Stop selling"}
-          </button>
-        </div>
-      ) : null}
     </section>
   );
 }

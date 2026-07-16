@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +22,8 @@ from app.services.data_source import apply_sample_source_filter
 from app.services.iog_schedule import time_to_minutes
 from app.services.tariff_clock import tariff_now, to_tariff
 from app.services.tariff_service import tariff_service
+
+logger = logging.getLogger(__name__)
 
 _IMPORT_SUSTAINED_SAMPLES = 6
 _HIGH_SOC_DEFAULT = 95.0
@@ -48,7 +52,7 @@ class SystemWarningsService:
         try:
             metrics = await adapter.get_live_metrics()
         except Exception:
-            pass
+            logger.warning("System warnings: failed to load live metrics", exc_info=True)
 
         window = await charge_window_service.get_status(adapter)
 

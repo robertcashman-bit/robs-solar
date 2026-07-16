@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.auth.passwords import warn_if_default_passwords
+from app.auth.passwords import assert_production_secret_key, warn_if_default_passwords
 from app.config import settings
 from app.db.session import init_db
 from app.logging import configure_logging
@@ -50,6 +50,7 @@ def _warn_production_simulator() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
+    assert_production_secret_key()
     warn_if_default_passwords()
     _warn_production_simulator()
     await init_db()
@@ -76,7 +77,7 @@ async def _load_octopus_credentials() -> None:
         try:
             await octopus_client.resolve_tariffs_from_account()
         except Exception:
-            pass
+            logger.warning("Failed to resolve Octopus tariffs from account", exc_info=True)
 
 
 app = FastAPI(title="Rob's Solar API", version="0.1.0", lifespan=lifespan)

@@ -8,7 +8,9 @@ import { MetricTile } from "@/components/finance/MetricTile";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { PageLoading } from "@/components/shared/PageLoading";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -28,15 +30,21 @@ export default function CashFlowPage() {
     personal: CashflowForecast;
     business: CashflowForecast;
   } | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await apiClient.get<unknown>(`/finance/cashflow?horizon=${horizon}`);
       const parsed = cashflowForecastsSchema.parse(data);
       setForecasts({ personal: parsed.personal, business: parsed.business });
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load cash flow");
+      setForecasts(null);
+    } finally {
+      setLoading(false);
     }
   }, [horizon]);
 
@@ -94,7 +102,11 @@ export default function CashFlowPage() {
           <ErrorBanner message={error} />
         </div>
       ) : null}
-      {forecast ? (
+      {loading ? (
+        <div className="mt-6">
+          <PageLoading label="Loading cash flow forecast" rows={2} />
+        </div>
+      ) : forecast ? (
         <>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <MetricTile label="Starting balance" value={forecast.starting_balance_gbp} amountRole="signed" />
@@ -111,29 +123,43 @@ export default function CashFlowPage() {
               {forecast.warning_message}
             </p>
           ) : null}
-          <ul className="mt-6 space-y-2">
-            {forecast.entries.map((e) => (
-              <li
-                key={e.id}
-                className="flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm"
-              >
-                <span>
-                  {e.label}{" "}
-                  <span className="text-[var(--muted)]">
-                    · {e.forecast_date} · {e.entry_type}
+          {forecast.entries.length === 0 ? (
+            <div className="mt-6">
+              <EmptyState
+                title="No forecast entries"
+                description={`No expected ${scope} income or outflows in the next ${horizon} days.`}
+              />
+            </div>
+          ) : (
+            <ul className="mt-6 space-y-2">
+              {forecast.entries.map((e) => (
+                <li
+                  key={e.id}
+                  className="flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm"
+                >
+                  <span>
+                    {e.label}{" "}
+                    <span className="text-[var(--muted)]">
+                      · {e.forecast_date} · {e.entry_type}
+                    </span>
                   </span>
-                </span>
-                <FinanceAmount
-                  value={e.amount_gbp}
-                  role={financeRoleForCashflowEntry(e.entry_type, e.amount_gbp)}
-                  className="font-semibold"
-                />
-              </li>
-            ))}
-          </ul>
+                  <FinanceAmount
+                    value={e.amount_gbp}
+                    role={financeRoleForCashflowEntry(e.entry_type, e.amount_gbp)}
+                    className="font-semibold"
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       ) : (
-        <p className="mt-8 text-sm text-[var(--muted)]">Loading forecast…</p>
+        <div className="mt-6">
+          <EmptyState
+            title="Cash flow unavailable"
+            description="Could not load the forecast. Check your connection and try again."
+          />
+        </div>
       )}
     </AppShell>
   );

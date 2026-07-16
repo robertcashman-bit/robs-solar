@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -9,6 +10,8 @@ from app.config import settings
 from app.schemas.domain import DispatchWindow, EvStatusResponse, LiveMetrics
 from app.services.effective_load import effective_load_w
 from app.services.iog_schedule import charge_intervals_from_windows, is_charge_minute
+
+logger = logging.getLogger(__name__)
 
 _LOAD_THRESHOLD_W = 4000
 _SUSTAINED_SECONDS = 120
@@ -102,5 +105,5 @@ async def sync_ev_detector(metrics: LiveMetrics) -> None:
         dispatches = await octopus_client.get_dispatches()
         planned = list(dispatches.planned)
     except Exception:
-        pass
+        logger.warning("EV detector: failed to load Octopus dispatches", exc_info=True)
     ev_load_detector.update(metrics, planned)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +19,8 @@ from app.schemas.finance import (
 )
 from app.services.finance.quickfile_reports_service import quickfile_reports_service
 from app.services.quickfile_settings_service import quickfile_settings_service
+
+logger = logging.getLogger(__name__)
 
 
 class QuickFileSyncService:
@@ -57,7 +61,7 @@ class QuickFileSyncService:
             reports_synced = True
             message += "; P&L and balance sheet synced"
         except Exception:
-            pass
+            logger.warning("QuickFile reports sync failed after account sync", exc_info=True)
 
         return QuickFileSyncResult(
             accounts_synced=synced,

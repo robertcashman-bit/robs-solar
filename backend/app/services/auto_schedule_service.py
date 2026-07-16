@@ -154,7 +154,7 @@ class AutoScheduleService:
                 offpeak_end = dispatches.off_peak_window.end
                 planned = list(dispatches.planned)
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("Auto schedule: failed to load Octopus dispatches", exc_info=True)
 
         window = evaluate_charge_window(
             grid_import_w=metrics.grid_import_w,

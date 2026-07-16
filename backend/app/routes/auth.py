@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.auth.dependencies import authenticate_user, get_current_session, to_user_info
 from app.auth.sessions import SESSION_COOKIE, SessionData, session_manager
 from app.config import settings
+from app.middleware.rate_limit import enforce_login_rate_limit
 from app.schemas.domain import LoginRequest, LoginResponse, SessionResponse, UserInfo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(request: LoginRequest, response: Response) -> LoginResponse:
-    user = authenticate_user(request)
+async def login(body: LoginRequest, response: Response, request: Request) -> LoginResponse:
+    await enforce_login_rate_limit(request)
+    user = authenticate_user(body)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     token, csrf_token = session_manager.create_session_token(user.username, user.role)

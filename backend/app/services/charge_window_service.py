@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from app.adapters.base import InverterAdapter
@@ -14,6 +15,8 @@ from app.services.iog_schedule import (
 )
 from app.services.octopus_client import octopus_client
 from app.services.tariff_clock import to_tariff
+
+logger = logging.getLogger(__name__)
 
 _IMPORT_THRESHOLD_W = 50.0
 _DISCHARGE_THRESHOLD_W = 100.0
@@ -262,20 +265,20 @@ class ChargeWindowService:
                 offpeak_end = dispatches.off_peak_window.end
                 planned = list(dispatches.planned)
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("Charge window: failed to load Octopus dispatches", exc_info=True)
 
         metrics = None
         active_band = None
         try:
             metrics = await adapter.get_live_metrics()
         except Exception:  # noqa: BLE001 — dashboard must not break
-            pass
+            logger.warning("Charge window: failed to load live metrics", exc_info=True)
 
         try:
             settings_payload = await adapter.get_inverter_settings()
             active_band = settings_payload.active_band if settings_payload else None
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("Charge window: failed to load inverter settings", exc_info=True)
 
         if metrics is None:
             return ChargeWindowStatus(

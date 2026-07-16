@@ -54,3 +54,23 @@ def warn_if_default_passwords() -> None:
             "Default admin/viewer passwords detected — change ADMIN_PASSWORD and "
             "VIEWER_PASSWORD in backend/.env before exposing this service to a network."
         )
+
+
+_DEFAULT_SECRET_KEYS = frozenset(
+    {
+        "change-me",
+        "change-me-to-a-long-random-secret-key",
+    }
+)
+
+
+def assert_production_secret_key() -> None:
+    """Refuse to start in production with a known default session signing key."""
+    if not settings.is_production:
+        return
+    key = (settings.secret_key or "").strip()
+    if not key or key in _DEFAULT_SECRET_KEYS:
+        raise RuntimeError(
+            "APP_ENV=production requires a non-default SECRET_KEY. "
+            "Set SECRET_KEY in the environment to a long random value."
+        )

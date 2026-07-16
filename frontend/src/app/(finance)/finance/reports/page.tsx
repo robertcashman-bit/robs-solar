@@ -10,7 +10,9 @@ import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { PageLoading } from "@/components/shared/PageLoading";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -33,6 +35,7 @@ export default function ReportsPage() {
   const [overview, setOverview] = useState<FinanceOverview | null>(null);
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
   const [liabilities, setLiabilities] = useState<FinanceLiability[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const month = currentMonthKey();
 
@@ -44,6 +47,7 @@ export default function ReportsPage() {
     if (!user) return;
     const timer = window.setTimeout(() => {
       void (async () => {
+        setLoading(true);
         try {
           const [reportsData, overviewData, accountsData, liabilitiesData] = await Promise.all([
             apiClient.get<unknown>(`/finance/reports?month=${month}`),
@@ -55,8 +59,13 @@ export default function ReportsPage() {
           setOverview(financeOverviewSchema.parse(overviewData));
           setAccounts(z.array(financeAccountSchema).parse(accountsData));
           setLiabilities(z.array(financeLiabilitySchema).parse(liabilitiesData));
+          setError(null);
         } catch (err) {
           setError(err instanceof Error ? err.message : "Failed to load reports");
+          setReports(null);
+          setOverview(null);
+        } finally {
+          setLoading(false);
         }
       })();
     }, 0);
@@ -77,7 +86,11 @@ export default function ReportsPage() {
           <ErrorBanner message={error} />
         </div>
       ) : null}
-      {reports && overview ? (
+      {loading ? (
+        <div className="mt-6">
+          <PageLoading label="Loading reports" rows={3} />
+        </div>
+      ) : reports && overview ? (
         <div className="mt-6 space-y-10">
           <section className="space-y-4">
             <h2 className="solar-section-title">Business reports</h2>
@@ -115,7 +128,12 @@ export default function ReportsPage() {
           </section>
         </div>
       ) : (
-        <p className="mt-8 text-sm text-[var(--muted)]">Loading reports…</p>
+        <div className="mt-6">
+          <EmptyState
+            title="Reports unavailable"
+            description="Could not load the monthly report. Check your connection and try again."
+          />
+        </div>
       )}
     </AppShell>
   );

@@ -1,13 +1,8 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { SellOpportunityCard } from "@/components/dashboard/SellOpportunityCard";
 import type { SellOpportunity } from "@/lib/schemas";
-
-vi.mock("@/lib/api-client", () => ({
-  apiClient: { post: vi.fn() },
-  ApiError: class ApiError extends Error {},
-}));
 
 const base: SellOpportunity = {
   worth_selling: false,
@@ -36,13 +31,14 @@ describe("SellOpportunityCard", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("shows headline and disables Sell now when not worth selling", () => {
+  it("shows headline and display-only advice when not worth selling", () => {
     render(<SellOpportunityCard opportunity={base} canControl />);
     expect(screen.getByText(/not worth selling/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /sell now/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /sell now/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/advice only/i)).toBeInTheDocument();
   });
 
-  it("enables Sell now and shows value when worth selling", () => {
+  it("shows value when worth selling without write controls", () => {
     const worth: SellOpportunity = {
       ...base,
       worth_selling: true,
@@ -53,11 +49,12 @@ describe("SellOpportunityCard", () => {
       message: "Switch to Feed-in mode to export.",
     };
     render(<SellOpportunityCard opportunity={worth} canControl />);
-    expect(screen.getByRole("button", { name: /sell now/i })).toBeEnabled();
     expect(screen.getByText(/£1\.41/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /sell now/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/Simple Solar or Sunsynk Connect/i)).toBeInTheDocument();
   });
 
-  it("hides control buttons when the user cannot control", () => {
+  it("stays display-only when the user cannot control", () => {
     render(<SellOpportunityCard opportunity={base} canControl={false} />);
     expect(screen.queryByRole("button", { name: /sell now/i })).not.toBeInTheDocument();
   });

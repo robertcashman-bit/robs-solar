@@ -45,13 +45,13 @@ class BatteryPlanService:
         try:
             metrics = await adapter.get_live_metrics()
         except Exception:  # noqa: BLE001 — diagnostics must never crash
-            pass
+            logger.warning("Battery plan: failed to load live metrics", exc_info=True)
 
         settings_payload = None
         try:
             settings_payload = await adapter.get_inverter_settings()
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("Battery plan: failed to load inverter settings", exc_info=True)
 
         auto_config = await auto_schedule_service._load_config(db)
         auto_enabled = bool(auto_config.get("enabled", False))
@@ -90,7 +90,7 @@ class BatteryPlanService:
                 offpeak_start = dispatches.off_peak_window.start
                 offpeak_end = dispatches.off_peak_window.end
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("Battery plan: failed to load Octopus dispatches", exc_info=True)
 
         issues = [
             ScheduleIssueModel(level=i.level, code=i.code, message=i.message)

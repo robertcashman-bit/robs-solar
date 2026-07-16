@@ -135,14 +135,14 @@ class PeakImportGuardService:
                 offpeak_end = dispatches.off_peak_window.end
                 planned = list(dispatches.planned)
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("Peak import guard: failed to load Octopus dispatches", exc_info=True)
 
         active_band = None
         try:
             settings_payload = await adapter.get_inverter_settings()
             active_band = settings_payload.active_band if settings_payload else None
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("Peak import guard: failed to load inverter settings", exc_info=True)
 
         return offpeak_start, offpeak_end, planned, active_band
 

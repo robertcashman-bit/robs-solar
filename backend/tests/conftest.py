@@ -49,11 +49,12 @@ async def reset_safety_settings(setup_db: None) -> AsyncGenerator[None, None]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def reset_write_rate_limiter() -> AsyncGenerator[None, None]:
-    # The limiter is a process-wide singleton; clear it so write counts from one
-    # test don't bleed into the next and trip a spurious 429.
-    from app.middleware.rate_limit import write_rate_limiter
+    # The limiter is a process-wide singleton; clear it so write/login counts from
+    # one test don't bleed into the next and trip a spurious 429.
+    from app.middleware.rate_limit import login_rate_limiter, write_rate_limiter
 
     write_rate_limiter._events.clear()
+    login_rate_limiter._events.clear()
     yield
 
 

@@ -6,7 +6,6 @@ from app.integrations.base import (
     BaseFinanceProvider,
     ManualFinanceProvider,
     OpenBankingProvider,
-    TeslaProvider,
 )
 
 
@@ -15,7 +14,6 @@ class IntegrationRegistry:
         self._providers: dict[str, BaseFinanceProvider] = {
             "manual": ManualFinanceProvider(),
             "open_banking": OpenBankingProvider(),
-            "tesla": TeslaProvider(),
         }
 
     def get(self, name: str) -> BaseFinanceProvider:
@@ -28,7 +26,6 @@ class IntegrationRegistry:
             {"id": "quickfile", "label": "QuickFile", "status": "inactive"},
             {"id": "octopus", "label": "Octopus Energy", "status": "active"},
             {"id": "sunsynk", "label": "Sunsynk Connect", "status": "active"},
-            {"id": "tesla", "label": "Tesla", "status": "coming_soon"},
         ]
 
 

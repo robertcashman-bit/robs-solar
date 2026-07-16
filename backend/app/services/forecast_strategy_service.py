@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,8 @@ from app.schemas.domain import ForecastStrategy
 from app.services.forecast_service import forecast_service
 from app.services.tariff_clock import tariff_now
 from app.services.tariff_service import tariff_service
+
+logger = logging.getLogger(__name__)
 
 
 class ForecastStrategyService:
@@ -29,7 +32,7 @@ class ForecastStrategyService:
             if len(points) > 1:
                 predicted = float(points[1].get("predicted_kwh") or 0)
         except Exception:
-            pass
+            logger.warning("Forecast strategy: failed to load solar forecast", exc_info=True)
 
         level = solar_level.lower()
         if level == "high" or predicted > 15:
