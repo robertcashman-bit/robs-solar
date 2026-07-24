@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,8 +18,28 @@ from app.schemas.finance import (
     account_is_historic,
 )
 
+_STALE_AFTER = timedelta(days=3)
+_LIVE_SOURCES = {
+    FinanceAccountSource.LUNCH_FLOW,
+    FinanceAccountSource.OPEN_BANKING,
+    FinanceAccountSource.QUICKFILE,
+}
+
+
+def _account_confidence(source: FinanceAccountSource, updated_at: datetime, *, is_historic: bool) -> str:
+    if is_historic:
+        return "historic"
+    if source in _LIVE_SOURCES:
+        age = datetime.now(timezone.utc) - updated_at
+        if age > _STALE_AFTER:
+            return "stale"
+        return "live"
+    return "manual"
+
 
 def _to_schema(row: FinanceAccountRow) -> FinanceAccount:
+    source = FinanceAccountSource(row.source)
+    historic = account_is_historic(source)
     return FinanceAccount(
         id=row.id,
         scope=FinanceScope(row.scope),
@@ -31,10 +51,12 @@ def _to_schema(row: FinanceAccountRow) -> FinanceAccount:
         interest_rate_pct=row.interest_rate_pct,
         minimum_payment_gbp=row.minimum_payment_gbp,
         notes=row.notes,
-        source=FinanceAccountSource(row.source),
+        source=source,
         external_id=row.external_id,
         is_active=row.is_active,
-        is_historic=account_is_historic(FinanceAccountSource(row.source)),
+        is_historic=historic,
+        data_confidence=_account_confidence(source, row.updated_at, is_historic=historic),
+        last_synced_at=row.updated_at if source in _LIVE_SOURCES else None,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.cron import require_cron_secret
-from app.auth.dependencies import require_admin, require_viewer
+from app.auth.dependencies import require_admin_csrf, require_viewer
 from app.auth.sessions import SessionData
 from app.db.session import get_db
 from app.integrations.base import IntegrationNotConfiguredError
@@ -114,7 +114,7 @@ async def bank_connections(
 async def bank_connection_disconnect(
     request: Request,
     connection_id: str,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     await enforce_write_rate_limit(request)
@@ -142,7 +142,7 @@ async def bank_connection_disconnect(
 async def bank_connection_sync(
     request: Request,
     connection_id: str,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> OpenBankingSyncResult:
     await enforce_write_rate_limit(request)
@@ -216,7 +216,7 @@ async def list_accounts(
 async def create_account(
     request: Request,
     body: FinanceAccountCreate,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> FinanceAccount:
     await enforce_write_rate_limit(request)
@@ -228,7 +228,7 @@ async def update_account(
     request: Request,
     account_id: int,
     body: FinanceAccountUpdate,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> FinanceAccount:
     await enforce_write_rate_limit(request)
@@ -242,7 +242,7 @@ async def update_account(
 async def delete_account(
     request: Request,
     account_id: int,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     await enforce_write_rate_limit(request)
@@ -263,7 +263,7 @@ async def list_liabilities(
 async def create_liability(
     request: Request,
     body: FinanceLiabilityCreate,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> FinanceLiability:
     await enforce_write_rate_limit(request)
@@ -275,7 +275,7 @@ async def update_liability(
     request: Request,
     liability_id: int,
     body: FinanceLiabilityUpdate,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> FinanceLiability:
     await enforce_write_rate_limit(request)
@@ -289,7 +289,7 @@ async def update_liability(
 async def delete_liability(
     request: Request,
     liability_id: int,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     await enforce_write_rate_limit(request)
@@ -322,7 +322,7 @@ async def list_personal_snapshots(
 async def create_personal_snapshot(
     request: Request,
     body: PersonalFinanceSnapshotCreate,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> PersonalFinanceSnapshot:
     await enforce_write_rate_limit(request)
@@ -345,7 +345,7 @@ async def list_business_snapshots(
 async def create_business_snapshot(
     request: Request,
     body: BusinessFinanceSnapshotCreate,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> BusinessFinanceSnapshot:
     await enforce_write_rate_limit(request)
@@ -366,7 +366,7 @@ async def get_budget(
 async def upsert_budget_line(
     request: Request,
     body: MonthlyBudgetLineCreate,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> MonthlyBudgetLine:
     await enforce_write_rate_limit(request)
@@ -378,7 +378,7 @@ async def update_budget_line(
     request: Request,
     line_id: int,
     body: MonthlyBudgetLineUpdate,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> MonthlyBudgetLine:
     await enforce_write_rate_limit(request)
@@ -401,7 +401,7 @@ async def get_cashflow(
 async def create_cashflow_entry(
     request: Request,
     body: CashflowForecastEntryCreate,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> CashflowForecastEntry:
     await enforce_write_rate_limit(request)
@@ -420,7 +420,7 @@ async def list_insights(
 async def dismiss_insight(
     request: Request,
     insight_id: int,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     await enforce_write_rate_limit(request)
@@ -476,7 +476,7 @@ async def quickfile_status(
 async def quickfile_save_settings(
     request: Request,
     body: QuickFileConfig,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> QuickFileConfigStatus:
     await enforce_write_rate_limit(request)
@@ -486,7 +486,7 @@ async def quickfile_save_settings(
 @router.post("/integrations/quickfile/test")
 async def quickfile_test_connection(
     request: Request,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     await enforce_write_rate_limit(request)
@@ -502,7 +502,7 @@ async def quickfile_test_connection(
 @router.post("/integrations/quickfile/sync", response_model=QuickFileSyncResult)
 async def quickfile_sync(
     request: Request,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> QuickFileSyncResult:
     await enforce_write_rate_limit(request)
@@ -525,7 +525,7 @@ async def lunch_flow_status(
 async def lunch_flow_save_settings(
     request: Request,
     body: LunchFlowConfig,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> LunchFlowConfigStatus:
     await enforce_write_rate_limit(request)
@@ -535,7 +535,7 @@ async def lunch_flow_save_settings(
 @router.post("/integrations/lunch-flow/test")
 async def lunch_flow_test_connection(
     request: Request,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     await enforce_write_rate_limit(request)
@@ -552,7 +552,7 @@ async def lunch_flow_test_connection(
 @router.post("/integrations/lunch-flow/sync", response_model=LunchFlowSyncResult)
 async def lunch_flow_sync(
     request: Request,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> LunchFlowSyncResult:
     await enforce_write_rate_limit(request)
@@ -567,7 +567,7 @@ async def lunch_flow_sync(
 async def seed_historic_finance_data(
     request: Request,
     force: bool = Query(default=False),
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> HistoricFinanceSeedResponse:
     await enforce_write_rate_limit(request)
@@ -593,7 +593,7 @@ async def open_banking_status(
 async def open_banking_save_settings(
     request: Request,
     body: OpenBankingConfig,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> OpenBankingConfigStatus:
     await enforce_write_rate_limit(request)
@@ -604,7 +604,7 @@ async def open_banking_save_settings(
 async def open_banking_save_setup(
     request: Request,
     body: OpenBankingSetupSaveRequest,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> OpenBankingConfigStatus:
     """Save Open Banking settings from the plain-English setup form."""
@@ -620,7 +620,7 @@ async def open_banking_save_setup(
 @router.post("/integrations/open-banking/test", response_model=OpenBankingTestResult)
 async def open_banking_test_connection(
     request: Request,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> OpenBankingTestResult:
     await enforce_write_rate_limit(request)
@@ -668,7 +668,7 @@ async def open_banking_institutions(
 async def open_banking_connect(
     request: Request,
     body: OpenBankingConnectRequest,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> OpenBankingConnectResponse:
     await enforce_write_rate_limit(request)
@@ -729,7 +729,7 @@ async def open_banking_connect(
 async def open_banking_finalize(
     request: Request,
     body: OpenBankingFinalizeRequest,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> OpenBankingSyncResult:
     await enforce_write_rate_limit(request)
@@ -782,7 +782,7 @@ async def open_banking_finalize(
 @router.post("/integrations/open-banking/sync", response_model=OpenBankingSyncResult)
 async def open_banking_sync(
     request: Request,
-    session: SessionData = Depends(require_admin),
+    session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> OpenBankingSyncResult:
     await enforce_write_rate_limit(request)

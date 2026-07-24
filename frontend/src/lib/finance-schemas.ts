@@ -89,6 +89,8 @@ export const financeAccountSchema = z.object({
   external_id: z.string().nullable().optional(),
   is_active: z.boolean(),
   is_historic: z.boolean().default(false),
+  data_confidence: z.string().default("manual"),
+  last_synced_at: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -106,7 +108,9 @@ export const financeLiabilitySchema = z.object({
   account_id: z.number().nullable().optional(),
   notes: z.string(),
   is_active: z.boolean(),
-  is_historic: z.boolean().default(true),
+  is_historic: z.boolean().default(false),
+  data_confidence: z.string().default("manual"),
+  last_synced_at: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -174,6 +178,8 @@ export const cashflowForecastSchema = z.object({
   entries: z.array(cashflowForecastEntrySchema),
   cash_pressure_warning: z.boolean(),
   warning_message: z.string(),
+  is_stub: z.boolean().default(false),
+  stub_message: z.string().default(""),
 });
 
 export const cashflowForecastsSchema = z.object({

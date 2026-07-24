@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -11,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.models import AppSettingRow
 from app.schemas.finance import LunchFlowConfig, LunchFlowConfigStatus
+from app.services.settings_crypto import open_json, seal_json
 
 _LUNCH_FLOW_KEY = "lunch_flow"
 _LAST_SYNC_KEY = "lunch_flow_last_sync_at"
@@ -27,7 +27,7 @@ class LunchFlowSettingsService:
         row = await self._get_row(db, _LUNCH_FLOW_KEY)
         if row is None:
             return self._env_config()
-        stored = LunchFlowConfig.model_validate(json.loads(row.value))
+        stored = LunchFlowConfig.model_validate(open_json(row.value))
         env = self._env_config()
         return LunchFlowConfig(api_key=stored.api_key or env.api_key)
 
@@ -47,7 +47,7 @@ class LunchFlowSettingsService:
         if not config.api_key:
             config.api_key = current.api_key
         row = await self._get_row(db, _LUNCH_FLOW_KEY)
-        payload = json.dumps(config.model_dump())
+        payload = seal_json(config.model_dump())
         if row is None:
             db.add(AppSettingRow(key=_LUNCH_FLOW_KEY, value=payload))
         else:

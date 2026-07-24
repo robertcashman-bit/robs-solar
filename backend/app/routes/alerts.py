@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_admin, require_viewer
+from app.auth.dependencies import require_admin_csrf, require_viewer
 from app.auth.sessions import SessionData
 from app.db.session import get_db
 from app.services.alert_service import alert_service
@@ -20,9 +20,11 @@ async def list_alerts(
 @router.post("/{alert_id}/acknowledge")
 async def acknowledge_alert(
     alert_id: int,
-    _: SessionData = Depends(require_admin),
+    request: Request,
+    _: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    _ = request
     result = await alert_service.acknowledge(db, alert_id)
     if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")

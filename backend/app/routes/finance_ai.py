@@ -35,10 +35,11 @@ def _require_enabled() -> None:
 
 @router.post("/assess", response_model=FinanceAiAssessment)
 async def finance_ai_assess(
+    request: Request,
     session: SessionData = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> FinanceAiAssessment:
-    _ = session
+    validate_csrf(request, session)
     _require_enabled()
     try:
         return await finance_ai_advisor_service.assess(db)

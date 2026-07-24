@@ -56,6 +56,17 @@ def warn_if_default_passwords() -> None:
         )
 
 
+def assert_production_passwords() -> None:
+    """Refuse to start in production with known default admin/viewer passwords."""
+    if not settings.is_production:
+        return
+    if uses_default_passwords():
+        raise RuntimeError(
+            "APP_ENV=production requires non-default ADMIN_PASSWORD and VIEWER_PASSWORD. "
+            "Set unique passwords in the environment before starting."
+        )
+
+
 _DEFAULT_SECRET_KEYS = frozenset(
     {
         "change-me",

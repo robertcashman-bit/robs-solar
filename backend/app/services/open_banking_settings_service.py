@@ -19,6 +19,7 @@ from app.schemas.finance import (
     OpenBankingRequisition,
 )
 from app.services.open_banking_readiness import probe_provider_readiness
+from app.services.settings_crypto import open_json, seal_json
 
 _OPEN_BANKING_KEY = "open_banking"
 _REQUISITIONS_KEY = "open_banking_requisitions"
@@ -100,7 +101,7 @@ class OpenBankingSettingsService:
         env = self._env_config()
         if row is None:
             return env
-        stored = OpenBankingConfig.model_validate(json.loads(row.value))
+        stored = OpenBankingConfig.model_validate(open_json(row.value))
         return self._merge_config(stored, env)
 
     async def save_tokens(
@@ -171,7 +172,7 @@ class OpenBankingSettingsService:
         if not config.access_expires_at:
             config.access_expires_at = current.access_expires_at
         row = await self._get_row(db, _OPEN_BANKING_KEY)
-        payload = json.dumps(config.model_dump(mode="json"))
+        payload = seal_json(config.model_dump(mode="json"))
         if row is None:
             db.add(AppSettingRow(key=_OPEN_BANKING_KEY, value=payload))
         else:

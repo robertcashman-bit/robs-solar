@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models import AppSettingRow
+from app.services.settings_crypto import open_json, seal_json
 from app.schemas.domain import (
     NotificationCategoryToggle,
     NotificationSettings,
@@ -31,7 +30,7 @@ class NotificationSettingsService:
         row = await db.scalar(select(AppSettingRow).where(AppSettingRow.key == _KEY))
         if row is None:
             return self._defaults()
-        return NotificationSettings.model_validate(json.loads(row.value))
+        return NotificationSettings.model_validate(open_json(row.value))
 
     async def get_status(self, db: AsyncSession) -> NotificationSettingsStatus:
         config = await self.get_settings(db)
@@ -49,7 +48,7 @@ class NotificationSettingsService:
         current = await self.get_settings(db)
         if not incoming.smtp_password:
             incoming.smtp_password = current.smtp_password
-        payload = json.dumps(incoming.model_dump())
+        payload = seal_json(incoming.model_dump())
         row = await db.scalar(select(AppSettingRow).where(AppSettingRow.key == _KEY))
         if row is None:
             db.add(AppSettingRow(key=_KEY, value=payload))

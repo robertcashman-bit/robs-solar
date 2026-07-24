@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,8 +16,23 @@ from app.schemas.finance import (
     FinanceScope,
 )
 
+_HISTORIC_SEED_MARKER = "historic-seed-v1"
+_STALE_AFTER = timedelta(days=3)
+
+
+def _liability_confidence(row: FinanceLiabilityRow, *, is_historic: bool) -> str:
+    if is_historic:
+        return "historic"
+    if row.account_id is not None:
+        age = datetime.now(timezone.utc) - row.updated_at
+        if age > _STALE_AFTER:
+            return "stale"
+        return "live"
+    return "manual"
+
 
 def _to_schema(row: FinanceLiabilityRow) -> FinanceLiability:
+    is_historic = _HISTORIC_SEED_MARKER in (row.notes or "")
     return FinanceLiability(
         id=row.id,
         scope=FinanceScope(row.scope),
@@ -31,7 +46,9 @@ def _to_schema(row: FinanceLiabilityRow) -> FinanceLiability:
         account_id=row.account_id,
         notes=row.notes,
         is_active=row.is_active,
-        is_historic=True,
+        is_historic=is_historic,
+        data_confidence=_liability_confidence(row, is_historic=is_historic),
+        last_synced_at=row.updated_at if row.account_id is not None else None,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -80,10 +97,7 @@ class FinanceLiabilitiesService:
         return _to_schema(row)
 
     async def update(
-        self,
-        db: AsyncSession,
-        liability_id: int,
-        body: FinanceLiabilityUpdate,
+        self, db: AsyncSession, liability_id: int, body: FinanceLiabilityUpdate
     ) -> FinanceLiability | None:
         row = await db.get(FinanceLiabilityRow, liability_id)
         if row is None:
@@ -103,14 +117,6 @@ class FinanceLiabilitiesService:
         row.updated_at = datetime.now(timezone.utc)
         await db.commit()
         return True
-
-    def total_debt(
-        self, liabilities: list[FinanceLiability], scope: FinanceScope | None = None
-    ) -> float:
-        items = liabilities
-        if scope is not None:
-            items = [debt for debt in liabilities if debt.scope == scope]
-        return sum(debt.balance_gbp for debt in items)
 
 
 finance_liabilities_service = FinanceLiabilitiesService()
