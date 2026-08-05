@@ -188,7 +188,9 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
     if (connection.method === "open_banking") {
       if (useLunchFlow) {
         window.open("https://lunchflow.app/dashboard", "_blank", "noopener,noreferrer");
-        setMessage("Connect your bank at Lunch Flow, then press Sync now here.");
+        setMessage(
+          "Finish bank login at Lunch Flow, enable Account Access on your API destination, then press Sync now here.",
+        );
         return;
       }
       void connectOpenBanking(connection.id);
@@ -296,6 +298,7 @@ export function BankConnectionsHub({ readOnly = false }: BankConnectionsHubProps
               onConnect={() => handleConnect(connection)}
               onDisconnect={() => void disconnectConnection(connection.id)}
               onSync={() => void syncConnection(connection.id)}
+              onFundingCircleSaved={() => void load()}
             />
           ))}
         </div>

@@ -10,6 +10,8 @@ import {
 } from "@/lib/finance-schemas";
 import { canWrite } from "@/lib/permissions";
 
+const LUNCH_FLOW_DASHBOARD = "https://lunchflow.app/dashboard";
+
 type LunchFlowSettingsFormProps = {
   onSaved?: () => void;
   readOnly?: boolean;
@@ -114,37 +116,58 @@ export function LunchFlowSettingsForm({ onSaved, readOnly = false }: LunchFlowSe
     <section className="rounded-xl border border-[var(--border)] bg-[var(--surface-sunken)]/30 p-5">
       <h2 className="text-lg font-semibold">Lunch Flow — personal banks</h2>
       <p className="mt-2 text-sm text-[var(--muted)]">
-        Connect Lloyds, MBNA and Virgin Money at{" "}
-        <a href="https://lunchflow.app/dashboard" target="_blank" rel="noreferrer" className="underline">
-          lunchflow.app
-        </a>
-        , then paste your API key here. Balances and transactions sync automatically every day (~£2.50/mo,
-        7-day free trial).
+        Authorise Lloyds, MBNA and Virgin Money in your browser at Lunch Flow, then sync balances
+        here. Bank login happens on lunchflow.app (not in this app).
       </p>
 
-      <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-[var(--muted)]">
+      <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-[var(--muted)]">
         <li>
-          Start your trial at{" "}
-          <a href="https://lunchflow.app" target="_blank" rel="noreferrer" className="underline">
-            lunchflow.app
-          </a>
-        </li>
-        <li>Connect Lloyds, MBNA and Virgin Money under Connections</li>
-        <li>
-          Add an API destination (Destinations → Add → API) and copy the API key
+          Open Lunch Flow and connect each bank under <strong>Connections</strong> (complete the
+          bank login screens in that tab).
         </li>
         <li>
-          Open that destination → <strong>Account Access</strong> and enable each bank account
-          (accounts are hidden from the API until toggled on)
+          Create or open an <strong>API</strong> destination (Destinations → Add → API) and copy the
+          API key.
         </li>
-        <li>Paste the key below, then press Sync all</li>
+        <li>
+          On that destination → <strong>Account Access</strong>, enable every account you want
+          visible here.
+        </li>
+        <li>Paste the key below (if not already saved), then press <strong>Sync all</strong>.</li>
       </ol>
+
+      {writable ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <a
+            href={LUNCH_FLOW_DASHBOARD}
+            target="_blank"
+            rel="noreferrer"
+            className="solar-btn-primary text-sm"
+          >
+            Authorize banks at Lunch Flow
+          </a>
+          {configured ? (
+            <button
+              type="button"
+              className="solar-btn-secondary text-sm"
+              disabled={busy}
+              onClick={() => void syncNow()}
+            >
+              Sync all
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {configured ? (
         <p className="mt-3 text-sm text-emerald-800 dark:text-emerald-200">
           API key saved{lastSyncAt ? ` — last synced ${lastSyncAt}` : ""}.
         </p>
-      ) : null}
+      ) : (
+        <p className="mt-3 text-sm text-amber-900 dark:text-amber-100">
+          No API key saved yet — paste it below after creating the Lunch Flow API destination.
+        </p>
+      )}
 
       {message ? (
         <p className="mt-3 rounded-lg border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-900 dark:text-emerald-200">
@@ -187,14 +210,6 @@ export function LunchFlowSettingsForm({ onSaved, readOnly = false }: LunchFlowSe
               onClick={() => void testConnection()}
             >
               Test
-            </button>
-            <button
-              type="button"
-              className="solar-btn-secondary text-sm"
-              disabled={busy || !configured}
-              onClick={() => void syncNow()}
-            >
-              Sync all
             </button>
           </div>
         </div>

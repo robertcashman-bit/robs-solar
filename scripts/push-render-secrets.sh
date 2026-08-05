@@ -27,7 +27,8 @@ KEYS=(
   LUNCH_FLOW_API_KEY
 )
 
-payload='{"envVars":['
+# Render expects a top-level JSON array of {key,value}, not {"envVars":[...]}.
+payload='['
 first=true
 while IFS= read -r line || [[ -n "$line" ]]; do
   [[ "$line" =~ ^[[:space:]]*# ]] && continue
@@ -47,7 +48,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     fi
   done
 done < "$ENV_FILE"
-payload+=']}'
+payload+=']'
 
 echo "Updating Render service $SERVICE_ID env vars (values not printed)…"
 curl -fsS -X PUT \

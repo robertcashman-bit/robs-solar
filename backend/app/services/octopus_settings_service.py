@@ -7,7 +7,6 @@ and have it apply live (via octopus_client.update_credentials) without editing
 
 from __future__ import annotations
 
-import json
 import logging
 
 from sqlalchemy import select
@@ -17,6 +16,7 @@ from app.config import settings
 from app.db.models import AppSettingRow
 from app.schemas.domain import OctopusConfig, OctopusConfigStatus
 from app.services.octopus_client import OctopusCredentials, octopus_client
+from app.services.settings_crypto import open_json, seal_json
 
 _OCTOPUS_KEY = "octopus"
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class OctopusSettingsService:
         row = await self._get_row(db)
         if row is None:
             return self._env_config()
-        return OctopusConfig.model_validate(json.loads(row.value))
+        return OctopusConfig.model_validate(open_json(row.value))
 
     @staticmethod
     def _merge_env(config: OctopusConfig, env: OctopusConfig) -> OctopusConfig:
@@ -58,7 +58,7 @@ class OctopusSettingsService:
 
     async def _save_config(self, db: AsyncSession, config: OctopusConfig) -> None:
         row = await self._get_row(db)
-        payload = json.dumps(config.model_dump())
+        payload = seal_json(config.model_dump())
         if row is None:
             db.add(AppSettingRow(key=_OCTOPUS_KEY, value=payload))
         else:

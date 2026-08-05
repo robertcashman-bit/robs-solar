@@ -9,15 +9,11 @@ import { PageLoading } from "@/components/shared/PageLoading";
 import { SunIcon, WalletIcon } from "@/components/shared/icons";
 import { useAuth } from "@/lib/auth-context";
 
-// Convenience default for this single-user personal dashboard so Rob can sign
-// in with one tap. Kept in sync with ADMIN_PASSWORD in backend/.env.
-const QUICK_ADMIN = { username: "admin", password: "Greenacre-Solar-4713" };
-
 export default function LoginPage() {
   const router = useRouter();
   const { login, user, loading } = useAuth();
-  const [username, setUsername] = useState(QUICK_ADMIN.username);
-  const [password, setPassword] = useState(QUICK_ADMIN.password);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -41,22 +37,18 @@ export default function LoginPage() {
     return null;
   }
 
-  const signIn = async (creds: { username: string; password: string }) => {
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
-      await login(creds.username, creds.password);
+      await login(username, password);
       router.replace("/");
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "Login failed");
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    await signIn({ username, password });
   };
 
   return (
@@ -87,22 +79,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <button
-          type="button"
-          disabled={submitting}
-          onClick={() => void signIn(QUICK_ADMIN)}
-          className="solar-btn-primary mt-8 w-full"
-        >
-          {submitting ? "Signing in…" : "Sign in as admin (one tap)"}
-        </button>
-
-        <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-wide text-[var(--muted)]">
-          <span className="h-px flex-1 bg-[var(--border)]" />
-          or sign in manually
-          <span className="h-px flex-1 bg-[var(--border)]" />
-        </div>
-
-        <label className="block text-sm font-medium">
+        <label className="mt-8 block text-sm font-medium">
           Username
           <input
             className="solar-input"
@@ -134,7 +111,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="solar-btn-secondary mt-6 w-full"
+          className="solar-btn-primary mt-6 w-full"
         >
           {submitting ? "Signing in…" : "Sign in"}
         </button>

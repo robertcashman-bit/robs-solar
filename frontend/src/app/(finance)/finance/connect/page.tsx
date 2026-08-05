@@ -26,7 +26,7 @@ function ConnectBanksContent() {
       <PageHeader
         eyebrow="Finance"
         title="Connect banks"
-        description="Set up Open Banking credentials, then link Lloyds, MBNA, Virgin Money, Capital on Tap, and Funding Circle. Lunch Flow is used for personal banks when configured."
+        description="Authorize personal banks at Lunch Flow in your browser, then sync here. QuickFile covers business; Funding Circle is entered manually."
       />
       <div className="mt-6 space-y-10">
         <section id="open-banking-setup" aria-labelledby="open-banking-setup-heading">

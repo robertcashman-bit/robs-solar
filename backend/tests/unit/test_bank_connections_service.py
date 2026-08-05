@@ -179,3 +179,33 @@ async def test_disconnect_rejects_non_open_banking_bank() -> None:
         assert await disconnect(db, "capital_on_tap") is False
         assert await disconnect(db, "funding_circle") is False
         assert await disconnect(db, "missing") is False
+
+
+@pytest.mark.asyncio
+async def test_funding_circle_detects_quickfile_account() -> None:
+    now = datetime.now(timezone.utc)
+    async with SessionLocal() as db:
+        await db.execute(delete(FinanceAccountRow))
+        await db.commit()
+        db.add(
+            FinanceAccountRow(
+                scope="business",
+                account_type="loan",
+                name="Funding Circle term loan",
+                provider="QuickFile",
+                balance_gbp=12_500.0,
+                source=FinanceAccountSource.QUICKFILE.value,
+                external_id="qf:funding-circle",
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await db.commit()
+        connections = await get_connections(db)
+
+    fc = next(item for item in connections if item.id == "funding_circle")
+    assert fc.status == BankConnectionStatus.MANUAL
+    assert fc.balance_gbp == 12_500.0
+    assert fc.institution == "QuickFile"
+    assert "QuickFile" in fc.status_message

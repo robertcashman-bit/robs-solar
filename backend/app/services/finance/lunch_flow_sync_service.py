@@ -108,14 +108,16 @@ class LunchFlowSyncService:
         disconnected_accounts = 0
         skipped_non_gbp = 0
         account_rows: list[FinanceAccountRow] = []
+        seen_external_ids: set[str] = set()
 
         for account in accounts:
             account_id = int(account["id"])
+            external_id = f"lunchflow:{account_id}"
             status_value = str(account.get("status") or "ACTIVE").upper()
             if status_value not in ("ACTIVE", ""):
                 # DISCONNECTED/ERROR — retire the local row so stale balances
                 # stop counting towards net worth.
-                if await self._deactivate_account(db, f"lunchflow:{account_id}"):
+                if await self._deactivate_account(db, external_id):
                     disconnected_accounts += 1
                 continue
 
@@ -139,6 +141,7 @@ class LunchFlowSyncService:
             record = _account_record(account=account, balance_gbp=balance_gbp)
             row = await self._upsert_account(db, record)
             if row is not None:
+                seen_external_ids.add(external_id)
                 account_rows.append(row)
                 synced_accounts += 1
 
@@ -160,6 +163,11 @@ class LunchFlowSyncService:
                     )
                     if await self._upsert_transaction(db, payload):
                         synced_transactions += 1
+
+        # Accounts that vanished from the API (revoked Account Access, expired
+        # bank link, etc.) leave a stale local balance — retire them.
+        orphaned = await self._retire_missing_lunch_flow_accounts(db, seen_external_ids)
+        disconnected_accounts += orphaned
 
         if synced_accounts > 0:
             await self._retire_historic_personal_placeholders(db)
@@ -240,6 +248,28 @@ class LunchFlowSyncService:
         row.updated_at = datetime.now(timezone.utc)
         await db.commit()
         return True
+
+    async def _retire_missing_lunch_flow_accounts(
+        self, db: AsyncSession, seen_external_ids: set[str]
+    ) -> int:
+        """Deactivate Lunch Flow rows whose external_id is no longer in the API list."""
+        rows = await db.scalars(
+            select(FinanceAccountRow).where(
+                FinanceAccountRow.source == FinanceAccountSource.LUNCH_FLOW.value,
+                FinanceAccountRow.is_active.is_(True),
+            )
+        )
+        retired = 0
+        now = datetime.now(timezone.utc)
+        for row in rows.all():
+            external_id = row.external_id or ""
+            if external_id.startswith("lunchflow:") and external_id not in seen_external_ids:
+                row.is_active = False
+                row.updated_at = now
+                retired += 1
+        if retired:
+            await db.commit()
+        return retired
 
     async def _upsert_transaction(self, db: AsyncSession, item: dict) -> bool:
         existing = await db.scalar(

@@ -28,6 +28,7 @@ const navItems = [
   { href: "/finance/reports", label: "Reports", icon: ChartIcon },
   { href: "/finance/assistant", label: "AI assistant", icon: ChartIcon },
   { href: "/energy", label: "Energy", icon: SunIcon },
+  { href: "/audit", label: "Audit", icon: AlertIcon, adminOnly: true },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 

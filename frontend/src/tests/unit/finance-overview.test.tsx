@@ -60,6 +60,7 @@ const accounts: FinanceAccount[] = [
     source: "manual",
     is_active: true,
     is_historic: true,
+    data_confidence: "historic",
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   },

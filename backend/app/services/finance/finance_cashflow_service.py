@@ -119,9 +119,17 @@ class FinanceCashflowService:
             else overview.business_bank_balance_gbp
         )
         entries = await self.list_entries(db, horizon_days=horizon_days, scope=scope)
+        is_stub = False
+        stub_message = ""
 
         if not entries:
             entries = await self._seed_scope_entries(db, scope=scope, horizon_days=horizon_days)
+            is_stub = True
+            stub_message = (
+                "This forecast is auto-generated from monthly snapshots and debt payment days, "
+                "not from live bank schedules. Treat figures as indicative until you add confirmed "
+                "cash-flow entries."
+            )
 
         net = sum(e.amount_gbp for e in entries)
         projected = starting + net
@@ -142,6 +150,8 @@ class FinanceCashflowService:
             entries=entries,
             cash_pressure_warning=pressure,
             warning_message=warning,
+            is_stub=is_stub,
+            stub_message=stub_message,
         )
 
     async def _seed_scope_entries(

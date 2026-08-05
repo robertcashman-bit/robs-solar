@@ -92,6 +92,8 @@ class FinanceAccount(BaseModel):
     external_id: str | None = None
     is_active: bool = True
     is_historic: bool = False
+    data_confidence: str = "manual"
+    last_synced_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -135,7 +137,9 @@ class FinanceLiability(BaseModel):
     account_id: int | None = None
     notes: str = ""
     is_active: bool = True
-    is_historic: bool = True
+    is_historic: bool = False
+    data_confidence: str = "manual"
+    last_synced_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -347,6 +351,8 @@ class CashflowForecastResponse(BaseModel):
     entries: list[CashflowForecastEntry]
     cash_pressure_warning: bool
     warning_message: str = ""
+    is_stub: bool = False
+    stub_message: str = ""
 
 
 class CashflowForecastsResponse(BaseModel):

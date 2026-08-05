@@ -118,6 +118,11 @@ export default function CashFlowPage() {
             />
             <MetricTile label="Horizon" value={forecast.horizon_days} format="number" hint="days" />
           </div>
+          {forecast.is_stub && forecast.stub_message ? (
+            <p className="mt-4 rounded-xl border border-sky-400/35 bg-sky-500/10 px-4 py-3 text-sm">
+              {forecast.stub_message}
+            </p>
+          ) : null}
           {forecast.cash_pressure_warning ? (
             <p className="mt-4 rounded-xl border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-sm">
               {forecast.warning_message}

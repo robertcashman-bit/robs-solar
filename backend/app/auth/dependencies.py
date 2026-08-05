@@ -38,6 +38,15 @@ async def require_admin(session: SessionData = Depends(get_current_session)) -> 
     return session
 
 
+async def require_admin_csrf(
+    request: Request,
+    session: SessionData = Depends(require_admin),
+) -> SessionData:
+    """Admin session that also validates the CSRF header (mutating routes)."""
+    validate_csrf(request, session)
+    return session
+
+
 def validate_csrf(request: Request, session: SessionData) -> None:
     header_token = request.headers.get(CSRF_HEADER)
     if not header_token or header_token != session.csrf_token:

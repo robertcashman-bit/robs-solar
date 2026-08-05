@@ -174,3 +174,70 @@ async def test_sync_retires_disconnected_accounts_and_skips_non_gbp() -> None:
             select(FinanceAccountRow).where(FinanceAccountRow.external_id == "lunchflow:22")
         )
         assert euro is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_retires_accounts_missing_from_api() -> None:
+    """Stale local Lunch Flow rows (e.g. revoked Account Access) are retired."""
+    respx.get("https://www.lunchflow.app/api/v1/accounts").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": 28084,
+                        "name": "Account 1",
+                        "institution_name": "Lloyds Bank",
+                        "institution_logo": "",
+                        "provider": "gocardless",
+                        "status": "ACTIVE",
+                        "currency": "GBP",
+                    }
+                ]
+            },
+        )
+    )
+    respx.get("https://www.lunchflow.app/api/v1/accounts/28084/balance").mock(
+        return_value=httpx.Response(
+            200,
+            json={"balance": {"amount": 0.0, "currency": "GBP"}},
+        )
+    )
+    respx.get("https://www.lunchflow.app/api/v1/accounts/28084/transactions").mock(
+        return_value=httpx.Response(200, json={"transactions": []})
+    )
+
+    from datetime import datetime, timezone
+
+    async with SessionLocal() as db:
+        await db.execute(delete(FinanceTransactionRow))
+        await db.execute(delete(FinanceAccountRow))
+        await db.commit()
+
+        now = datetime.now(timezone.utc)
+        db.add(
+            FinanceAccountRow(
+                scope="personal",
+                account_type="credit_card",
+                name="MBNA card",
+                provider="MBNA",
+                balance_gbp=350.0,
+                source=FinanceAccountSource.LUNCH_FLOW.value,
+                external_id="lunchflow:11",
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await db.commit()
+
+        result = await lunch_flow_sync_service.sync(db, LunchFlowConfig(api_key="secret"))
+        assert result.accounts_synced == 1
+        assert "disconnected" in result.message
+
+        orphan = await db.scalar(
+            select(FinanceAccountRow).where(FinanceAccountRow.external_id == "lunchflow:11")
+        )
+        assert orphan is not None
+        assert orphan.is_active is False

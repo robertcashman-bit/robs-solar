@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -435,6 +436,9 @@ export default function SettingsPage() {
                 <li key={line}>{line}</li>
               ))}
             </ul>
+            <Link href="/audit" className="mt-3 inline-block text-sm underline">
+              View full audit log →
+            </Link>
           </section>
         ) : null}
           </>

@@ -4,7 +4,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.auth.passwords import assert_production_secret_key, warn_if_default_passwords
+from app.auth.passwords import (
+    assert_production_passwords,
+    assert_production_secret_key,
+    warn_if_default_passwords,
+)
 from app.config import settings
 from app.db.session import init_db
 from app.logging import configure_logging
@@ -51,6 +55,7 @@ def _warn_production_simulator() -> None:
 async def lifespan(_: FastAPI):
     configure_logging()
     assert_production_secret_key()
+    assert_production_passwords()
     warn_if_default_passwords()
     _warn_production_simulator()
     await init_db()

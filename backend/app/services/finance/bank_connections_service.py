@@ -338,20 +338,32 @@ async def _build_quickfile_connection(
 async def _build_manual_connection(db: AsyncSession, bank: TargetBank) -> BankConnectionItem:
     accounts = await _matching_accounts(db, bank)
     liabilities = await _matching_liabilities(db, bank)
-    manual_accounts = [
-        account for account in accounts if account.source == FinanceAccountSource.MANUAL.value
-    ]
-    balance = _sum_balances(manual_accounts, liabilities)
-    count = len(manual_accounts) + len(liabilities)
+    # Include QuickFile (and any other) keyword matches — not only source=manual —
+    # so a Funding Circle nominal already in QuickFile shows as connected.
+    balance = _sum_balances(accounts, liabilities)
+    count = len(accounts) + len(liabilities)
 
     if count:
+        from_quickfile = any(
+            account.source == FinanceAccountSource.QUICKFILE.value for account in accounts
+        )
+        institution = "QuickFile" if from_quickfile and not liabilities else "Manual"
+        if from_quickfile and liabilities:
+            institution = "QuickFile + manual"
+        status_message = (
+            "Matched from QuickFile. Re-sync business accounts to refresh the balance."
+            if from_quickfile and not liabilities
+            else "Balance entered manually. Update it when your loan statement changes."
+            if not from_quickfile
+            else "Matched from QuickFile and a manual liability. Prefer one source to avoid double-counting."
+        )
         return BankConnectionItem(
             id=bank.id,
             label=bank.label,
             method=bank.method,
             status=BankConnectionStatus.MANUAL,
-            status_message="Balance entered manually. Update it when your loan statement changes.",
-            institution="Manual",
+            status_message=status_message,
+            institution=institution,
             account_count=count,
             balance_gbp=balance,
         )
@@ -362,7 +374,7 @@ async def _build_manual_connection(db: AsyncSession, bank: TargetBank) -> BankCo
         method=bank.method,
         status=BankConnectionStatus.NOT_CONNECTED,
         status_message=(
-            "Not added yet. Add Funding Circle as a manual loan on the Connect banks page."
+            "Not added yet. Enter the outstanding balance below (no live bank API for Funding Circle)."
         ),
         institution="Manual",
         account_count=0,
