@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -14,7 +15,6 @@ from app.integrations.lunch_flow_client import LunchFlowClient, LunchFlowError
 from app.schemas.finance import FinanceAccountSource, LunchFlowConfig, LunchFlowSyncResult
 from app.services.finance.historic_finance_seed import HISTORIC_SEED_MARKER
 from app.services.lunch_flow_settings_service import lunch_flow_settings_service
-
 
 DISPLAY_NAME_LOCKED = "display_name_locked"
 
@@ -32,7 +32,6 @@ def _display_name(name: str, institution: str, account_type: str) -> str:
     raw = (name or "").strip() or "Account"
     inst = (institution or "Bank").strip()
     if re_match_generic_account(raw):
-        label = account_type.replace("_", " ")
         if account_type == "savings":
             return f"{inst} Savings"
         if account_type == "current" and raw.lower() in {"current account", "current"}:
@@ -42,8 +41,6 @@ def _display_name(name: str, institution: str, account_type: str) -> str:
 
 
 def re_match_generic_account(name: str) -> bool:
-    import re
-
     return bool(re.match(r"(?i)^account\s*\d+$", name.strip())) or name.strip().lower() in {
         "current account",
         "current",

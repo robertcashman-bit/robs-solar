@@ -7,12 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models import AppSettingRow
-from app.services.settings_crypto import open_json, seal_json
 from app.schemas.domain import (
     NotificationCategoryToggle,
     NotificationSettings,
     NotificationSettingsStatus,
 )
+from app.services.settings_crypto import open_json, seal_json
 
 _KEY = "notification_settings"
 

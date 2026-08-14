@@ -32,7 +32,9 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def _account_confidence(source: FinanceAccountSource, updated_at: datetime, *, is_historic: bool) -> str:
+def _account_confidence(
+    source: FinanceAccountSource, updated_at: datetime, *, is_historic: bool
+) -> str:
     if is_historic:
         return "historic"
     if source in _LIVE_SOURCES:

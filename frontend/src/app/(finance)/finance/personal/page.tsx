@@ -171,6 +171,7 @@ export default function PersonalFinancePage() {
             onChange={(e) => setForm({ ...form, account_type: e.target.value })}
           >
             <option value="current">Current</option>
+            <option value="savings">Savings</option>
             <option value="credit_card">Credit card</option>
             <option value="loan">Loan</option>
             <option value="mortgage">Mortgage</option>

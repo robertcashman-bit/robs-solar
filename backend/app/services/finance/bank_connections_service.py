@@ -355,7 +355,10 @@ async def _build_manual_connection(db: AsyncSession, bank: TargetBank) -> BankCo
             if from_quickfile and not liabilities
             else "Balance entered manually. Update it when your loan statement changes."
             if not from_quickfile
-            else "Matched from QuickFile and a manual liability. Prefer one source to avoid double-counting."
+            else (
+                "Matched from QuickFile and a manual liability. "
+                "Prefer one source to avoid double-counting."
+            )
         )
         return BankConnectionItem(
             id=bank.id,
@@ -374,7 +377,8 @@ async def _build_manual_connection(db: AsyncSession, bank: TargetBank) -> BankCo
         method=bank.method,
         status=BankConnectionStatus.NOT_CONNECTED,
         status_message=(
-            "Not added yet. Enter the outstanding balance below (no live bank API for Funding Circle)."
+            "Not added yet. Enter the outstanding balance below "
+            "(no live bank API for Funding Circle)."
         ),
         institution="Manual",
         account_count=0,
