@@ -15,6 +15,13 @@ async def test_health_endpoint(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_health_endpoint_accepts_vercel_backend_prefix(client: AsyncClient) -> None:
+    response = await client.get("/backend/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
 async def test_login_success(client: AsyncClient) -> None:
     data = await login(client, "admin", "admin-pass")
     assert data["user"]["username"] == "admin"

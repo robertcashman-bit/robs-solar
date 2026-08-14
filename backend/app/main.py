@@ -13,6 +13,7 @@ from app.config import settings
 from app.db.session import init_db
 from app.logging import configure_logging
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.strip_backend_prefix import StripBackendPrefixMiddleware
 from app.routes import (
     ai,
     alerts,
@@ -95,6 +96,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(StripBackendPrefixMiddleware)
 
 app.include_router(health.router)
 app.include_router(auth.router)
