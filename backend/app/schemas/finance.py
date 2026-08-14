@@ -253,6 +253,232 @@ class BudgetSeedRequest(BaseModel):
     scope: FinanceScope
 
 
+class BudgetStrategyType(str, Enum):
+    STABILISE = "stabilise"
+    BALANCED = "balanced"
+    DEBT_ATTACK = "debt_attack"
+    CUSTOM = "custom"
+
+
+class BudgetViewType(str, Enum):
+    PERSONAL = "personal"
+    BUSINESS = "business"
+    CONSOLIDATED = "consolidated"
+
+
+class BudgetItemKindType(str, Enum):
+    INCOME = "income"
+    ESSENTIAL = "essential"
+    DEBT_MINIMUM = "debt_minimum"
+    DEBT_OVERPAYMENT = "debt_overpayment"
+    TAX_PROVISION = "tax_provision"
+    BUFFER = "buffer"
+    DISCRETIONARY = "discretionary"
+    OTHER = "other"
+
+
+class BudgetMissingInput(BaseModel):
+    code: str
+    message: str
+    record_href: str | None = None
+    source_record_type: str | None = None
+    source_record_id: int | None = None
+    category: str | None = None
+
+
+class BudgetTaxContext(BaseModel):
+    vat_reserved_gbp: float | None = None
+    corp_tax_reserved_gbp: float | None = None
+    vat_due_gbp: float | None = None
+    notes: list[str] = Field(default_factory=list)
+
+
+class BudgetCashContext(BaseModel):
+    savings_balance_gbp: float | None = None
+    savings_accounts_found: bool = False
+
+
+class BudgetTotals(BaseModel):
+    view: str
+    income_gbp: float
+    essential_gbp: float
+    debt_minimum_gbp: float
+    debt_overpayment_gbp: float
+    tax_provision_gbp: float
+    buffer_gbp: float
+    discretionary_gbp: float
+    other_gbp: float
+    committed_gbp: float
+    allocated_gbp: float
+    surplus_gbp: float | None = None
+    income_complete: bool
+    has_missing_inputs: bool
+    is_deficit: bool
+    incomplete_reason: str = ""
+
+
+class BudgetPlanItem(BaseModel):
+    id: int | None = None
+    key: str
+    scope: FinanceScope
+    kind: BudgetItemKindType
+    category: str
+    amount_gbp: float | None = None
+    source: str
+    source_label: str = ""
+    source_record_type: str | None = None
+    source_record_id: int | None = None
+    is_generated: bool = False
+    is_user_override: bool = False
+    is_transfer: bool = False
+    is_missing: bool = False
+    notes: str = ""
+    record_href: str | None = None
+
+
+class BudgetPlanItemWrite(BaseModel):
+    key: str | None = None
+    scope: FinanceScope
+    kind: BudgetItemKindType
+    category: str = Field(min_length=1, max_length=128)
+    amount_gbp: float | None = None
+    source: str = "user_entered"
+    source_label: str = ""
+    source_record_type: str | None = None
+    source_record_id: int | None = None
+    is_generated: bool = False
+    is_user_override: bool = False
+    is_transfer: bool = False
+    is_missing: bool = False
+    notes: str = ""
+    record_href: str | None = None
+
+
+class BudgetPlan(BaseModel):
+    id: int
+    name: str
+    strategy: BudgetStrategyType
+    period: str = "monthly"
+    is_active: bool = False
+    is_archived: bool = False
+    source_fingerprint: str = ""
+    source_stale: bool = False
+    notes: str = ""
+    items: list[BudgetPlanItem] = Field(default_factory=list)
+    missing: list[BudgetMissingInput] = Field(default_factory=list)
+    source_notes: list[str] = Field(default_factory=list)
+    tax: BudgetTaxContext = Field(default_factory=BudgetTaxContext)
+    cash: BudgetCashContext = Field(default_factory=BudgetCashContext)
+    totals_personal: BudgetTotals
+    totals_business: BudgetTotals
+    totals_consolidated: BudgetTotals
+    created_at: datetime
+    updated_at: datetime
+
+
+class BudgetPlanSummary(BaseModel):
+    id: int
+    name: str
+    strategy: BudgetStrategyType
+    period: str = "monthly"
+    is_active: bool = False
+    is_archived: bool = False
+    source_stale: bool = False
+    has_missing_inputs: bool = False
+    is_deficit: bool = False
+    income_gbp: float = 0.0
+    allocated_gbp: float = 0.0
+    surplus_gbp: float | None = None
+    updated_at: datetime
+
+
+class ActiveBudgetSummary(BaseModel):
+    id: int
+    name: str
+    strategy: BudgetStrategyType
+    period: str = "monthly"
+    income_gbp: float
+    allocated_gbp: float
+    debt_overpayment_gbp: float
+    surplus_gbp: float | None = None
+    has_missing_inputs: bool = False
+    is_deficit: bool = False
+    income_complete: bool = True
+    incomplete_reason: str = ""
+    totals: BudgetTotals
+
+
+class BudgetPlanCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    strategy: BudgetStrategyType = BudgetStrategyType.CUSTOM
+    period: str = "monthly"
+    activate: bool = False
+    notes: str = ""
+    items: list[BudgetPlanItemWrite] = Field(default_factory=list)
+    source_fingerprint: str = ""
+
+
+class BudgetPlanUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    strategy: BudgetStrategyType | None = None
+    notes: str | None = None
+    items: list[BudgetPlanItemWrite] | None = None
+    source_fingerprint: str | None = None
+
+
+class BudgetSuggestion(BaseModel):
+    strategy: BudgetStrategyType
+    name: str
+    recommended: bool = False
+    items: list[BudgetPlanItem] = Field(default_factory=list)
+    missing: list[BudgetMissingInput] = Field(default_factory=list)
+    source_notes: list[str] = Field(default_factory=list)
+    tax: BudgetTaxContext = Field(default_factory=BudgetTaxContext)
+    cash: BudgetCashContext = Field(default_factory=BudgetCashContext)
+    fingerprint: str = ""
+    totals_personal: BudgetTotals
+    totals_business: BudgetTotals
+    totals_consolidated: BudgetTotals
+
+
+class BudgetSuggestionsResponse(BaseModel):
+    recommended_strategy: BudgetStrategyType
+    fingerprint: str
+    missing: list[BudgetMissingInput] = Field(default_factory=list)
+    source_notes: list[str] = Field(default_factory=list)
+    tax: BudgetTaxContext = Field(default_factory=BudgetTaxContext)
+    cash: BudgetCashContext = Field(default_factory=BudgetCashContext)
+    suggestions: list[BudgetSuggestion] = Field(default_factory=list)
+    saved_plans: list[BudgetPlanSummary] = Field(default_factory=list)
+    active_plan_id: int | None = None
+
+
+class BudgetVarianceLine(BaseModel):
+    category: str
+    kind: str
+    scope: str
+    budgeted_gbp: float | None = None
+    actual_gbp: float | None = None
+    variance_gbp: float | None = None
+    is_missing: bool = False
+    matched: bool = False
+
+
+class BudgetVarianceResponse(BaseModel):
+    available: bool
+    reason: str = ""
+    month: str
+    view: str
+    lines: list[BudgetVarianceLine] = Field(default_factory=list)
+    unbudgeted_actuals: list[BudgetVarianceLine] = Field(default_factory=list)
+    budgeted_total_gbp: float = 0.0
+    actual_total_gbp: float = 0.0
+
+
+class BudgetDuplicateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+
+
 class PlHistoryPoint(BaseModel):
     month: str
     turnover_gbp: float
@@ -342,6 +568,7 @@ class FinanceOverviewResponse(BaseModel):
     quickfile_reports_at: str | None = None
     historic_fields: list[str] = Field(default_factory=list)
     insights: list[FinanceInsight] = Field(default_factory=list)
+    active_budget: ActiveBudgetSummary | None = None
 
 
 class HistoricFinanceSeedResponse(BaseModel):
@@ -433,6 +660,8 @@ class FinanceReportsResponse(BaseModel):
     debt_reduction_gbp: float
     energy_savings_gbp: float
     energy_savings_vs_forecast: str = ""
+    budget_vs_actual: BudgetVarianceResponse | None = None
+    active_budget: ActiveBudgetSummary | None = None
 
 
 class QuickFileConfig(BaseModel):

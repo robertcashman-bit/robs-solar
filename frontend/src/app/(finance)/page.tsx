@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { ActiveBudgetCard } from "@/components/finance/ActiveBudgetCard";
 import { FinanceAlertsPanel } from "@/components/finance/FinanceAlertsPanel";
 import { FinanceConnectBanner } from "@/components/finance/FinanceConnectBanner";
 import { FinanceOverviewView } from "@/components/finance/FinanceOverviewView";
@@ -86,6 +87,7 @@ export default function FinanceOverviewPage() {
             obReady={obReady}
             lunchFlowActive={lunchFlowActive}
           />
+          <ActiveBudgetCard budget={overview.active_budget} />
           <FinanceAlertsPanel insights={overview.insights} />
           <FinanceAiAdviceCard canUse={canWrite(user)} />
           <FinanceOverviewView

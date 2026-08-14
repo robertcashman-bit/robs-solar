@@ -201,6 +201,47 @@ class BusinessFinanceSnapshotRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class FinanceBudgetPlanRow(Base):
+    __tablename__ = "finance_budget_plans"
+    __table_args__ = (Index("ix_finance_budget_plans_active", "is_active"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    strategy: Mapped[str] = mapped_column(String(32), nullable=False)
+    period: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
+    is_active: Mapped[bool] = mapped_column(default=False, nullable=False)
+    is_archived: Mapped[bool] = mapped_column(default=False, nullable=False)
+    source_fingerprint: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FinanceBudgetItemRow(Base):
+    __tablename__ = "finance_budget_items"
+    __table_args__ = (Index("ix_finance_budget_items_plan", "budget_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    budget_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    item_key: Mapped[str] = mapped_column(String(160), nullable=False, default="")
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    category: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount_gbp: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="user_entered")
+    source_label: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    source_record_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    source_record_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    is_generated: Mapped[bool] = mapped_column(default=False, nullable=False)
+    is_user_override: Mapped[bool] = mapped_column(default=False, nullable=False)
+    is_transfer: Mapped[bool] = mapped_column(default=False, nullable=False)
+    is_missing: Mapped[bool] = mapped_column(default=False, nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    record_href: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class MonthlyBudgetRow(Base):
     __tablename__ = "monthly_budget"
     __table_args__ = (Index("ix_monthly_budget_scope_month", "scope", "month"),)

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { AccountStatements } from "@/components/finance/AccountStatements";
+import { ActiveBudgetCard } from "@/components/finance/ActiveBudgetCard";
+import { BudgetVsActualPanel } from "@/components/finance/BudgetVsActualPanel";
 import { MetricTile } from "@/components/finance/MetricTile";
 import { PlHistoryChart, type PlHistoryPoint } from "@/components/finance/PlHistoryChart";
 import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
@@ -119,6 +121,11 @@ export default function ReportsPage() {
         </div>
       ) : reports && overview ? (
         <div className="mt-6 space-y-10">
+          <ActiveBudgetCard budget={reports.active_budget ?? overview.active_budget} />
+          <BudgetVsActualPanel
+            variance={reports.budget_vs_actual}
+            activeBudget={reports.active_budget ?? overview.active_budget}
+          />
           <section className="space-y-4">
             <h2 className="solar-section-title">Business reports</h2>
             <QuickFileStatements reports={reports.quickfile_reports} variant="document" />
