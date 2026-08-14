@@ -73,6 +73,7 @@ export const financeOverviewSchema = z.object({
   quickfile_reports_at: z.string().nullable().optional(),
   historic_fields: z.array(z.string()).default([]),
   insights: z.array(financeInsightSchema),
+  active_budget: z.lazy(() => activeBudgetSummarySchema).nullable().optional(),
 });
 
 export const financeAccountSchema = z.object({
@@ -252,6 +253,8 @@ export const financeReportsSchema = z.object({
   debt_reduction_gbp: z.number(),
   energy_savings_gbp: z.number(),
   energy_savings_vs_forecast: z.string(),
+  budget_vs_actual: z.lazy(() => budgetVarianceSchema).nullable().optional(),
+  active_budget: z.lazy(() => activeBudgetSummarySchema).nullable().optional(),
 });
 
 export const quickFileConfigStatusSchema = z.object({
@@ -439,6 +442,180 @@ export const financeTransactionSchema = z.object({
   created_at: z.string(),
 });
 
+export const budgetStrategySchema = z.enum(["stabilise", "balanced", "debt_attack", "custom"]);
+export const budgetViewSchema = z.enum(["personal", "business", "consolidated"]);
+export const budgetItemKindSchema = z.enum([
+  "income",
+  "essential",
+  "debt_minimum",
+  "debt_overpayment",
+  "tax_provision",
+  "buffer",
+  "discretionary",
+  "other",
+]);
+
+export const budgetMissingInputSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  record_href: z.string().nullable().optional(),
+  source_record_type: z.string().nullable().optional(),
+  source_record_id: z.number().nullable().optional(),
+  category: z.string().nullable().optional(),
+});
+
+export const budgetTaxContextSchema = z.object({
+  vat_reserved_gbp: z.number().nullable().optional(),
+  corp_tax_reserved_gbp: z.number().nullable().optional(),
+  vat_due_gbp: z.number().nullable().optional(),
+  notes: z.array(z.string()).default([]),
+});
+
+export const budgetCashContextSchema = z.object({
+  savings_balance_gbp: z.number().nullable().optional(),
+  savings_accounts_found: z.boolean().default(false),
+});
+
+export const budgetTotalsSchema = z.object({
+  view: z.string(),
+  income_gbp: z.number(),
+  essential_gbp: z.number(),
+  debt_minimum_gbp: z.number(),
+  debt_overpayment_gbp: z.number(),
+  tax_provision_gbp: z.number(),
+  buffer_gbp: z.number(),
+  discretionary_gbp: z.number(),
+  other_gbp: z.number(),
+  committed_gbp: z.number(),
+  allocated_gbp: z.number(),
+  surplus_gbp: z.number().nullable(),
+  income_complete: z.boolean(),
+  has_missing_inputs: z.boolean(),
+  is_deficit: z.boolean(),
+  incomplete_reason: z.string().default(""),
+});
+
+export const budgetPlanItemSchema = z.object({
+  id: z.number().nullable().optional(),
+  key: z.string(),
+  scope: financeScopeSchema,
+  kind: budgetItemKindSchema,
+  category: z.string(),
+  amount_gbp: z.number().nullable(),
+  source: z.string(),
+  source_label: z.string().default(""),
+  source_record_type: z.string().nullable().optional(),
+  source_record_id: z.number().nullable().optional(),
+  is_generated: z.boolean().default(false),
+  is_user_override: z.boolean().default(false),
+  is_transfer: z.boolean().default(false),
+  is_missing: z.boolean().default(false),
+  notes: z.string().default(""),
+  record_href: z.string().nullable().optional(),
+});
+
+export const budgetPlanSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  strategy: budgetStrategySchema,
+  period: z.string().default("monthly"),
+  is_active: z.boolean(),
+  is_archived: z.boolean(),
+  source_fingerprint: z.string().default(""),
+  source_stale: z.boolean().default(false),
+  notes: z.string().default(""),
+  items: z.array(budgetPlanItemSchema),
+  missing: z.array(budgetMissingInputSchema).default([]),
+  source_notes: z.array(z.string()).default([]),
+  tax: budgetTaxContextSchema,
+  cash: budgetCashContextSchema,
+  totals_personal: budgetTotalsSchema,
+  totals_business: budgetTotalsSchema,
+  totals_consolidated: budgetTotalsSchema,
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const budgetPlanSummarySchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  strategy: budgetStrategySchema,
+  period: z.string().default("monthly"),
+  is_active: z.boolean(),
+  is_archived: z.boolean(),
+  source_stale: z.boolean().default(false),
+  has_missing_inputs: z.boolean().default(false),
+  is_deficit: z.boolean().default(false),
+  income_gbp: z.number().default(0),
+  allocated_gbp: z.number().default(0),
+  surplus_gbp: z.number().nullable().optional(),
+  updated_at: z.string(),
+});
+
+export const activeBudgetSummarySchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  strategy: budgetStrategySchema,
+  period: z.string().default("monthly"),
+  income_gbp: z.number(),
+  allocated_gbp: z.number(),
+  debt_overpayment_gbp: z.number(),
+  surplus_gbp: z.number().nullable(),
+  has_missing_inputs: z.boolean().default(false),
+  is_deficit: z.boolean().default(false),
+  income_complete: z.boolean().default(true),
+  incomplete_reason: z.string().default(""),
+  totals: budgetTotalsSchema,
+});
+
+export const budgetSuggestionSchema = z.object({
+  strategy: budgetStrategySchema,
+  name: z.string(),
+  recommended: z.boolean().default(false),
+  items: z.array(budgetPlanItemSchema),
+  missing: z.array(budgetMissingInputSchema).default([]),
+  source_notes: z.array(z.string()).default([]),
+  tax: budgetTaxContextSchema,
+  cash: budgetCashContextSchema,
+  fingerprint: z.string().default(""),
+  totals_personal: budgetTotalsSchema,
+  totals_business: budgetTotalsSchema,
+  totals_consolidated: budgetTotalsSchema,
+});
+
+export const budgetSuggestionsSchema = z.object({
+  recommended_strategy: budgetStrategySchema,
+  fingerprint: z.string(),
+  missing: z.array(budgetMissingInputSchema).default([]),
+  source_notes: z.array(z.string()).default([]),
+  tax: budgetTaxContextSchema,
+  cash: budgetCashContextSchema,
+  suggestions: z.array(budgetSuggestionSchema),
+  saved_plans: z.array(budgetPlanSummarySchema).default([]),
+  active_plan_id: z.number().nullable().optional(),
+});
+
+export const budgetVarianceLineSchema = z.object({
+  category: z.string(),
+  kind: z.string(),
+  scope: z.string(),
+  budgeted_gbp: z.number().nullable().optional(),
+  actual_gbp: z.number(),
+  variance_gbp: z.number().nullable().optional(),
+  is_missing: z.boolean().default(false),
+});
+
+export const budgetVarianceSchema = z.object({
+  available: z.boolean(),
+  reason: z.string().default(""),
+  month: z.string(),
+  view: z.string(),
+  lines: z.array(budgetVarianceLineSchema).default([]),
+  unbudgeted_actuals: z.array(budgetVarianceLineSchema).default([]),
+  budgeted_total_gbp: z.number().default(0),
+  actual_total_gbp: z.number().default(0),
+});
+
 export type BankConnectionItem = z.infer<typeof bankConnectionItemSchema>;
 export type FinanceTransaction = z.infer<typeof financeTransactionSchema>;
 export type FinanceAiAssessment = z.infer<typeof financeAiAssessmentSchema>;
@@ -455,3 +632,12 @@ export type MonthlyBudgetLine = z.infer<typeof monthlyBudgetLineSchema>;
 export type CashflowForecast = z.infer<typeof cashflowForecastSchema>;
 export type DebtStrategy = z.infer<typeof debtStrategySchema>;
 export type FinanceReports = z.infer<typeof financeReportsSchema>;
+export type BudgetPlan = z.infer<typeof budgetPlanSchema>;
+export type BudgetPlanItem = z.infer<typeof budgetPlanItemSchema>;
+export type BudgetPlanSummary = z.infer<typeof budgetPlanSummarySchema>;
+export type ActiveBudgetSummary = z.infer<typeof activeBudgetSummarySchema>;
+export type BudgetSuggestions = z.infer<typeof budgetSuggestionsSchema>;
+export type BudgetSuggestion = z.infer<typeof budgetSuggestionSchema>;
+export type BudgetVariance = z.infer<typeof budgetVarianceSchema>;
+export type BudgetTotalsSchema = z.infer<typeof budgetTotalsSchema>;
+export type BudgetMissingInput = z.infer<typeof budgetMissingInputSchema>;

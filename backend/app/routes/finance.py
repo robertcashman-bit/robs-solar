@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,8 +18,17 @@ from app.integrations.quickfile_provider import QuickFileProvider
 from app.integrations.registry import integration_registry
 from app.middleware.rate_limit import enforce_write_rate_limit
 from app.schemas.finance import (
+    ActiveBudgetSummary,
     BankConnectionsResponse,
+    BudgetDuplicateRequest,
+    BudgetPlan,
+    BudgetPlanCreate,
+    BudgetPlanSummary,
+    BudgetPlanUpdate,
     BudgetSeedRequest,
+    BudgetSuggestionsResponse,
+    BudgetVarianceResponse,
+    BudgetViewType,
     BusinessFinanceSnapshot,
     BusinessFinanceSnapshotCreate,
     CashflowForecastEntry,
@@ -68,6 +79,7 @@ from app.services.finance.bank_connections_service import (
 )
 from app.services.finance.debt_strategy_service import recommend_debt_strategy
 from app.services.finance.finance_accounts_service import finance_accounts_service
+from app.services.finance.finance_budget_plan_service import finance_budget_plan_service
 from app.services.finance.finance_budget_service import finance_budget_service
 from app.services.finance.finance_cashflow_service import finance_cashflow_service
 from app.services.finance.finance_daily_sync_service import sync_once as finance_sync_once
@@ -401,6 +413,174 @@ async def seed_budget_from_previous(
     return await finance_budget_service.seed_from_previous(
         db, month=body.month, scope=body.scope
     )
+
+
+@router.get("/budget-plans/suggestions", response_model=BudgetSuggestionsResponse)
+async def get_budget_suggestions(
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> BudgetSuggestionsResponse:
+    return await finance_budget_plan_service.suggestions(db)
+
+
+@router.get("/budget-plans", response_model=list[BudgetPlanSummary])
+async def list_budget_plans(
+    include_archived: bool = False,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> list[BudgetPlanSummary]:
+    return await finance_budget_plan_service.list_plans(
+        db, include_archived=include_archived
+    )
+
+
+@router.get("/budget-plans/active", response_model=Optional[ActiveBudgetSummary])
+async def get_active_budget_plan(
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> ActiveBudgetSummary | None:
+    return await finance_budget_plan_service.get_active_summary(db)
+
+
+@router.get("/budget-plans/{plan_id}", response_model=BudgetPlan)
+async def get_budget_plan(
+    plan_id: int,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> BudgetPlan:
+    plan = await finance_budget_plan_service.get_plan(db, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return plan
+
+
+@router.post("/budget-plans", response_model=BudgetPlan, status_code=status.HTTP_201_CREATED)
+async def create_budget_plan(
+    request: Request,
+    body: BudgetPlanCreate,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> BudgetPlan:
+    await enforce_write_rate_limit(request)
+    return await finance_budget_plan_service.create_plan(db, body)
+
+
+@router.put("/budget-plans/{plan_id}", response_model=BudgetPlan)
+async def update_budget_plan(
+    request: Request,
+    plan_id: int,
+    body: BudgetPlanUpdate,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> BudgetPlan:
+    await enforce_write_rate_limit(request)
+    plan = await finance_budget_plan_service.update_plan(db, plan_id, body)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return plan
+
+
+@router.post("/budget-plans/{plan_id}/activate", response_model=BudgetPlan)
+async def activate_budget_plan(
+    request: Request,
+    plan_id: int,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> BudgetPlan:
+    await enforce_write_rate_limit(request)
+    plan = await finance_budget_plan_service.activate_plan(db, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return plan
+
+
+@router.post("/budget-plans/{plan_id}/deactivate", response_model=BudgetPlan)
+async def deactivate_budget_plan(
+    request: Request,
+    plan_id: int,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> BudgetPlan:
+    await enforce_write_rate_limit(request)
+    plan = await finance_budget_plan_service.deactivate_plan(db, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return plan
+
+
+@router.post("/budget-plans/{plan_id}/duplicate", response_model=BudgetPlan)
+async def duplicate_budget_plan(
+    request: Request,
+    plan_id: int,
+    body: BudgetDuplicateRequest | None = None,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> BudgetPlan:
+    await enforce_write_rate_limit(request)
+    plan = await finance_budget_plan_service.duplicate_plan(db, plan_id, body)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return plan
+
+
+@router.post("/budget-plans/{plan_id}/reset", response_model=BudgetPlan)
+async def reset_budget_plan(
+    request: Request,
+    plan_id: int,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> BudgetPlan:
+    await enforce_write_rate_limit(request)
+    plan = await finance_budget_plan_service.reset_plan(db, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return plan
+
+
+@router.post("/budget-plans/{plan_id}/refresh", response_model=BudgetPlan)
+async def refresh_budget_plan(
+    request: Request,
+    plan_id: int,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> BudgetPlan:
+    await enforce_write_rate_limit(request)
+    plan = await finance_budget_plan_service.refresh_plan(db, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return plan
+
+
+@router.get("/budget-plans/{plan_id}/variance", response_model=BudgetVarianceResponse)
+async def get_budget_plan_variance(
+    plan_id: int,
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    view: BudgetViewType = BudgetViewType.CONSOLIDATED,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> BudgetVarianceResponse:
+    plan = await finance_budget_plan_service.get_plan(db, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return await finance_budget_plan_service.variance_for_plan(
+        db, plan, month=month, view=view
+    )
+
+
+@router.delete("/budget-plans/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_budget_plan(
+    request: Request,
+    plan_id: int,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await enforce_write_rate_limit(request)
+    try:
+        deleted = await finance_budget_plan_service.delete_plan(db, plan_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Budget not found")
 
 
 @router.get("/cashflow", response_model=CashflowForecastsResponse)

@@ -46,6 +46,7 @@ const overview: FinanceOverview = {
   business_income_from_quickfile: true,
   historic_fields: ["personal_bank_balance_gbp", "monthly_income_gbp"],
   insights: [],
+  active_budget: null,
 };
 
 const accounts: FinanceAccount[] = [

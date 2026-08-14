@@ -266,6 +266,11 @@ class FinanceOverviewService:
             insights=[],
         )
         overview.insights = await finance_insights_service.refresh_for_overview(db, overview)
+        from app.services.finance.finance_budget_plan_service import (
+            finance_budget_plan_service,
+        )
+
+        overview.active_budget = await finance_budget_plan_service.get_active_summary(db)
         return overview
 
     async def latest_personal_snapshot(self, db: AsyncSession) -> PersonalFinanceSnapshot | None:

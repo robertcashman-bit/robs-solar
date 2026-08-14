@@ -60,6 +60,15 @@ class FinanceReportsService:
 
         qf_reports = await quickfile_reports_service.get_stored_reports(db)
 
+        from app.services.finance.finance_budget_plan_service import (
+            finance_budget_plan_service,
+        )
+
+        active_budget = await finance_budget_plan_service.get_active_summary(db)
+        budget_vs_actual = await finance_budget_plan_service.variance_for_active(
+            db, month=month
+        )
+
         return FinanceReportsResponse(
             month=month,
             personal_snapshot=personal,
@@ -70,6 +79,8 @@ class FinanceReportsService:
             debt_reduction_gbp=0.0,
             energy_savings_gbp=round(energy_savings, 2),
             energy_savings_vs_forecast=vs_forecast,
+            budget_vs_actual=budget_vs_actual,
+            active_budget=active_budget,
         )
 
     async def get_pl_history(self, db: AsyncSession, *, months: int = 12) -> PlHistoryResponse:

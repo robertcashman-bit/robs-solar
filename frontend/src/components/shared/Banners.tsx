@@ -16,6 +16,17 @@ export function ErrorBanner({ message }: BannerProps) {
   );
 }
 
+export function SuccessBanner({ message }: BannerProps) {
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-3 rounded-xl border border-emerald-300/50 bg-emerald-50/90 px-4 py-3 text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-200"
+    >
+      <span>{message}</span>
+    </div>
+  );
+}
+
 export function OfflineBanner({ message }: BannerProps) {
   return (
     <div

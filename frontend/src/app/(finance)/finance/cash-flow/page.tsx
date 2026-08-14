@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { ActiveBudgetCard } from "@/components/finance/ActiveBudgetCard";
 import { FinanceAmount } from "@/components/finance/FinanceAmount";
 import { MetricTile } from "@/components/finance/MetricTile";
 import { AppShell } from "@/components/shared/AppShell";
@@ -14,7 +15,9 @@ import { PageLoading } from "@/components/shared/PageLoading";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import {
+  activeBudgetSummarySchema,
   cashflowForecastsSchema,
+  type ActiveBudgetSummary,
   type CashflowForecast,
 } from "@/lib/finance-schemas";
 import { financeRoleForCashflowEntry } from "@/lib/money";
@@ -30,15 +33,20 @@ export default function CashFlowPage() {
     personal: CashflowForecast;
     business: CashflowForecast;
   } | null>(null);
+  const [activeBudget, setActiveBudget] = useState<ActiveBudgetSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiClient.get<unknown>(`/finance/cashflow?horizon=${horizon}`);
+      const [data, budgetData] = await Promise.all([
+        apiClient.get<unknown>(`/finance/cashflow?horizon=${horizon}`),
+        apiClient.get<unknown>("/finance/budget-plans/active").catch(() => null),
+      ]);
       const parsed = cashflowForecastsSchema.parse(data);
       setForecasts({ personal: parsed.personal, business: parsed.business });
+      setActiveBudget(budgetData ? activeBudgetSummarySchema.nullable().parse(budgetData) : null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load cash flow");
@@ -108,6 +116,9 @@ export default function CashFlowPage() {
         </div>
       ) : forecast ? (
         <>
+          <div className="mt-6">
+            <ActiveBudgetCard budget={activeBudget} />
+          </div>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <MetricTile label="Starting balance" value={forecast.starting_balance_gbp} amountRole="signed" />
             <MetricTile
