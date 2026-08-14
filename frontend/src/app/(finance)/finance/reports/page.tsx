@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { AccountStatements } from "@/components/finance/AccountStatements";
 import { MetricTile } from "@/components/finance/MetricTile";
+import { PlHistoryChart, type PlHistoryPoint } from "@/components/finance/PlHistoryChart";
 import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
@@ -35,42 +36,59 @@ export default function ReportsPage() {
   const [overview, setOverview] = useState<FinanceOverview | null>(null);
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
   const [liabilities, setLiabilities] = useState<FinanceLiability[]>([]);
+  const [plHistory, setPlHistory] = useState<PlHistoryPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const month = currentMonthKey();
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [authLoading, user, router]);
 
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [reportsData, overviewData, accountsData, liabilitiesData, plData] = await Promise.all([
+        apiClient.get<unknown>(`/finance/reports?month=${month}`),
+        apiClient.get<unknown>("/finance/overview"),
+        apiClient.get<unknown>("/finance/accounts"),
+        apiClient.get<unknown>("/finance/liabilities"),
+        apiClient.get<unknown>("/finance/reports/pl-history?months=12").catch(() => ({ points: [] })),
+      ]);
+      setReports(financeReportsSchema.parse(reportsData));
+      setOverview(financeOverviewSchema.parse(overviewData));
+      setAccounts(z.array(financeAccountSchema).parse(accountsData));
+      setLiabilities(z.array(financeLiabilitySchema).parse(liabilitiesData));
+      setPlHistory(
+        z
+          .object({
+            points: z.array(
+              z.object({
+                month: z.string(),
+                turnover_gbp: z.number(),
+                expenses_gbp: z.number(),
+                profit_gbp: z.number(),
+              }),
+            ),
+          })
+          .parse(plData).points,
+      );
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load reports");
+      setReports(null);
+      setOverview(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [month]);
+
   useEffect(() => {
     if (!user) return;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        setLoading(true);
-        try {
-          const [reportsData, overviewData, accountsData, liabilitiesData] = await Promise.all([
-            apiClient.get<unknown>(`/finance/reports?month=${month}`),
-            apiClient.get<unknown>("/finance/overview"),
-            apiClient.get<unknown>("/finance/accounts"),
-            apiClient.get<unknown>("/finance/liabilities"),
-          ]);
-          setReports(financeReportsSchema.parse(reportsData));
-          setOverview(financeOverviewSchema.parse(overviewData));
-          setAccounts(z.array(financeAccountSchema).parse(accountsData));
-          setLiabilities(z.array(financeLiabilitySchema).parse(liabilitiesData));
-          setError(null);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Failed to load reports");
-          setReports(null);
-          setOverview(null);
-        } finally {
-          setLoading(false);
-        }
-      })();
-    }, 0);
+    const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [user, month]);
+  }, [user, load, reloadKey]);
 
   if (authLoading || !user) return <AuthLoadingShell />;
 
@@ -80,6 +98,15 @@ export default function ReportsPage() {
         eyebrow="Finance"
         title="Reports"
         description={`Monthly finance report for ${formatMonthLabel(month)}.`}
+        actions={
+          <button
+            type="button"
+            className="solar-btn-secondary text-sm"
+            onClick={() => setReloadKey((k) => k + 1)}
+          >
+            Try again
+          </button>
+        }
       />
       {error ? (
         <div className="mt-4">
@@ -95,6 +122,13 @@ export default function ReportsPage() {
           <section className="space-y-4">
             <h2 className="solar-section-title">Business reports</h2>
             <QuickFileStatements reports={reports.quickfile_reports} variant="document" />
+          </section>
+
+          <section className="space-y-4">
+            <h2 className="solar-section-title">Monthly P&amp;L</h2>
+            <div className="rounded-2xl border border-[var(--border)] p-4">
+              <PlHistoryChart points={plHistory} />
+            </div>
           </section>
 
           <section className="space-y-4">
@@ -131,7 +165,7 @@ export default function ReportsPage() {
         <div className="mt-6">
           <EmptyState
             title="Reports unavailable"
-            description="Could not load the monthly report. Check your connection and try again."
+            description="Could not load the monthly report. Use Try again, or check that the backend is running."
           />
         </div>
       )}

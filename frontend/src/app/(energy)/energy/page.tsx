@@ -93,7 +93,17 @@ export default function DashboardPage() {
         return;
       }
 
-      await apiClient.get<unknown>("/metrics/live").catch(() => null);
+      try {
+        await apiClient.get<unknown>("/metrics/live");
+      } catch (liveErr) {
+        const message =
+          liveErr instanceof Error ? liveErr.message : "Live metrics unavailable";
+        setError(
+          /verification code/i.test(message)
+            ? `${message} Complete Sunsynk verification in the Sunsynk app or website, then refresh.`
+            : message,
+        );
+      }
       const [connectivityData, summaryData, compareData] = await Promise.all([
         apiClient.get<unknown>("/metrics/connectivity"),
         apiClient.get<unknown>("/metrics/summary?range=day"),

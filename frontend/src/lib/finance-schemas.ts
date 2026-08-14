@@ -4,6 +4,7 @@ export const financeScopeSchema = z.enum(["personal", "business"]);
 
 export const financeAccountTypeSchema = z.enum([
   "current",
+  "savings",
   "credit_card",
   "loan",
   "mortgage",

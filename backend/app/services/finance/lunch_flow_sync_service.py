@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import FinanceAccountRow, FinanceLiabilityRow, FinanceTransactionRow
+from app.db.models import FinanceAccountRow, FinanceTransactionRow
 from app.integrations.base import IntegrationNotConfiguredError
 from app.integrations.lunch_flow_client import LunchFlowClient, LunchFlowError
 from app.schemas.finance import FinanceAccountSource, LunchFlowConfig, LunchFlowSyncResult
@@ -16,13 +16,40 @@ from app.services.finance.historic_finance_seed import HISTORIC_SEED_MARKER
 from app.services.lunch_flow_settings_service import lunch_flow_settings_service
 
 
+DISPLAY_NAME_LOCKED = "display_name_locked"
+
+
 def _infer_account_type(name: str, institution_name: str) -> str:
     haystack = f"{name} {institution_name}".lower()
     if "credit" in haystack or "card" in haystack:
         return "credit_card"
-    if "savings" in haystack:
+    if "savings" in haystack or "save account" in haystack or "saver" in haystack:
         return "savings"
     return "current"
+
+
+def _display_name(name: str, institution: str, account_type: str) -> str:
+    raw = (name or "").strip() or "Account"
+    inst = (institution or "Bank").strip()
+    if re_match_generic_account(raw):
+        label = account_type.replace("_", " ")
+        if account_type == "savings":
+            return f"{inst} Savings"
+        if account_type == "current" and raw.lower() in {"current account", "current"}:
+            return f"{inst} Current"
+        return f"{inst} {raw}"
+    return raw
+
+
+def re_match_generic_account(name: str) -> bool:
+    import re
+
+    return bool(re.match(r"(?i)^account\s*\d+$", name.strip())) or name.strip().lower() in {
+        "current account",
+        "current",
+        "savings",
+        "savings account",
+    }
 
 
 def _account_record(
@@ -37,7 +64,7 @@ def _account_record(
     return {
         "scope": "personal",
         "account_type": account_type,
-        "name": name,
+        "name": _display_name(name, institution, account_type),
         "provider": institution,
         "balance_gbp": round(balance_gbp, 2) if balance_gbp is not None else None,
         "external_id": f"lunchflow:{account_id}",
@@ -222,12 +249,15 @@ class LunchFlowSyncService:
             )
             db.add(row)
         else:
-            row.name = item["name"]
+            locked = DISPLAY_NAME_LOCKED in (row.notes or "")
+            # Preserve Configure renames and account type across sync.
+            if not locked:
+                row.name = item["name"]
+                row.account_type = item["account_type"]
+                row.notes = item.get("notes", row.notes)
             row.provider = item.get("provider", row.provider)
             if balance is not None:
                 row.balance_gbp = balance
-            row.account_type = item["account_type"]
-            row.notes = item.get("notes", row.notes)
             row.is_active = True
             row.updated_at = now
         await db.commit()
@@ -294,11 +324,13 @@ class LunchFlowSyncService:
         return True
 
     async def _retire_historic_personal_placeholders(self, db: AsyncSession) -> None:
+        """Retire only historic CURRENT placeholders — never mortgages/pensions/property/debts."""
         now = datetime.now(timezone.utc)
         account_rows = await db.scalars(
             select(FinanceAccountRow).where(
                 FinanceAccountRow.scope == "personal",
                 FinanceAccountRow.source == FinanceAccountSource.MANUAL.value,
+                FinanceAccountRow.account_type == "current",
                 FinanceAccountRow.is_active.is_(True),
             )
         )
@@ -306,17 +338,6 @@ class LunchFlowSyncService:
             if HISTORIC_SEED_MARKER in (row.notes or "") or (row.external_id or "").startswith(
                 HISTORIC_SEED_MARKER
             ):
-                row.is_active = False
-                row.updated_at = now
-
-        liability_rows = await db.scalars(
-            select(FinanceLiabilityRow).where(
-                FinanceLiabilityRow.scope == "personal",
-                FinanceLiabilityRow.is_active.is_(True),
-            )
-        )
-        for row in liability_rows.all():
-            if HISTORIC_SEED_MARKER in (row.notes or ""):
                 row.is_active = False
                 row.updated_at = now
         await db.commit()

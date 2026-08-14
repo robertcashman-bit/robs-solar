@@ -56,7 +56,10 @@ class FinanceCashflowService:
             stmt = stmt.where(CashflowForecastRow.scope == scope.value)
         rows = await db.scalars(stmt)
         entries = [_to_schema(r) for r in rows.all()]
-        return [e for e in entries if e.forecast_date <= end.isoformat()]
+        today_iso = today.isoformat()
+        end_iso = end.isoformat()
+        # Horizon is today → today+horizon; expired rows must not inflate projections.
+        return [e for e in entries if today_iso <= e.forecast_date <= end_iso]
 
     async def create_entry(
         self,
@@ -85,11 +88,18 @@ class FinanceCashflowService:
         *,
         horizon_days: int = 30,
     ) -> CashflowForecastsResponse:
+        overview = await finance_overview_service.get_overview(db)
         personal = await self.build_forecast_for_scope(
-            db, scope=FinanceScope.PERSONAL, horizon_days=horizon_days
+            db,
+            scope=FinanceScope.PERSONAL,
+            horizon_days=horizon_days,
+            overview=overview,
         )
         business = await self.build_forecast_for_scope(
-            db, scope=FinanceScope.BUSINESS, horizon_days=horizon_days
+            db,
+            scope=FinanceScope.BUSINESS,
+            horizon_days=horizon_days,
+            overview=overview,
         )
         return CashflowForecastsResponse(
             horizon_days=horizon_days,
@@ -111,8 +121,10 @@ class FinanceCashflowService:
         *,
         scope: FinanceScope,
         horizon_days: int = 30,
+        overview=None,
     ) -> CashflowForecastResponse:
-        overview = await finance_overview_service.get_overview(db)
+        if overview is None:
+            overview = await finance_overview_service.get_overview(db)
         starting = (
             overview.personal_bank_balance_gbp
             if scope == FinanceScope.PERSONAL
@@ -123,12 +135,24 @@ class FinanceCashflowService:
         stub_message = ""
 
         if not entries:
-            entries = await self._seed_scope_entries(db, scope=scope, horizon_days=horizon_days)
+            # Roll forward expired unconfirmed stubs so horizon does not empty.
+            entries = await self._roll_forward_unconfirmed(
+                db, scope=scope, horizon_days=horizon_days
+            )
+        if not entries:
+            # In-memory stubs only — never commit from a viewer GET.
+            entries = await self._ephemeral_seed_entries(db, scope=scope, horizon_days=horizon_days)
             is_stub = True
             stub_message = (
                 "This forecast is auto-generated from monthly snapshots and debt payment days, "
                 "not from live bank schedules. Treat figures as indicative until you add confirmed "
                 "cash-flow entries."
+            )
+        elif any(not e.is_confirmed for e in entries):
+            is_stub = True
+            stub_message = (
+                "This forecast includes auto-generated or unconfirmed entries. "
+                "Treat figures as indicative until you confirm live cash-flow items."
             )
 
         net = sum(e.amount_gbp for e in entries)
@@ -153,6 +177,175 @@ class FinanceCashflowService:
             is_stub=is_stub,
             stub_message=stub_message,
         )
+
+    async def _roll_forward_unconfirmed(
+        self,
+        db: AsyncSession,
+        *,
+        scope: FinanceScope,
+        horizon_days: int,
+    ) -> list[CashflowForecastEntry]:
+        """Advance expired unconfirmed stub dates into the current horizon."""
+        today = datetime.now(timezone.utc).date()
+        end = today + timedelta(days=horizon_days)
+        stmt = (
+            select(CashflowForecastRow)
+            .where(CashflowForecastRow.horizon_days == horizon_days)
+            .where(CashflowForecastRow.scope == scope.value)
+            .where(CashflowForecastRow.is_confirmed.is_(False))
+        )
+        rows = list((await db.scalars(stmt)).all())
+        changed = False
+        for row in rows:
+            try:
+                d = datetime.strptime(row.forecast_date[:10], "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            while d < today:
+                d = d + timedelta(days=30)
+                changed = True
+            if d > end:
+                continue
+            row.forecast_date = d.isoformat()
+        if changed:
+            await db.commit()
+        return await self.list_entries(db, horizon_days=horizon_days, scope=scope)
+
+    def _ephemeral_entry(
+        self,
+        *,
+        temp_id: int,
+        scope: FinanceScope,
+        forecast_date: str,
+        horizon_days: int,
+        entry_type: CashflowEntryType,
+        label: str,
+        amount_gbp: float,
+        source: str,
+    ) -> CashflowForecastEntry:
+        return CashflowForecastEntry(
+            id=temp_id,
+            scope=scope,
+            forecast_date=forecast_date,
+            horizon_days=horizon_days,
+            entry_type=entry_type,
+            label=label,
+            amount_gbp=amount_gbp,
+            is_confirmed=False,
+            source=source,
+            created_at=datetime.now(timezone.utc),
+        )
+
+    async def _ephemeral_seed_entries(
+        self,
+        db: AsyncSession,
+        *,
+        scope: FinanceScope,
+        horizon_days: int,
+    ) -> list[CashflowForecastEntry]:
+        if scope == FinanceScope.PERSONAL:
+            return await self._ephemeral_personal_entries(db, horizon_days)
+        return await self._ephemeral_business_entries(db, horizon_days)
+
+    async def _ephemeral_personal_entries(
+        self, db: AsyncSession, horizon_days: int
+    ) -> list[CashflowForecastEntry]:
+        liabilities = await finance_liabilities_service.list_liabilities(
+            db, scope=FinanceScope.PERSONAL
+        )
+        personal_snap = await finance_overview_service.latest_personal_snapshot(db)
+        today = datetime.now(timezone.utc).date()
+        entries: list[CashflowForecastEntry] = []
+        n = -1
+
+        def add(**kwargs) -> None:
+            nonlocal n
+            entries.append(self._ephemeral_entry(temp_id=n, **kwargs))
+            n -= 1
+
+        if personal_snap and personal_snap.monthly_income_gbp > 0:
+            add(
+                scope=FinanceScope.PERSONAL,
+                forecast_date=(today + timedelta(days=28)).isoformat(),
+                horizon_days=horizon_days,
+                entry_type=CashflowEntryType.INCOME,
+                label="Expected salary / income",
+                amount_gbp=personal_snap.monthly_income_gbp,
+                source="snapshot",
+            )
+        if personal_snap and personal_snap.monthly_spending_gbp > 0:
+            add(
+                scope=FinanceScope.PERSONAL,
+                forecast_date=(today + timedelta(days=7)).isoformat(),
+                horizon_days=horizon_days,
+                entry_type=CashflowEntryType.OTHER,
+                label="General spending",
+                amount_gbp=-personal_snap.monthly_spending_gbp,
+                source="snapshot",
+            )
+        if personal_snap and personal_snap.household_bills_gbp > 0:
+            add(
+                scope=FinanceScope.PERSONAL,
+                forecast_date=(today + timedelta(days=14)).isoformat(),
+                horizon_days=horizon_days,
+                entry_type=CashflowEntryType.BILL,
+                label="Household bills",
+                amount_gbp=-personal_snap.household_bills_gbp,
+                source="snapshot",
+            )
+        for liability in liabilities:
+            payment = liability.minimum_payment_gbp + liability.overpayment_gbp
+            if payment <= 0:
+                payment = max(50.0, round(liability.balance_gbp * 0.02, 2))
+            day = liability.payment_day or 1
+            forecast_day = today.replace(day=min(day, 28))
+            if forecast_day <= today:
+                forecast_day = forecast_day + timedelta(days=30)
+            add(
+                scope=FinanceScope.PERSONAL,
+                forecast_date=forecast_day.isoformat(),
+                horizon_days=horizon_days,
+                entry_type=CashflowEntryType.DEBT,
+                label=f"Debt payment — {liability.name}",
+                amount_gbp=-payment,
+                source="liability",
+            )
+        return entries
+
+    async def _ephemeral_business_entries(
+        self, db: AsyncSession, horizon_days: int
+    ) -> list[CashflowForecastEntry]:
+        business_snap = await finance_overview_service.latest_business_snapshot(db)
+        today = datetime.now(timezone.utc).date()
+        entries: list[CashflowForecastEntry] = []
+        n = -1
+
+        def add(**kwargs) -> None:
+            nonlocal n
+            entries.append(self._ephemeral_entry(temp_id=n, **kwargs))
+            n -= 1
+
+        if business_snap and business_snap.turnover_gbp > 0:
+            add(
+                scope=FinanceScope.BUSINESS,
+                forecast_date=(today + timedelta(days=21)).isoformat(),
+                horizon_days=horizon_days,
+                entry_type=CashflowEntryType.INCOME,
+                label="Expected client receipts / turnover",
+                amount_gbp=business_snap.turnover_gbp,
+                source="snapshot",
+            )
+        if business_snap and business_snap.expenses_gbp > 0:
+            add(
+                scope=FinanceScope.BUSINESS,
+                forecast_date=(today + timedelta(days=10)).isoformat(),
+                horizon_days=horizon_days,
+                entry_type=CashflowEntryType.OTHER,
+                label="Business expenses",
+                amount_gbp=-business_snap.expenses_gbp,
+                source="snapshot",
+            )
+        return entries
 
     async def _seed_scope_entries(
         self,

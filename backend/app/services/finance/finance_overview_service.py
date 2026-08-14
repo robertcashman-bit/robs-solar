@@ -142,18 +142,20 @@ class FinanceOverviewService:
         business_snap = await self.latest_business_snapshot(db)
         qf_reports = await quickfile_reports_service.get_stored_reports(db)
 
-        personal_bank = finance_accounts_service.sum_scope_balance(
-            accounts, FinanceScope.PERSONAL, FinanceAccountType.CURRENT
+        personal_bank = sum(
+            a.balance_gbp
+            for a in accounts
+            if a.scope == FinanceScope.PERSONAL
+            and a.account_type
+            in {FinanceAccountType.CURRENT, FinanceAccountType.SAVINGS}
+            and "mock aspsp" not in (a.provider or "").lower()
+            and "mock aspsp" not in (a.name or "").lower()
         )
         business_bank = finance_accounts_service.sum_scope_balance(
             accounts, FinanceScope.BUSINESS, FinanceAccountType.CURRENT
         )
 
-        debtors = (
-            business_snap.debtors_gbp
-            if business_snap
-            else finance_accounts_service.sum_by_type(accounts, FinanceAccountType.DEBTORS)
-        )
+        debtors = business_snap.debtors_gbp if business_snap else None
         breakdown = build_balance_breakdown(
             accounts,
             liabilities,
@@ -282,6 +284,17 @@ class FinanceOverviewService:
         )
         return _business_from_row(row) if row else None
 
+    async def business_snapshot_for_month(
+        self, db: AsyncSession, month: str
+    ) -> BusinessFinanceSnapshot | None:
+        row = await db.scalar(
+            select(BusinessFinanceSnapshotRow)
+            .where(BusinessFinanceSnapshotRow.snapshot_date.startswith(month))
+            .order_by(BusinessFinanceSnapshotRow.snapshot_date.desc())
+            .limit(1)
+        )
+        return _business_from_row(row) if row else None
+
     async def create_personal_snapshot(
         self,
         db: AsyncSession,
@@ -311,21 +324,43 @@ class FinanceOverviewService:
     ) -> BusinessFinanceSnapshot:
         profit = body.turnover_gbp - body.expenses_gbp
         cash_draw = body.turnover_gbp - body.expenses_gbp - body.creditors_gbp
-        row = BusinessFinanceSnapshotRow(
-            snapshot_date=body.snapshot_date,
-            turnover_gbp=body.turnover_gbp,
-            expenses_gbp=body.expenses_gbp,
-            vat_reserve_gbp=body.vat_reserve_gbp,
-            corp_tax_reserve_gbp=body.corp_tax_reserve_gbp,
-            debtors_gbp=body.debtors_gbp,
-            creditors_gbp=body.creditors_gbp,
-            profit_estimate_gbp=profit,
-            cash_available_to_draw_gbp=max(0.0, cash_draw),
-            notes=body.notes,
-            breakdown_json=json.dumps(body.breakdown),
-            created_at=datetime.now(timezone.utc),
+        month_key = body.snapshot_date[:7]
+        existing = await db.scalar(
+            select(BusinessFinanceSnapshotRow)
+            .where(BusinessFinanceSnapshotRow.snapshot_date.startswith(month_key))
+            .order_by(BusinessFinanceSnapshotRow.snapshot_date.desc())
+            .limit(1)
         )
-        db.add(row)
+        now = datetime.now(timezone.utc)
+        if existing:
+            existing.snapshot_date = body.snapshot_date
+            existing.turnover_gbp = body.turnover_gbp
+            existing.expenses_gbp = body.expenses_gbp
+            existing.vat_reserve_gbp = body.vat_reserve_gbp
+            existing.corp_tax_reserve_gbp = body.corp_tax_reserve_gbp
+            existing.debtors_gbp = body.debtors_gbp
+            existing.creditors_gbp = body.creditors_gbp
+            existing.profit_estimate_gbp = profit
+            existing.cash_available_to_draw_gbp = max(0.0, cash_draw)
+            existing.notes = body.notes
+            existing.breakdown_json = json.dumps(body.breakdown)
+            row = existing
+        else:
+            row = BusinessFinanceSnapshotRow(
+                snapshot_date=body.snapshot_date,
+                turnover_gbp=body.turnover_gbp,
+                expenses_gbp=body.expenses_gbp,
+                vat_reserve_gbp=body.vat_reserve_gbp,
+                corp_tax_reserve_gbp=body.corp_tax_reserve_gbp,
+                debtors_gbp=body.debtors_gbp,
+                creditors_gbp=body.creditors_gbp,
+                profit_estimate_gbp=profit,
+                cash_available_to_draw_gbp=max(0.0, cash_draw),
+                notes=body.notes,
+                breakdown_json=json.dumps(body.breakdown),
+                created_at=now,
+            )
+            db.add(row)
         await db.commit()
         await db.refresh(row)
         return _business_from_row(row)

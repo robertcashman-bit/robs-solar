@@ -117,16 +117,24 @@ class FinanceAccountsService:
         account_id: int,
         body: FinanceAccountUpdate,
     ) -> FinanceAccount | None:
+        from app.services.finance.lunch_flow_sync_service import DISPLAY_NAME_LOCKED
+
         row = await db.get(FinanceAccountRow, account_id)
         if row is None:
             return None
-        for field, value in body.model_dump(exclude_unset=True).items():
+        payload = body.model_dump(exclude_unset=True)
+        for field, value in payload.items():
             if field == "account_type" and value is not None:
                 row.account_type = (
                     value.value if isinstance(value, FinanceAccountType) else str(value)
                 )
             else:
                 setattr(row, field, value)
+        # Lock display name / type so Lunch Flow sync does not overwrite Configure edits.
+        if "name" in payload or "account_type" in payload:
+            notes = row.notes or ""
+            if DISPLAY_NAME_LOCKED not in notes:
+                row.notes = f"{notes} [{DISPLAY_NAME_LOCKED}]".strip()
         row.updated_at = datetime.now(timezone.utc)
         await db.commit()
         await db.refresh(row)

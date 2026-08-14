@@ -69,7 +69,7 @@ export default function DebtsPage() {
 
   async function addDebt(e: React.FormEvent) {
     e.preventDefault();
-    if (!canWrite(user)) return;
+    if (!canWrite(user) || saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -131,9 +131,15 @@ export default function DebtsPage() {
           {debts.length === 0 ? (
             <div className="mt-6">
               <EmptyState
-                title="No debts recorded yet"
-                description="Add credit cards, loans, or mortgages to track balances, rates, and payoff strategy."
+                title="No payoff liabilities recorded yet"
+                description="This page tracks manual payoff debts (cards, loans, mortgages). Business debts from QuickFile (Capital on Tap, director’s loan, credit cards) appear under Business / Overview as accounts, not here."
               />
+              <p className="mt-3 text-sm text-[var(--muted)]">
+                <a href="/finance/business" className="underline">
+                  Open Business
+                </a>{" "}
+                to review imported debt accounts.
+              </p>
             </div>
           ) : (
             <div className="mt-6 overflow-x-auto">
@@ -206,6 +212,8 @@ export default function DebtsPage() {
               <input
                 className="solar-input"
                 type="number"
+                step="0.01"
+                min="0"
                 placeholder="Balance"
                 value={form.balance_gbp}
                 onChange={(e) => setForm({ ...form, balance_gbp: e.target.value })}
@@ -219,6 +227,15 @@ export default function DebtsPage() {
                 value={form.interest_rate_pct}
                 onChange={(e) => setForm({ ...form, interest_rate_pct: e.target.value })}
                 required
+              />
+              <input
+                className="solar-input"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Min payment"
+                value={form.minimum_payment_gbp}
+                onChange={(e) => setForm({ ...form, minimum_payment_gbp: e.target.value })}
               />
               <button type="submit" className="solar-btn-primary" disabled={saving}>
                 {saving ? "Saving…" : "Add debt"}

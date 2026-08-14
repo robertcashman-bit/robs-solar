@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { z } from "zod";
 
 import { BusinessFinanceView } from "@/components/finance/BusinessFinanceView";
+import { PlHistoryChart, type PlHistoryPoint } from "@/components/finance/PlHistoryChart";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
@@ -29,7 +30,9 @@ export default function BusinessFinancePage() {
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
   const [snapshot, setSnapshot] = useState<BusinessFinanceSnapshot | null>(null);
   const [quickfileReports, setQuickfileReports] = useState<QuickFileReports | null>(null);
+  const [plHistory, setPlHistory] = useState<PlHistoryPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: "",
     balance_gbp: "",
@@ -46,15 +49,41 @@ export default function BusinessFinancePage() {
 
   const load = useCallback(async () => {
     try {
-      const [accts, snaps, qfReports] = await Promise.all([
+      const [accts, snaps, qfReports, plData] = await Promise.all([
         apiClient.get<unknown>("/finance/accounts?scope=business"),
         apiClient.get<unknown>("/finance/snapshots/business"),
         apiClient.get<unknown>("/finance/integrations/quickfile/reports"),
+        apiClient.get<unknown>("/finance/reports/pl-history?months=12").catch(() => ({ points: [] })),
       ]);
       setAccounts(z.array(financeAccountSchema).parse(accts));
       const parsed = z.array(businessFinanceSnapshotSchema).parse(snaps);
-      setSnapshot(parsed[0] ?? null);
+      const latest = parsed[0] ?? null;
+      setSnapshot(latest);
+      if (latest) {
+        setSnapshotForm({
+          turnover_gbp: String(latest.turnover_gbp),
+          expenses_gbp: String(latest.expenses_gbp),
+          vat_reserve_gbp: String(latest.vat_reserve_gbp),
+          corp_tax_reserve_gbp: String(latest.corp_tax_reserve_gbp),
+          debtors_gbp: String(latest.debtors_gbp),
+          creditors_gbp: String(latest.creditors_gbp),
+        });
+      }
       setQuickfileReports(quickFileReportsSchema.parse(qfReports));
+      const plParsed = z
+        .object({
+          points: z.array(
+            z.object({
+              month: z.string(),
+              turnover_gbp: z.number(),
+              expenses_gbp: z.number(),
+              profit_gbp: z.number(),
+            }),
+          ),
+        })
+        .parse(plData);
+      setPlHistory(plParsed.points);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load business finance");
     }
@@ -72,33 +101,60 @@ export default function BusinessFinancePage() {
 
   async function addAccount(e: React.FormEvent) {
     e.preventDefault();
-    if (!canWrite(user)) return;
-    await apiClient.post("/finance/accounts", {
-      scope: "business",
-      account_type: form.account_type,
-      name: form.name,
-      balance_gbp: Number(form.balance_gbp),
-    });
-    setForm({ name: "", balance_gbp: "", account_type: "current" });
-    await load();
+    if (!canWrite(user) || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await apiClient.post("/finance/accounts", {
+        scope: "business",
+        account_type: form.account_type,
+        name: form.name,
+        balance_gbp: Number(form.balance_gbp),
+      });
+      setForm({ name: "", balance_gbp: "", account_type: "current" });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add account");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveSnapshot(e: React.FormEvent) {
     e.preventDefault();
-    if (!canWrite(user)) return;
-    await apiClient.post("/finance/snapshots/business", {
-      snapshot_date: currentMonthKey(),
-      turnover_gbp: Number(snapshotForm.turnover_gbp),
-      expenses_gbp: Number(snapshotForm.expenses_gbp),
-      vat_reserve_gbp: Number(snapshotForm.vat_reserve_gbp),
-      corp_tax_reserve_gbp: Number(snapshotForm.corp_tax_reserve_gbp),
-      debtors_gbp: Number(snapshotForm.debtors_gbp),
-      creditors_gbp: Number(snapshotForm.creditors_gbp),
-    });
-    await load();
+    if (!canWrite(user) || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const fromQuickFile = Boolean(
+        quickfileReports?.profit_and_loss_month || quickfileReports?.balance_sheet,
+      );
+      await apiClient.post("/finance/snapshots/business", {
+        snapshot_date: currentMonthKey(),
+        turnover_gbp: fromQuickFile
+          ? Number(snapshot?.turnover_gbp ?? 0)
+          : Number(snapshotForm.turnover_gbp),
+        expenses_gbp: fromQuickFile
+          ? Number(snapshot?.expenses_gbp ?? 0)
+          : Number(snapshotForm.expenses_gbp),
+        vat_reserve_gbp: Number(snapshotForm.vat_reserve_gbp),
+        corp_tax_reserve_gbp: Number(snapshotForm.corp_tax_reserve_gbp),
+        debtors_gbp: Number(snapshotForm.debtors_gbp),
+        creditors_gbp: Number(snapshotForm.creditors_gbp),
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save snapshot");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (authLoading || !user) return <AuthLoadingShell />;
+
+  const quickfileLive = Boolean(
+    quickfileReports?.profit_and_loss_month || quickfileReports?.balance_sheet,
+  );
 
   return (
     <AppShell>
@@ -133,6 +189,16 @@ export default function BusinessFinancePage() {
           }
         />
       </div>
+
+      <section className="mt-8">
+        <h2 className="solar-section-title">Monthly P&amp;L</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Turnover, expenses and profit from saved business snapshots.
+        </p>
+        <div className="mt-4 rounded-2xl border border-[var(--border)] p-4">
+          <PlHistoryChart points={plHistory} />
+        </div>
+      </section>
 
       {canWrite(user) ? (
         <>
@@ -169,10 +235,11 @@ export default function BusinessFinancePage() {
               onChange={(e) => setForm({ ...form, balance_gbp: e.target.value })}
               required
             />
-            <button type="submit" className="solar-btn-primary">
-              Add account
+            <button type="submit" className="solar-btn-primary" disabled={saving}>
+              {saving ? "Saving…" : "Add account"}
             </button>
           </form>
+          {!quickfileLive ? (
           <section className="mt-8">
             <h2 className="solar-section-title">Manual snapshot ({currentMonthKey()})</h2>
             <p className="mt-1 text-sm text-[var(--muted)]">
@@ -204,11 +271,47 @@ export default function BusinessFinancePage() {
                   required
                 />
               ))}
-              <button type="submit" className="solar-btn-primary sm:col-span-2">
-                Save snapshot
+              <button type="submit" className="solar-btn-primary sm:col-span-2" disabled={saving}>
+                {saving ? "Saving…" : "Save snapshot"}
               </button>
             </form>
           </section>
+          ) : (
+            <section className="mt-8">
+              <h2 className="solar-section-title">Tax &amp; working capital ({currentMonthKey()})</h2>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                QuickFile supplies turnover and expenses. Keep VAT, corporation tax, debtors and
+                creditors updated here for cash-flow warnings.
+              </p>
+              <form
+                onSubmit={(e) => void saveSnapshot(e)}
+                className="mt-3 grid gap-3 rounded-2xl border border-[var(--border)] p-4 sm:grid-cols-2 lg:grid-cols-4"
+              >
+                {(
+                  [
+                    ["vat_reserve_gbp", "VAT reserve"],
+                    ["corp_tax_reserve_gbp", "Corp tax reserve"],
+                    ["debtors_gbp", "Debtors"],
+                    ["creditors_gbp", "Creditors"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <input
+                    key={key}
+                    className="solar-input"
+                    type="number"
+                    step="0.01"
+                    placeholder={label}
+                    value={snapshotForm[key]}
+                    onChange={(e) => setSnapshotForm({ ...snapshotForm, [key]: e.target.value })}
+                    required
+                  />
+                ))}
+                <button type="submit" className="solar-btn-primary sm:col-span-2" disabled={saving}>
+                  {saving ? "Saving…" : "Save reserves"}
+                </button>
+              </form>
+            </section>
+          )}
         </>
       ) : null}
     </AppShell>

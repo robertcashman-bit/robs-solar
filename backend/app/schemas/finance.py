@@ -16,6 +16,7 @@ class FinanceScope(str, Enum):
 
 class FinanceAccountType(str, Enum):
     CURRENT = "current"
+    SAVINGS = "savings"
     CREDIT_CARD = "credit_card"
     LOAN = "loan"
     MORTGAGE = "mortgage"
@@ -245,6 +246,22 @@ class MonthlyBudgetLineUpdate(BaseModel):
     budgeted_gbp: float | None = Field(default=None, ge=0)
     actual_gbp: float | None = Field(default=None, ge=0)
     notes: str | None = None
+
+
+class BudgetSeedRequest(BaseModel):
+    month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    scope: FinanceScope
+
+
+class PlHistoryPoint(BaseModel):
+    month: str
+    turnover_gbp: float
+    expenses_gbp: float
+    profit_gbp: float
+
+
+class PlHistoryResponse(BaseModel):
+    points: list[PlHistoryPoint]
 
 
 class CashflowForecastEntry(BaseModel):

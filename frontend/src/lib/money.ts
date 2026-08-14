@@ -96,7 +96,7 @@ export function financeRoleForAccountBalance(
   if (debtTypes.has(accountType)) {
     return "debt";
   }
-  if (accountType === "current" && balanceGbp < 0) {
+  if ((accountType === "current" || accountType === "savings") && balanceGbp < 0) {
     return "signed";
   }
   return "asset";

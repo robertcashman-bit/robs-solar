@@ -53,7 +53,7 @@ export default function BudgetPage() {
 
   async function addLine(e: React.FormEvent) {
     e.preventDefault();
-    if (!canWrite(user)) return;
+    if (!canWrite(user) || saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -62,13 +62,26 @@ export default function BudgetPage() {
         month,
         category,
         budgeted_gbp: Number(budgeted),
-        actual_gbp: 0,
       });
       setCategory("");
       setBudgeted("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add budget line");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function seedFromPrevious() {
+    if (!canWrite(user) || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await apiClient.post("/finance/budget/seed-from-previous", { month, scope });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to seed budget");
     } finally {
       setSaving(false);
     }
@@ -99,7 +112,7 @@ export default function BudgetPage() {
           <ErrorBanner message={error} />
         </div>
       ) : null}
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         {(["personal", "business"] as const).map((s) => (
           <button
             key={s}
@@ -110,6 +123,16 @@ export default function BudgetPage() {
             {s}
           </button>
         ))}
+        {canWrite(user) ? (
+          <button
+            type="button"
+            className="solar-btn-secondary"
+            disabled={saving || lines.length > 0}
+            onClick={() => void seedFromPrevious()}
+          >
+            Fill from previous month
+          </button>
+        ) : null}
       </div>
       {loading ? (
         <div className="mt-6">
@@ -125,23 +148,31 @@ export default function BudgetPage() {
             <div className="mt-6">
               <EmptyState
                 title="No budget lines yet"
-                description={`Add categories for ${scope} spending so you can track budgeted vs actual this month.`}
+                description={`Add categories for ${scope} spending, or fill from the previous month. Actuals update from bank transactions.`}
               />
             </div>
           ) : (
-            <ul className="mt-4 space-y-2">
-              {lines.map((l) => (
-                <li
-                  key={l.id}
-                  className="grid grid-cols-4 gap-2 rounded-xl border border-[var(--border)] px-4 py-3 text-sm"
-                >
-                  <span>{l.category}</span>
-                  <span className="tabular-nums">{formatGbp(l.budgeted_gbp)}</span>
-                  <span className="tabular-nums">{formatGbp(l.actual_gbp)}</span>
-                  <span className="tabular-nums">{formatGbp(l.remaining_gbp)}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="mt-4 overflow-x-auto">
+              <div className="grid grid-cols-4 gap-2 px-4 pb-2 text-xs uppercase tracking-wide text-[var(--muted)]">
+                <span>Category</span>
+                <span>Budgeted</span>
+                <span>Actual</span>
+                <span>Remaining</span>
+              </div>
+              <ul className="space-y-2">
+                {lines.map((l) => (
+                  <li
+                    key={l.id}
+                    className="grid grid-cols-4 gap-2 rounded-xl border border-[var(--border)] px-4 py-3 text-sm"
+                  >
+                    <span>{l.category}</span>
+                    <span className="tabular-nums">{formatGbp(l.budgeted_gbp)}</span>
+                    <span className="tabular-nums">{formatGbp(l.actual_gbp)}</span>
+                    <span className="tabular-nums">{formatGbp(l.remaining_gbp)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {canWrite(user) ? (
             <form onSubmit={(e) => void addLine(e)} className="mt-6 flex flex-wrap gap-3">

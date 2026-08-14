@@ -17,6 +17,7 @@ from app.integrations.registry import integration_registry
 from app.middleware.rate_limit import enforce_write_rate_limit
 from app.schemas.finance import (
     BankConnectionsResponse,
+    BudgetSeedRequest,
     BusinessFinanceSnapshot,
     BusinessFinanceSnapshotCreate,
     CashflowForecastEntry,
@@ -51,6 +52,7 @@ from app.schemas.finance import (
     OpenBankingTestResult,
     PersonalFinanceSnapshot,
     PersonalFinanceSnapshotCreate,
+    PlHistoryResponse,
     QuickFileConfig,
     QuickFileConfigStatus,
     QuickFileReportsResponse,
@@ -388,6 +390,19 @@ async def update_budget_line(
     return result
 
 
+@router.post("/budget/seed-from-previous", response_model=list[MonthlyBudgetLine])
+async def seed_budget_from_previous(
+    request: Request,
+    body: BudgetSeedRequest,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> list[MonthlyBudgetLine]:
+    await enforce_write_rate_limit(request)
+    return await finance_budget_service.seed_from_previous(
+        db, month=body.month, scope=body.scope
+    )
+
+
 @router.get("/cashflow", response_model=CashflowForecastsResponse)
 async def get_cashflow(
     horizon: int = Query(default=30, ge=30, le=90),
@@ -435,6 +450,15 @@ async def get_reports(
     db: AsyncSession = Depends(get_db),
 ) -> FinanceReportsResponse:
     return await finance_reports_service.get_reports(db, month=month)
+
+
+@router.get("/reports/pl-history", response_model=PlHistoryResponse)
+async def get_pl_history(
+    months: int = Query(default=12, ge=1, le=36),
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> PlHistoryResponse:
+    return await finance_reports_service.get_pl_history(db, months=months)
 
 
 @router.get("/integrations")

@@ -137,6 +137,12 @@ class SunsynkConnectAdapter(InverterAdapter):
     def _token_valid(self) -> bool:
         return bool(self._token) and time.monotonic() < self._token_expiry
 
+    def clear_auth(self) -> None:
+        """Drop cached token so the next request re-authenticates."""
+        self._token = None
+        self._token_expiry = 0.0
+        self._client.headers.pop("Authorization", None)
+
     async def _authenticate(self) -> str:
         if not settings.sunsynk_username or not settings.sunsynk_password:
             raise AdapterError("Sunsynk credentials not configured")
@@ -154,9 +160,11 @@ class SunsynkConnectAdapter(InverterAdapter):
                     plain_password=settings.sunsynk_password,
                 )
             except (httpx.HTTPError, ValueError) as exc:
+                self.clear_auth()
                 raise AdapterError(f"Sunsynk authentication failed: {exc}") from exc
             token = data.get("access_token")
             if not token:
+                self.clear_auth()
                 raise AdapterError("Sunsynk authentication returned no access token")
             try:
                 expires_in = float(data.get("expires_in") or 0)

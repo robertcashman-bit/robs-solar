@@ -44,7 +44,15 @@ export function useLiveMetrics({ enabled = true, pollIntervalMs = 5000 }: UseLiv
       setMetrics(data);
       setError(null);
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : "Failed to load metrics");
+      const message =
+        fetchError instanceof Error ? fetchError.message : "Failed to load metrics";
+      if (/verification code/i.test(message)) {
+        setError(
+          `${message} Open the Sunsynk app or www.sunsynk.net, complete the verification challenge, then tap Refresh on Energy.`,
+        );
+      } else {
+        setError(message);
+      }
     }
   }, []);
 

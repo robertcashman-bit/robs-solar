@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import MonthlyBudgetRow
+from app.db.models import FinanceTransactionRow, MonthlyBudgetRow
 from app.schemas.finance import (
     FinanceScope,
     MonthlyBudgetLine,
@@ -31,6 +32,19 @@ def _to_schema(row: MonthlyBudgetRow) -> MonthlyBudgetLine:
     )
 
 
+def _previous_month(month: str) -> str:
+    year, mon = int(month[:4]), int(month[5:7])
+    if mon == 1:
+        return f"{year - 1}-12"
+    return f"{year}-{mon - 1:02d}"
+
+
+def _month_date_bounds(month: str) -> tuple[str, str]:
+    year, mon = int(month[:4]), int(month[5:7])
+    last = monthrange(year, mon)[1]
+    return f"{month}-01", f"{month}-{last:02d}"
+
+
 class FinanceBudgetService:
     async def list_budget(
         self,
@@ -38,7 +52,10 @@ class FinanceBudgetService:
         *,
         month: str,
         scope: FinanceScope | None = None,
+        refresh_actuals: bool = True,
     ) -> list[MonthlyBudgetLine]:
+        if refresh_actuals:
+            await self.refresh_actuals_from_transactions(db, month=month, scope=scope)
         stmt = (
             select(MonthlyBudgetRow)
             .where(MonthlyBudgetRow.month == month)
@@ -99,6 +116,81 @@ class FinanceBudgetService:
         await db.commit()
         await db.refresh(row)
         return _to_schema(row)
+
+    async def seed_from_previous(
+        self,
+        db: AsyncSession,
+        *,
+        month: str,
+        scope: FinanceScope,
+    ) -> list[MonthlyBudgetLine]:
+        """Copy prior-month categories/budgeted amounts when the target month is empty."""
+        existing = await self.list_budget(
+            db, month=month, scope=scope, refresh_actuals=False
+        )
+        if existing:
+            return existing
+
+        prev = _previous_month(month)
+        prior = await self.list_budget(db, month=prev, scope=scope, refresh_actuals=False)
+        if not prior:
+            return []
+
+        now = datetime.now(timezone.utc)
+        for line in prior:
+            db.add(
+                MonthlyBudgetRow(
+                    scope=scope.value,
+                    month=month,
+                    category=line.category,
+                    budgeted_gbp=line.budgeted_gbp,
+                    actual_gbp=0.0,
+                    notes=line.notes or "Seeded from previous month",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        await db.commit()
+        return await self.list_budget(db, month=month, scope=scope, refresh_actuals=True)
+
+    async def refresh_actuals_from_transactions(
+        self,
+        db: AsyncSession,
+        *,
+        month: str,
+        scope: FinanceScope | None = None,
+    ) -> None:
+        """Set each budget line's actual_gbp from matching transaction categories."""
+        stmt = select(MonthlyBudgetRow).where(MonthlyBudgetRow.month == month)
+        if scope is not None:
+            stmt = stmt.where(MonthlyBudgetRow.scope == scope.value)
+        lines = list((await db.scalars(stmt)).all())
+        if not lines:
+            return
+
+        start, end = _month_date_bounds(month)
+        tx_stmt = select(FinanceTransactionRow).where(
+            FinanceTransactionRow.transaction_date >= start,
+            FinanceTransactionRow.transaction_date <= end,
+        )
+        txs = list((await db.scalars(tx_stmt)).all())
+        spent_by_category: dict[str, float] = {}
+        for tx in txs:
+            cat = (tx.category or "").strip() or "Uncategorised"
+            # Spending is negative amounts; store as positive actual spend.
+            if tx.amount_gbp < 0:
+                spent_by_category[cat] = spent_by_category.get(cat, 0.0) + abs(tx.amount_gbp)
+
+        now = datetime.now(timezone.utc)
+        changed = False
+        for line in lines:
+            actual = round(spent_by_category.get(line.category, 0.0), 2)
+            if abs(line.actual_gbp - actual) > 0.001:
+                line.actual_gbp = actual
+                line.updated_at = now
+                changed = True
+        if changed:
+            await db.commit()
 
 
 finance_budget_service = FinanceBudgetService()
