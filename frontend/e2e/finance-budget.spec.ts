@@ -1,34 +1,38 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { loginAsAdmin } from "./helpers";
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
-async function openBudget(page: import("@playwright/test").Page) {
+async function openBudget(page: Page) {
   await loginAsAdmin(page);
   await page.goto("/finance/budget");
   await expect(page.getByRole("heading", { name: "Budget", exact: true })).toBeVisible();
 }
 
-test("budget first-time flow, edit, save, activate, and persist", async ({ page }) => {
-  await openBudget(page);
-
+async function startPlanner(page: Page) {
   const start = page.getByRole("button", { name: "Create your first budget" });
-  if (await start.isVisible().catch(() => false)) {
+  const options = page.getByRole("heading", { name: "Budget options" });
+  await expect(start.or(options)).toBeVisible();
+  if (await start.isVisible()) {
     await start.click();
   }
+  await expect(options).toBeVisible();
+}
 
-  await expect(page.getByRole("heading", { name: "Budget options" })).toBeVisible();
+test("budget first-time flow, edit, save, activate, and persist", async ({ page }) => {
+  await openBudget(page);
+  await startPlanner(page);
+
   await expect(page.getByRole("radio", { name: /Balanced/ })).toBeVisible();
   await page.getByRole("radio", { name: /Balanced/ }).click();
 
   const amount = page.getByLabel(/Monthly amount/i).first();
   await expect(amount).toBeVisible();
-  const before = await page.getByText(/Projected monthly (surplus|shortfall)|unavailable/i).first().textContent();
+  const result = page.getByText(/Projected monthly (surplus|shortfall)|surplus unavailable/i).first();
+  const before = await result.textContent();
   await amount.fill("123.45");
-  await expect(page.getByText(/Projected monthly (surplus|shortfall)|unavailable/i).first()).not.toHaveText(
-    before ?? "__unchanged__",
-  );
+  await expect(result).not.toHaveText(before ?? "__unchanged__");
 
   const unique = `E2E Budget ${Date.now()}`;
   await page.getByLabel("Budget name").fill(unique);
@@ -42,7 +46,7 @@ test("budget first-time flow, edit, save, activate, and persist", async ({ page 
 
   await page.goto("/finance/reports");
   await expect(page.getByRole("heading", { name: "Budget vs actual" })).toBeVisible();
-  await expect(page.getByText(unique)).toBeVisible();
+  await expect(page.getByText(unique).first()).toBeVisible();
 
   await page.reload();
   await page.goto("/finance/budget");
@@ -52,37 +56,31 @@ test("budget first-time flow, edit, save, activate, and persist", async ({ page 
 
 test("deficit is shown and does not invent income", async ({ page }) => {
   await openBudget(page);
-  const start = page.getByRole("button", { name: "Create your first budget" });
-  if (await start.isVisible().catch(() => false)) {
-    await start.click();
-  }
+  await startPlanner(page);
   await expect(page.getByRole("heading", { name: "Budget categories" })).toBeVisible();
 
-  const income = page.getByLabel(/Monthly amount for .*income/i).first();
-  if (await income.isVisible().catch(() => false)) {
-    await income.fill("10");
-  }
-  const expense = page.getByLabel(/Monthly amount for /i).nth(1);
-  await expense.fill("9999");
-  await expect(page.getByText(/Projected monthly shortfall/i)).toBeVisible();
+  const income = page.getByLabel(/Monthly amount for Personal income/i);
+  await expect(income).toBeVisible();
+  await income.fill("10");
+  const bills = page.getByLabel(/Monthly amount for Household bills/i);
+  await expect(bills).toBeVisible();
+  await bills.fill("9999");
+  await expect(page.getByText(/Projected monthly shortfall/i).first()).toBeVisible();
   await expect(page.getByText("Deficit", { exact: true })).toBeVisible();
 
   await page.getByLabel("Budget name").fill(`E2E Deficit ${Date.now()}`);
   await page.getByRole("button", { name: "Save budget" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
-  await expect(page.getByText(/Projected monthly shortfall/i)).toBeVisible();
+  await expect(page.getByText(/Projected monthly shortfall/i).first()).toBeVisible();
 });
 
 test("missing amounts stay visible and are not saved as zero", async ({ page }) => {
   await openBudget(page);
-  const start = page.getByRole("button", { name: "Create your first budget" });
-  if (await start.isVisible().catch(() => false)) {
-    await start.click();
-  }
+  await startPlanner(page);
 
-  await page.getByLabel("Category").fill("Unknown subscription");
-  await page.getByLabel("Amount").fill("");
+  await page.getByLabel("Category", { exact: true }).fill("Unknown subscription");
+  await page.getByLabel("Amount", { exact: true }).fill("");
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByText("Missing / needs input").first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Needs attention" }).or(page.getByText("Missing / needs input"))).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Needs attention" })).toBeVisible();
 });

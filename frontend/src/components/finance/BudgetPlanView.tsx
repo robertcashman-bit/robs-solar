@@ -392,7 +392,13 @@ export function BudgetPlanView({
           <Metric label="Committed expenditure" value={formatGbp(totals.committed_gbp)} />
           <Metric label="Debt minimums" value={formatGbp(totals.debt_minimum_gbp)} />
           <Metric label="Debt overpayment" value={formatGbp(totals.debt_overpayment_gbp)} />
-          <Metric label="Tax provision" value={formatGbp(totals.tax_provision_gbp)} />
+          <Metric
+            label="Tax provision"
+            value={formatAmountOrMissing(
+              totals.tax_provision_gbp,
+              items.some((item) => item.kind === "tax_provision" && (item.is_missing || item.amount_gbp == null)),
+            )}
+          />
           <Metric label="Savings / buffer" value={formatGbp(totals.buffer_gbp)} />
           <Metric label="Discretionary" value={formatGbp(totals.discretionary_gbp)} />
           <Metric
@@ -411,7 +417,8 @@ export function BudgetPlanView({
         </p>
         {suggestions.cash.savings_accounts_found && suggestions.cash.savings_balance_gbp != null ? (
           <p className="mt-2 text-sm text-[var(--muted)]">
-            Existing savings balance on file: {formatGbp(suggestions.cash.savings_balance_gbp)} (cash held, not this month&apos;s contribution).
+            Existing savings balance on file: {formatGbp(suggestions.cash.savings_balance_gbp)}{" "}
+            (cash held, not this month&apos;s contribution).
           </p>
         ) : (
           <p className="mt-2 text-sm text-[var(--muted)]">

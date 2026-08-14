@@ -228,7 +228,7 @@ def _summary_from_plan(plan: BudgetPlan) -> BudgetPlanSummary:
 class FinanceBudgetPlanService:
     async def _gather_inputs(self, db: AsyncSession):
         accounts = await finance_accounts_service.list_accounts(db)
-        liabilities = await finance_liabilities_service.list_liabilities(db)
+        liabilities = await finance_liabilities_service.list_liabilities(db, active_only=False)
         personal_snap = await finance_overview_service.latest_personal_snapshot(db)
         business_snap = await finance_overview_service.latest_business_snapshot(db)
         qf_reports = await quickfile_reports_service.get_stored_reports(db)
@@ -275,26 +275,30 @@ class FinanceBudgetPlanService:
             debt.account_id for debt in liabilities if debt.account_id is not None
         }
         debts: list[DebtRecordInput] = []
+        skipped_inactive: list[DebtRecordInput] = []
         for debt in liabilities:
-            if not debt.is_active or debt.balance_gbp <= 0:
-                continue
             min_payment: float | None = debt.minimum_payment_gbp
             if debt.balance_gbp > 0 and (min_payment is None or min_payment == 0):
                 min_payment = None
-            debts.append(
-                DebtRecordInput(
-                    id=debt.id,
-                    scope=debt.scope.value,
-                    name=debt.name,
-                    debt_type=debt.debt_type.value,
-                    balance_gbp=debt.balance_gbp,
-                    interest_rate_pct=debt.interest_rate_pct,
-                    minimum_payment_gbp=min_payment,
-                    overpayment_gbp=debt.overpayment_gbp,
-                    account_id=debt.account_id,
-                    origin="liability",
-                )
+            record = DebtRecordInput(
+                id=debt.id,
+                scope=debt.scope.value,
+                name=debt.name,
+                debt_type=debt.debt_type.value,
+                balance_gbp=debt.balance_gbp,
+                interest_rate_pct=debt.interest_rate_pct,
+                minimum_payment_gbp=min_payment,
+                overpayment_gbp=debt.overpayment_gbp,
+                account_id=debt.account_id,
+                origin="liability",
             )
+            if not debt.is_active:
+                if debt.balance_gbp > 0:
+                    skipped_inactive.append(record)
+                continue
+            if debt.balance_gbp <= 0:
+                continue
+            debts.append(record)
 
         for account in accounts:
             if not account.is_active:
@@ -376,6 +380,7 @@ class FinanceBudgetPlanService:
             vat_due_gbp=vat_due,
             account_vat_reserve_gbp=vat_accounts,
             account_corp_tax_reserve_gbp=corp_accounts,
+            skipped_inactive_debts=skipped_inactive,
         )
 
     async def _transaction_averages(

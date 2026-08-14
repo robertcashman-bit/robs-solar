@@ -458,9 +458,10 @@ class BudgetVarianceLine(BaseModel):
     kind: str
     scope: str
     budgeted_gbp: float | None = None
-    actual_gbp: float
+    actual_gbp: float | None = None
     variance_gbp: float | None = None
     is_missing: bool = False
+    matched: bool = False
 
 
 class BudgetVarianceResponse(BaseModel):

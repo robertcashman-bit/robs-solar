@@ -600,9 +600,10 @@ export const budgetVarianceLineSchema = z.object({
   kind: z.string(),
   scope: z.string(),
   budgeted_gbp: z.number().nullable().optional(),
-  actual_gbp: z.number(),
+  actual_gbp: z.number().nullable().optional(),
   variance_gbp: z.number().nullable().optional(),
   is_missing: z.boolean().default(false),
+  matched: z.boolean().default(false),
 });
 
 export const budgetVarianceSchema = z.object({
@@ -639,5 +640,6 @@ export type ActiveBudgetSummary = z.infer<typeof activeBudgetSummarySchema>;
 export type BudgetSuggestions = z.infer<typeof budgetSuggestionsSchema>;
 export type BudgetSuggestion = z.infer<typeof budgetSuggestionSchema>;
 export type BudgetVariance = z.infer<typeof budgetVarianceSchema>;
+export type BudgetVarianceLine = z.infer<typeof budgetVarianceLineSchema>;
 export type BudgetTotalsSchema = z.infer<typeof budgetTotalsSchema>;
 export type BudgetMissingInput = z.infer<typeof budgetMissingInputSchema>;

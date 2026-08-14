@@ -207,6 +207,7 @@ class BudgetInputs:
     highest_apr_debt_name: str | None = None
     highest_apr_debt_id: int | None = None
     highest_apr_pct: float | None = None
+    overpayment_basis: str = "none"
     discretionary_reference_gbp: float | None = None
     discretionary_categories: list[tuple[str, Decimal]] = field(default_factory=list)
 
@@ -256,9 +257,10 @@ class VarianceLine:
     kind: str
     scope: str
     budgeted_gbp: float | None
-    actual_gbp: float
+    actual_gbp: float | None
     variance_gbp: float | None
     is_missing: bool = False
+    matched: bool = False
 
 
 @dataclass
@@ -394,12 +396,30 @@ def calculate_budget_inputs(
     vat_due_gbp: float | None = None,
     account_vat_reserve_gbp: float = 0.0,
     account_corp_tax_reserve_gbp: float = 0.0,
+    skipped_inactive_debts: Iterable[DebtRecordInput] = (),
+    extra_notes: Iterable[str] = (),
 ) -> BudgetInputs:
     """Derive budget source items from persisted financial records only."""
     items: list[BudgetDraftItem] = []
     missing: list[MissingInput] = []
-    notes: list[str] = []
+    notes: list[str] = list(extra_notes)
     debt_list = [d for d in debts if d.balance_gbp > 0]
+    for skipped in skipped_inactive_debts:
+        if skipped.balance_gbp <= 0:
+            continue
+        missing.append(
+            MissingInput(
+                code="inactive_debt",
+                message=(
+                    f"{skipped.name} has a remaining balance but is marked inactive, "
+                    "so it is not included. Activate it on Debts if it belongs in this budget."
+                ),
+                record_href="/finance/debts",
+                source_record_type="liability",
+                source_record_id=skipped.id,
+                category=skipped.name,
+            )
+        )
     cashflow_list = [c for c in confirmed_cashflow if c.is_confirmed]
     averages = list(transaction_averages)
 
@@ -428,6 +448,33 @@ def calculate_budget_inputs(
                 message="Regular household bills amount is unavailable.",
                 record_href="/finance/personal",
                 source_record_type="snapshot",
+            )
+        )
+        items.append(
+            _make_item(
+                scope="personal",
+                kind="income",
+                category="Personal income",
+                amount=None,
+                source="snapshot",
+                is_missing=True,
+                notes=(
+                    "No personal income snapshot on file. "
+                    "Enter a monthly figure here or add one on Personal."
+                ),
+                record_href="/finance/personal",
+            )
+        )
+        items.append(
+            _make_item(
+                scope="personal",
+                kind="essential",
+                category="Household bills",
+                amount=None,
+                source="snapshot",
+                is_missing=True,
+                notes="Household bills amount is unavailable. Enter it here or on Personal.",
+                record_href="/finance/personal",
             )
         )
     else:
@@ -474,6 +521,8 @@ def calculate_budget_inputs(
                 source_record_type="snapshot",
             )
         )
+        # Do not add a £0/missing business income line when no business record
+        # exists — that would make a personal-only surplus look incomplete.
     else:
         fingerprint_payload["business"] = {
             "id": business.snapshot_id,
@@ -523,13 +572,6 @@ def calculate_budget_inputs(
             "In the consolidated view, mark salary, dividends, or Director's Loan movements "
             "as transfers so they are not counted twice."
         )
-
-    liability_account_ids = {
-        d.account_id for d in debt_list if d.origin == "liability" and d.account_id
-    }
-    highest_apr_name: str | None = None
-    highest_apr_id: int | None = None
-    highest_apr_pct: float | None = None
 
     for debt in debt_list:
         fingerprint_payload["debts"].append(
@@ -592,14 +634,27 @@ def calculate_budget_inputs(
                     slug=f"{debt.name}-over",
                 )
             )
-        if (
-            min_known
-            and not is_transfer
-            and (highest_apr_pct is None or debt.interest_rate_pct > highest_apr_pct)
-        ):
-            highest_apr_pct = debt.interest_rate_pct
-            highest_apr_name = debt.name
-            highest_apr_id = debt.id
+    payable_debts = [
+        d
+        for d in debt_list
+        if d.minimum_payment_gbp is not None and d.debt_type not in TRANSFER_DEBT_TYPES
+    ]
+    apr_ranked = [d for d in payable_debts if d.interest_rate_pct and d.interest_rate_pct > 0]
+    overpayment_basis = "none"
+    highest_apr_name: str | None = None
+    highest_apr_id: int | None = None
+    highest_apr_pct: float | None = None
+    if apr_ranked:
+        target = max(apr_ranked, key=lambda d: d.interest_rate_pct)
+        highest_apr_name = target.name
+        highest_apr_id = target.id
+        highest_apr_pct = target.interest_rate_pct
+        overpayment_basis = "apr"
+    elif payable_debts:
+        target = max(payable_debts, key=lambda d: d.balance_gbp)
+        highest_apr_name = target.name
+        highest_apr_id = target.id
+        overpayment_basis = "largest_balance"
 
     # Snapshot debt_repayments only when no liability records exist (avoid double count).
     has_personal_debt_items = any(
@@ -797,9 +852,6 @@ def calculate_budget_inputs(
                 "because personal snapshot spending is already on file (avoids double-counting)."
             )
 
-    unused_account_ids = liability_account_ids  # documented for callers
-    del unused_account_ids
-
     cash = CashContext(
         savings_balance_gbp=savings_balance_gbp if savings_accounts_found else None,
         savings_accounts_found=savings_accounts_found,
@@ -830,6 +882,7 @@ def calculate_budget_inputs(
         highest_apr_debt_name=highest_apr_name,
         highest_apr_debt_id=highest_apr_id,
         highest_apr_pct=highest_apr_pct,
+        overpayment_basis=overpayment_basis,
         discretionary_reference_gbp=discretionary_reference,
         discretionary_categories=discretionary_categories,
     )
@@ -1024,8 +1077,16 @@ def generate_suggested_budget(
                     f"Additional debt repayment — {inputs.highest_apr_debt_name}"
                 )
                 extra_notes = (
-                    f"Planning allocation toward the highest stored APR "
-                    f"({inputs.highest_apr_pct:.2f}%). This does not change the debt balance."
+                    (
+                        f"Planning allocation toward the highest stored APR "
+                        f"({inputs.highest_apr_pct:.2f}%). This does not change the debt balance."
+                    )
+                    if inputs.overpayment_basis == "apr" and inputs.highest_apr_pct is not None
+                    else (
+                        "No APR is stored on the active debts. This planning allocation goes to "
+                        "the largest recorded balance and is not an interest ranking. "
+                        "This does not change the debt balance."
+                    )
                 )
                 items.append(
                     _make_item(
@@ -1231,8 +1292,10 @@ def calculate_budget_variance(
     actual_total = ZERO
     for item in selected:
         cat_key = item.category.casefold()
+        has_match = cat_key in actual_by_category
         actual_signed = actual_by_category.get(cat_key, ZERO)
-        matched_categories.add(cat_key)
+        if has_match:
+            matched_categories.add(cat_key)
         if item.kind == "income":
             actual_value = actual_signed if actual_signed > ZERO else ZERO
         else:
@@ -1242,19 +1305,24 @@ def calculate_budget_variance(
             if item.is_missing or item.amount_gbp is None
             else Decimal(str(item.amount_gbp))
         )
-        variance = None if budgeted is None else budgeted - actual_value
-        if budgeted is not None:
+        # Totals compare planned allocations with recorded spend — not income + spend.
+        if budgeted is not None and item.kind != "income":
             budgeted_total += budgeted
-        actual_total += actual_value
+        if has_match and item.kind != "income":
+            actual_total += actual_value
+        variance = None
+        if budgeted is not None and has_match:
+            variance = budgeted - actual_value
         lines.append(
             VarianceLine(
                 category=item.category,
                 kind=item.kind,
                 scope=item.scope,
                 budgeted_gbp=None if budgeted is None else money(budgeted),
-                actual_gbp=money(actual_value),
+                actual_gbp=money(actual_value) if has_match else None,
                 variance_gbp=None if variance is None else money(variance),
                 is_missing=item.is_missing,
+                matched=has_match,
             )
         )
 
@@ -1266,7 +1334,8 @@ def calculate_budget_variance(
             continue
         kind = "income" if signed > ZERO else "other"
         actual_value = signed if signed > ZERO else -signed
-        actual_total += actual_value
+        if kind != "income":
+            actual_total += actual_value
         unbudgeted.append(
             VarianceLine(
                 category=category,
@@ -1276,6 +1345,7 @@ def calculate_budget_variance(
                 actual_gbp=money(actual_value),
                 variance_gbp=None,
                 is_missing=True,
+                matched=True,
             )
         )
 

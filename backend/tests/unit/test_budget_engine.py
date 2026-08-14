@@ -10,6 +10,7 @@ from app.services.finance.budget_engine import (
     apply_overrides,
     calculate_budget_inputs,
     calculate_budget_totals,
+    calculate_budget_variance,
     calculate_mandatory_commitments,
     generate_suggested_budget,
     merge_refresh_preserving_overrides,
@@ -308,3 +309,111 @@ def test_balanced_recommended_only_when_surplus_supports_it() -> None:
     )
     assert recommended_strategy(healthy) == "balanced"
     assert recommended_strategy(tight) == "stabilise"
+
+
+def test_zero_apr_uses_largest_balance_not_fake_ranking() -> None:
+    personal = PersonalSnapshotInput(
+        exists=True,
+        snapshot_id=1,
+        monthly_income_gbp=3000,
+        household_bills_gbp=500,
+    )
+    debts = [
+        DebtRecordInput(
+            id=1,
+            scope="personal",
+            name="Small loan",
+            debt_type="loan",
+            balance_gbp=1000,
+            interest_rate_pct=0,
+            minimum_payment_gbp=50,
+        ),
+        DebtRecordInput(
+            id=2,
+            scope="personal",
+            name="Large loan",
+            debt_type="loan",
+            balance_gbp=9000,
+            interest_rate_pct=0,
+            minimum_payment_gbp=80,
+        ),
+    ]
+    inputs = calculate_budget_inputs(personal=personal, business=None, debts=debts)
+    assert inputs.overpayment_basis == "largest_balance"
+    assert inputs.highest_apr_debt_name == "Large loan"
+    balanced = generate_suggested_budget(inputs, "balanced")
+    extras = [i for i in balanced.items if i.kind == "debt_overpayment" and i.source == "generated"]
+    assert extras
+    assert "Large loan" in extras[0].category
+    assert "not an interest ranking" in extras[0].notes
+
+
+def test_inactive_debts_are_flagged_not_included() -> None:
+    personal = PersonalSnapshotInput(
+        exists=True, snapshot_id=1, monthly_income_gbp=2000, household_bills_gbp=200
+    )
+    skipped = [
+        DebtRecordInput(
+            id=9,
+            scope="personal",
+            name="Mortgage",
+            debt_type="mortgage",
+            balance_gbp=150000,
+            interest_rate_pct=4.49,
+            minimum_payment_gbp=890,
+        )
+    ]
+    inputs = calculate_budget_inputs(
+        personal=personal,
+        business=None,
+        debts=[],
+        skipped_inactive_debts=skipped,
+    )
+    assert any(m.code == "inactive_debt" and "Mortgage" in m.message for m in inputs.missing)
+    assert not any("Mortgage" in i.category for i in inputs.items)
+
+
+def test_variance_excludes_income_from_allocation_total() -> None:
+    items = [
+        _item(key="inc", kind="income", category="Personal income", amount_gbp=4000),
+        _item(key="bills", kind="essential", category="Household bills", amount_gbp=700),
+    ]
+    result = calculate_budget_variance(
+        items,
+        [
+            {
+                "transaction_date": "2026-08-03",
+                "category": "TESLA",
+                "amount_gbp": -100,
+                "scope": "personal",
+            },
+            {
+                "transaction_date": "2026-08-04",
+                "category": "Household bills",
+                "amount_gbp": -650,
+                "scope": "personal",
+            },
+        ],
+        month="2026-08",
+    )
+    assert result.available is True
+    assert result.budgeted_total_gbp == 700
+    bills = next(line for line in result.lines if line.category == "Household bills")
+    assert bills.matched is True
+    assert bills.actual_gbp == 650
+    income = next(line for line in result.lines if line.category == "Personal income")
+    assert income.matched is False
+    assert income.actual_gbp is None
+    unmatched = [line.category for line in result.unbudgeted_actuals]
+    assert "tesla" in unmatched
+    assert result.actual_total_gbp == 750
+
+
+def test_variance_unavailable_without_month_transactions() -> None:
+    result = calculate_budget_variance(
+        [_item(key="bills", kind="essential", category="Bills", amount_gbp=10)],
+        [{"transaction_date": "2026-07-01", "category": "Bills", "amount_gbp": -10}],
+        month="2026-08",
+    )
+    assert result.available is False
+    assert "unavailable" in result.reason.lower()
