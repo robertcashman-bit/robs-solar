@@ -20,7 +20,7 @@ import {
   type DebtStrategy,
   type FinanceLiability,
 } from "@/lib/finance-schemas";
-import { formatPercent, financeRoleForDebtType } from "@/lib/money";
+import { formatPercent, financeRoleForDebtType, parseRequiredNumber } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
 
 export default function DebtsPage() {
@@ -77,9 +77,9 @@ export default function DebtsPage() {
         scope: form.scope,
         name: form.name,
         debt_type: form.debt_type,
-        balance_gbp: Number(form.balance_gbp),
-        interest_rate_pct: Number(form.interest_rate_pct),
-        minimum_payment_gbp: Number(form.minimum_payment_gbp),
+        balance_gbp: parseRequiredNumber(form.balance_gbp, "Balance"),
+        interest_rate_pct: parseRequiredNumber(form.interest_rate_pct, "Interest rate"),
+        minimum_payment_gbp: parseRequiredNumber(form.minimum_payment_gbp, "Minimum payment"),
       });
       setForm({
         name: "",

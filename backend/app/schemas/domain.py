@@ -426,6 +426,7 @@ class MetricSummaryResponse(BaseModel):
     breakdown: Optional[SavingsBreakdown] = None
     optimisation_score: Optional["OptimisationScore"] = None
     system_status: str = ""
+    data_available: bool = True
 
 
 class MetricCompareDelta(BaseModel):

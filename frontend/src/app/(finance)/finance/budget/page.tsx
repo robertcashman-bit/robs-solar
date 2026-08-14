@@ -27,6 +27,8 @@ export default function BudgetPage() {
   const [category, setCategory] = useState("");
   const [budgeted, setBudgeted] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,6 +56,11 @@ export default function BudgetPage() {
   async function addLine(e: React.FormEvent) {
     e.preventDefault();
     if (!canWrite(user) || saving) return;
+    const amount = Number(budgeted);
+    if (!Number.isFinite(amount)) {
+      setError("Enter a valid budget amount. Blank or invalid values are not saved as zero.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -61,7 +68,7 @@ export default function BudgetPage() {
         scope,
         month,
         category,
-        budgeted_gbp: Number(budgeted),
+        budgeted_gbp: amount,
       });
       setCategory("");
       setBudgeted("");
@@ -78,10 +85,38 @@ export default function BudgetPage() {
     setSaving(true);
     setError(null);
     try {
-      await apiClient.post("/finance/budget/seed-from-previous", { month, scope });
+      const seeded = await apiClient.post<MonthlyBudgetLine[]>(
+        "/finance/budget/seed-from-previous",
+        { month, scope },
+      );
+      const parsed = z.array(monthlyBudgetLineSchema).parse(seeded);
       await load();
+      if (parsed.length === 0) {
+        setError("No previous-month budget to copy for this scope.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to seed budget");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveEditedLine(line: MonthlyBudgetLine) {
+    if (!canWrite(user) || saving) return;
+    const amount = Number(editingValue);
+    if (!Number.isFinite(amount)) {
+      setError("Enter a valid budget amount. Blank or invalid values are not saved as zero.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await apiClient.patch(`/finance/budget/${line.id}`, { budgeted_gbp: amount });
+      setEditingId(null);
+      setEditingValue("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update budget line");
     } finally {
       setSaving(false);
     }
@@ -166,7 +201,54 @@ export default function BudgetPage() {
                     className="grid grid-cols-4 gap-2 rounded-xl border border-[var(--border)] px-4 py-3 text-sm"
                   >
                     <span>{l.category}</span>
-                    <span className="tabular-nums">{formatGbp(l.budgeted_gbp)}</span>
+                    {canWrite(user) && editingId === l.id ? (
+                      <form
+                        className="flex gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void saveEditedLine(l);
+                        }}
+                      >
+                        <label className="sr-only" htmlFor={`budgeted-${l.id}`}>
+                          Budgeted amount for {l.category}
+                        </label>
+                        <input
+                          id={`budgeted-${l.id}`}
+                          className="solar-input"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          required
+                        />
+                        <button type="submit" className="solar-btn-primary" disabled={saving}>
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="solar-btn-ghost"
+                          onClick={() => {
+                            setEditingId(null);
+                            setEditingValue("");
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        className="tabular-nums text-left underline-offset-2 hover:underline disabled:no-underline"
+                        disabled={!canWrite(user)}
+                        onClick={() => {
+                          setEditingId(l.id);
+                          setEditingValue(String(l.budgeted_gbp));
+                        }}
+                      >
+                        {formatGbp(l.budgeted_gbp)}
+                      </button>
+                    )}
                     <span className="tabular-nums">{formatGbp(l.actual_gbp)}</span>
                     <span className="tabular-nums">{formatGbp(l.remaining_gbp)}</span>
                   </li>
@@ -176,16 +258,26 @@ export default function BudgetPage() {
           )}
           {canWrite(user) ? (
             <form onSubmit={(e) => void addLine(e)} className="mt-6 flex flex-wrap gap-3">
+              <label className="sr-only" htmlFor="budget-category">
+                Category
+              </label>
               <input
+                id="budget-category"
                 className="solar-input"
                 placeholder="Category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 required
               />
+              <label className="sr-only" htmlFor="budget-amount">
+                Budget GBP
+              </label>
               <input
+                id="budget-amount"
                 className="solar-input"
                 type="number"
+                step="0.01"
+                min="0"
                 placeholder="Budget GBP"
                 value={budgeted}
                 onChange={(e) => setBudgeted(e.target.value)}

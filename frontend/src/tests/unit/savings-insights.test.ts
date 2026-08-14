@@ -81,6 +81,15 @@ describe("buildSavingsInsights", () => {
     expect(insights.some((i) => i.id === "export-vs-import")).toBe(true);
   });
 
+  it("does not treat unavailable summary zeros as savings", () => {
+    const insights = buildSavingsInsights(baseMetrics, {
+      ...summary,
+      savings: 2.3,
+      data_available: false,
+    });
+    expect(insights.some((i) => i.id === "savings-positive")).toBe(false);
+  });
+
   it("always returns at least one insight", () => {
     const insights = buildSavingsInsights(baseMetrics, null);
     expect(insights.length).toBeGreaterThan(0);

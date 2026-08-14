@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BusinessFinanceSnapshotRow, DailySavingsRow, EnergyDailySnapshotRow
 from app.schemas.finance import FinanceReportsResponse, PlHistoryPoint, PlHistoryResponse
+from app.services.energy_activity import row_has_energy_activity
 from app.services.finance.finance_overview_service import finance_overview_service
 from app.services.finance.quickfile_reports_service import quickfile_reports_service
 
@@ -27,17 +28,32 @@ class FinanceReportsService:
         # Use the same authoritative total as Overview (accounts + personal liabilities).
         total_debt = overview.total_debt_gbp
 
-        savings_rows = await db.scalars(
-            select(DailySavingsRow).where(DailySavingsRow.date.startswith(month))
-        )
-        energy_savings = sum(r.estimated_saving_gbp for r in savings_rows.all())
+        savings_rows = [
+            row
+            for row in (
+                await db.scalars(
+                    select(DailySavingsRow).where(DailySavingsRow.date.startswith(month))
+                )
+            ).all()
+            if row_has_energy_activity(row)
+        ]
+        energy_savings = sum(r.estimated_saving_gbp for r in savings_rows)
 
-        energy_snap = await db.scalars(
-            select(EnergyDailySnapshotRow).where(EnergyDailySnapshotRow.date.startswith(month))
-        )
-        energy_snap_list = list(energy_snap.all())
+        energy_snap_list = [
+            snap
+            for snap in (
+                await db.scalars(
+                    select(EnergyDailySnapshotRow).where(
+                        EnergyDailySnapshotRow.date.startswith(month)
+                    )
+                )
+            ).all()
+            if row_has_energy_activity(snap)
+        ]
         vs_forecast = "On track"
-        if energy_snap_list:
+        if not savings_rows and not energy_snap_list:
+            vs_forecast = "Energy data unavailable"
+        elif energy_snap_list:
             avg = sum(s.savings_gbp for s in energy_snap_list) / len(energy_snap_list)
             if avg < 1.0:
                 vs_forecast = "Below forecast"

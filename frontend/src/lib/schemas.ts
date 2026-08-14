@@ -299,6 +299,7 @@ export const metricSummarySchema = z.object({
   breakdown: savingsBreakdownSchema.nullable().optional(),
   optimisation_score: optimisationScoreSchema.nullable().optional(),
   system_status: z.string().optional(),
+  data_available: z.boolean().optional(),
 });
 
 export const metricCompareDeltaSchema = z.object({

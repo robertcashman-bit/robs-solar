@@ -1,5 +1,18 @@
 import type { FinanceItem } from "@/components/finance/FinanceItemList";
 
+export function isSandboxFinanceAccount(account: {
+  name?: string | null;
+  provider?: string | null;
+  source?: string | null;
+}): boolean {
+  const provider = (account.provider || "").trim().toLowerCase();
+  const name = (account.name || "").trim().toLowerCase();
+  if (name.includes("mock aspsp") || provider.includes("mock aspsp")) {
+    return true;
+  }
+  return account.source === "open_banking" && provider.includes("sandbox");
+}
+
 export function isNonZero(value: number | null | undefined): boolean {
   return value != null && !Number.isNaN(value) && Math.abs(value) >= 0.005;
 }

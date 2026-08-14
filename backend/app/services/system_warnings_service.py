@@ -65,6 +65,11 @@ class SystemWarningsService:
             )
         )
         rows = list(result.scalars().all())
+        if metrics is None and not rows:
+            return SystemWarningsResponse(
+                warnings=[],
+                status_headline="Energy data unavailable.",
+            )
 
         import_kwh = integrate_kwh(rows, "grid_import_w")
         pv_kwh = integrate_kwh(rows, "pv_power_w")

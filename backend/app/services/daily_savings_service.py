@@ -25,6 +25,9 @@ class DailySavingsService:
 
         today = tariff_now().strftime("%Y-%m-%d")
         summary = await analytics_service.get_enriched_summary(db, HistoryRange.DAY)
+        if not summary.data_available:
+            # Missing samples must not be persisted as a genuine zero-generation day.
+            return None
         warnings = await system_warnings_service.evaluate(db)
         now = datetime.now(timezone.utc)
 

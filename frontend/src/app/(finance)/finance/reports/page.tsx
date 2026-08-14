@@ -104,7 +104,7 @@ export default function ReportsPage() {
             className="solar-btn-secondary text-sm"
             onClick={() => setReloadKey((k) => k + 1)}
           >
-            Try again
+            Refresh
           </button>
         }
       />
@@ -165,7 +165,7 @@ export default function ReportsPage() {
         <div className="mt-6">
           <EmptyState
             title="Reports unavailable"
-            description="Could not load the monthly report. Use Try again, or check that the backend is running."
+            description="Could not load the monthly report. Use Refresh, or check that the backend is running."
           />
         </div>
       )}

@@ -21,7 +21,8 @@ import {
   type FinanceAccount,
   type PersonalFinanceSnapshot,
 } from "@/lib/finance-schemas";
-import { currentMonthKey, financeRoleForAccountBalance } from "@/lib/money";
+import { isSandboxFinanceAccount } from "@/components/finance/finance-item-utils";
+import { currentMonthKey, financeRoleForAccountBalance, parseRequiredNumber } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
 
 export default function PersonalFinancePage() {
@@ -69,32 +70,44 @@ export default function PersonalFinancePage() {
   async function saveSnapshot(e: React.FormEvent) {
     e.preventDefault();
     if (!canWrite(user)) return;
-    await apiClient.post("/finance/snapshots/personal", {
-      snapshot_date: currentMonthKey(),
-      monthly_income_gbp: Number(snapshotForm.monthly_income_gbp),
-      monthly_spending_gbp: Number(snapshotForm.monthly_spending_gbp),
-      household_bills_gbp: Number(snapshotForm.household_bills_gbp),
-      debt_repayments_gbp: Number(snapshotForm.debt_repayments_gbp),
-    });
-    await load();
+    try {
+      await apiClient.post("/finance/snapshots/personal", {
+        snapshot_date: currentMonthKey(),
+        monthly_income_gbp: parseRequiredNumber(snapshotForm.monthly_income_gbp, "Income"),
+        monthly_spending_gbp: parseRequiredNumber(snapshotForm.monthly_spending_gbp, "Spending"),
+        household_bills_gbp: parseRequiredNumber(snapshotForm.household_bills_gbp, "Household bills"),
+        debt_repayments_gbp: parseRequiredNumber(snapshotForm.debt_repayments_gbp, "Debt repayments"),
+      });
+      setError(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save snapshot");
+    }
   }
 
   async function addAccount(e: React.FormEvent) {
     e.preventDefault();
     if (!canWrite(user)) return;
-    await apiClient.post("/finance/accounts", {
-      scope: "personal",
-      account_type: form.account_type,
-      name: form.name,
-      balance_gbp: Number(form.balance_gbp),
-    });
-    setForm({ name: "", balance_gbp: "", account_type: "current" });
-    await load();
+    try {
+      await apiClient.post("/finance/accounts", {
+        scope: "personal",
+        account_type: form.account_type,
+        name: form.name,
+        balance_gbp: parseRequiredNumber(form.balance_gbp, "Balance"),
+      });
+      setForm({ name: "", balance_gbp: "", account_type: "current" });
+      setError(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add account");
+    }
   }
 
   if (authLoading || !user) return <AuthLoadingShell />;
 
-  const totalBalance = accounts.reduce((s, a) => s + a.balance_gbp, 0);
+  const usableAccounts = accounts.filter((account) => !isSandboxFinanceAccount(account));
+  const sandboxAccounts = accounts.filter((account) => isSandboxFinanceAccount(account));
+  const totalBalance = usableAccounts.reduce((s, a) => s + a.balance_gbp, 0);
 
   return (
     <AppShell>
@@ -117,7 +130,7 @@ export default function PersonalFinancePage() {
           label="Total personal balance"
           value={totalBalance}
           amountRole="signed"
-          historic={accounts.some((a) => a.is_historic)}
+          historic={usableAccounts.some((a) => a.is_historic)}
         />
         <MetricTile
           label="Monthly income"
@@ -135,7 +148,7 @@ export default function PersonalFinancePage() {
       <section className="mt-8">
         <h2 className="solar-section-title">Accounts</h2>
         <ul className="mt-3 space-y-2">
-          {accounts.map((a) => (
+          {usableAccounts.map((a) => (
             <li key={a.id} className="flex justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm">
               <span>
                 {a.name}{" "}
@@ -148,8 +161,14 @@ export default function PersonalFinancePage() {
               />
             </li>
           ))}
-          {accounts.length === 0 ? (
+          {usableAccounts.length === 0 ? (
             <li className="text-sm text-[var(--muted)]">No personal accounts yet.</li>
+          ) : null}
+          {sandboxAccounts.length > 0 ? (
+            <li className="text-sm text-[var(--muted)]">
+              {sandboxAccounts.length} sandbox account
+              {sandboxAccounts.length === 1 ? "" : "s"} hidden from totals.
+            </li>
           ) : null}
         </ul>
       </section>

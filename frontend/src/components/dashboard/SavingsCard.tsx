@@ -55,14 +55,15 @@ export function SavingsCard({ summary, live = null, loading, compact = false }: 
     );
   }
 
-  if (!summary) {
+  if (!summary || summary.data_available === false) {
     return (
       <section className="solar-card">
         <h2 className="solar-section-title">Savings &amp; cost</h2>
         <div className="mt-4 flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-sunken)] px-6 py-10 text-center">
-          <p className="text-sm font-medium text-[var(--foreground)]">No summary data yet</p>
+          <p className="text-sm font-medium text-[var(--foreground)]">Energy data unavailable</p>
           <p className="mt-1 max-w-sm text-sm text-[var(--muted)]">
-            Samples accumulate as the backend sampler runs. Check back after a few minutes.
+            {summary?.system_status ||
+              "Live inverter samples are missing, so generation and savings are not shown as zero."}
           </p>
         </div>
       </section>

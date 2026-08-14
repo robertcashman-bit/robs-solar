@@ -51,6 +51,22 @@ describe("SavingsCard", () => {
 
   it("shows empty state when no summary", () => {
     render(<SavingsCard summary={null} />);
-    expect(screen.getByText(/No summary data yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/Energy data unavailable/i)).toBeInTheDocument();
+  });
+
+  it("does not present missing samples as zero generation", () => {
+    render(
+      <SavingsCard
+        summary={{
+          ...summary,
+          pv_kwh: 0,
+          savings: 0,
+          data_available: false,
+          system_status: "Energy data unavailable.",
+        }}
+      />,
+    );
+    expect(screen.getAllByText(/Energy data unavailable/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText("£0.00")).not.toBeInTheDocument();
   });
 });

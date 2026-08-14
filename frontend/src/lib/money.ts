@@ -294,3 +294,16 @@ export function compareRangeLabels(range: CompareRange): {
     previousLabel: "yesterday",
   };
 }
+
+/** Parse a required numeric field. Blank or invalid input is not coerced to 0. */
+export function parseRequiredNumber(raw: string, label: string): number {
+  const trimmed = raw.trim().replace(/^£/, "").replace(/,/g, "");
+  if (!trimmed) {
+    throw new Error(`${label} is required. Blank values are not saved as zero.`);
+  }
+  const amount = Number(trimmed);
+  if (!Number.isFinite(amount)) {
+    throw new Error(`${label} must be a number. Invalid values are not saved as zero.`);
+  }
+  return amount;
+}

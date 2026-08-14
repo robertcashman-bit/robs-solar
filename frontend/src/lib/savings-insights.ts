@@ -58,7 +58,7 @@ export function buildSavingsInsights(
     });
   }
 
-  if (summary && summary.savings > 0) {
+  if (summary && summary.data_available !== false && summary.savings > 0) {
     insights.push({
       id: "savings-positive",
       severity: "positive",

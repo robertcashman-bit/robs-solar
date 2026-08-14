@@ -19,6 +19,18 @@ def test_day_range_starts_at_local_midnight() -> None:
 
 
 @pytest.mark.asyncio
+async def test_empty_sample_rows_are_unavailable_not_zero_generation() -> None:
+    from app.db.session import SessionLocal
+    from app.services.analytics_service import _summary_from_rows
+
+    async with SessionLocal() as db:
+        summary = await _summary_from_rows(db, [], range_name=HistoryRange.DAY)
+    assert summary.data_available is False
+    assert summary.pv_kwh == 0.0
+    assert summary.savings == 0.0
+
+
+@pytest.mark.asyncio
 async def test_enrich_day_summary_with_live_overlays_etoday() -> None:
     from app.db.session import SessionLocal
 

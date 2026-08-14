@@ -15,6 +15,7 @@ from app.schemas.finance import (
     FinanceInsightSeverity,
     FinanceOverviewResponse,
 )
+from app.services.energy_activity import row_has_energy_activity
 
 
 def _to_schema(row: FinanceInsightRow) -> FinanceInsight:
@@ -137,19 +138,21 @@ class FinanceInsightsService:
             select(DailySavingsRow).order_by(DailySavingsRow.date.desc()).limit(7)
         )
         recent = list(savings_rows.all())
-        if recent:
-            avg_saving = sum(r.estimated_saving_gbp for r in recent) / len(recent)
-            latest = recent[0]
-            if latest.estimated_saving_gbp < avg_saving * 0.6:
-                candidates.append(
-                    (
-                        FinanceInsightCategory.ENERGY.value,
-                        FinanceInsightSeverity.INFO.value,
-                        "Solar savings this month are below forecast",
-                        f"Latest daily saving ({latest.estimated_saving_gbp:.2f} GBP) "
-                        "is below the 7-day average.",
+        latest = recent[0] if recent else None
+        usable = [r for r in recent if row_has_energy_activity(r)]
+        if latest is not None and row_has_energy_activity(latest):
+            if len(usable) >= 2:
+                avg_saving = sum(r.estimated_saving_gbp for r in usable) / len(usable)
+                if latest.estimated_saving_gbp < avg_saving * 0.6:
+                    candidates.append(
+                        (
+                            FinanceInsightCategory.ENERGY.value,
+                            FinanceInsightSeverity.INFO.value,
+                            "Solar savings this month are below forecast",
+                            f"Latest daily saving ({latest.estimated_saving_gbp:.2f} GBP) "
+                            "is below the 7-day average.",
+                        )
                     )
-                )
             warnings = json.loads(latest.warnings_json or "[]")
             for w in warnings:
                 text = (

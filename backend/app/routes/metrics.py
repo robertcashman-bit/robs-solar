@@ -139,6 +139,8 @@ async def metrics_summary(
             live = await live_metrics_cache.get(adapter)
         except AdapterError:
             return summary
+    if live is None:
+        return summary
     enriched = await enrich_day_summary_with_live(db, summary, live)
     warnings_resp = await system_warnings_service.evaluate(db, adapter=adapter)
     from app.services.optimisation_score_service import compute_optimisation_score
