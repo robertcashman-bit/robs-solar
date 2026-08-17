@@ -1,5 +1,7 @@
 # Rob's Finance
 
+The folder name `robs-solar` is historical. This repository is **Rob's Finance**. Do not develop or deploy from `All/robs-solar`. See [ONE_TREE.md](./ONE_TREE.md) and `~/WORKSPACE_MAP.md`.
+
 Secure, mobile-friendly browser application for personal and business finance tracking.
 
 **Important:** The browser never talks directly to RS485/Modbus hardware. All reads and writes go through the FastAPI backend and adapter layer.
