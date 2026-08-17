@@ -286,7 +286,7 @@ class CashflowForecastEntry(BaseModel):
 class CashflowForecastEntryCreate(BaseModel):
     scope: FinanceScope
     forecast_date: str
-    horizon_days: int = Field(default=30, ge=30, le=90)
+    horizon_days: int = Field(default=30, ge=7, le=365)
     entry_type: CashflowEntryType
     label: str = Field(min_length=1, max_length=128)
     amount_gbp: float
@@ -577,6 +577,7 @@ class FinanceOverviewResponse(BaseModel):
     vat_reserve_warning: bool
     corp_tax_reserve_warning: bool
     credit_card_balances_gbp: float
+    personal_credit_card_balances_gbp: float = 0.0
     loan_balances_gbp: float
     mortgage_balance_gbp: float
     pension_value_gbp: float
@@ -611,6 +612,22 @@ class FinanceOverviewResponse(BaseModel):
     mortgage_configured: bool = False
     safe_to_spend: dict[str, Any] = Field(default_factory=dict)
     cash_status: str = "HEALTHY"
+    generated_at: datetime | None = None
+    cached: bool = False
+    compute_ms: float | None = None
+    quickfile_synced_at: str | None = None
+    lunchflow_synced_at: str | None = None
+    liquid_assets_gbp: float = 0.0
+    long_term_assets_gbp: float = 0.0
+    property_value_gbp: float = 0.0
+    debtors_gbp: float = 0.0
+    short_term_debt_gbp: float = 0.0
+    long_term_debt_gbp: float = 0.0
+    home_equity_gbp: float = 0.0
+    personal_short_term_debt_gbp: float = 0.0
+    personal_long_term_debt_gbp: float = 0.0
+    business_short_term_debt_gbp: float = 0.0
+    business_long_term_debt_gbp: float = 0.0
 
 
 class CashflowScopeColumn(BaseModel):

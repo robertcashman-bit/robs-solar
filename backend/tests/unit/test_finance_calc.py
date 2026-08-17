@@ -53,7 +53,20 @@ def test_personal_and_business_debt_stay_separate() -> None:
     assert totals.personal_debt_gbp == 800
     assert totals.business_debt_gbp == 4000
     assert totals.credit_card_gbp == 800
+    assert totals.personal_credit_card_gbp == 800
     assert totals.loan_gbp == 4000
+
+
+def test_personal_credit_cards_exclude_business_cards() -> None:
+    totals = compute_totals(
+        [],
+        [
+            LiabilityView(1, "personal", "MBNA", "credit_card", 200, 22.9, 25),
+            LiabilityView(2, "business", "Capital on Tap", "credit_card", 10748.98, 0, 0),
+        ],
+    )
+    assert totals.credit_card_gbp == 10948.98
+    assert totals.personal_credit_card_gbp == 200.0
 
 
 def test_net_worth_does_not_double_count_linked_account_and_liability() -> None:
@@ -403,3 +416,23 @@ def test_null_interest_rate_known_is_treated_as_known() -> None:
     total, incomplete = monthly_interest_from_debts(views)
     assert incomplete is False
     assert total == 12.0
+
+
+def test_snapshot_vat_reserve_beats_tiny_vat_account() -> None:
+    totals = compute_totals(
+        [AccountView(1, "business", "vat_reserve", "Vat Account", 0.47)],
+        [],
+        None,
+        SnapshotView(vat_reserve_gbp=2956.27),
+    )
+    assert totals.vat_reserve_gbp == 2956.27
+
+
+def test_vat_account_used_when_snapshot_empty() -> None:
+    totals = compute_totals(
+        [AccountView(1, "business", "vat_reserve", "Vat Account", 400)],
+        [],
+        None,
+        SnapshotView(),
+    )
+    assert totals.vat_reserve_gbp == 400.0

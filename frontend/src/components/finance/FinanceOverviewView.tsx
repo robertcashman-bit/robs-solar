@@ -243,8 +243,9 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
             />
             <MetricTile
               label="Credit cards"
-              value={overview.credit_card_balances_gbp}
-              warning={overview.credit_card_balances_gbp > 0}
+              value={overview.personal_credit_card_balances_gbp}
+              warning={overview.personal_credit_card_balances_gbp > 0}
+              hint="Personal cards only"
             />
             <MetricTile
               label="Available credit"

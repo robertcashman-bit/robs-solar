@@ -28,11 +28,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set("X-CSRF-Token", csrfToken);
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers,
-    credentials: "include",
-  });
+  const timeoutMs = init?.method && init.method !== "GET" ? 45000 : 12000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers,
+      credentials: "include",
+      signal: init?.signal ?? controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new ApiError("The server took too long to respond.", 504);
+    }
+    throw new ApiError("Cannot reach the finance server. Is it running?", 503);
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     let detail = response.statusText;

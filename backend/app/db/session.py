@@ -122,6 +122,21 @@ def _migrate_missing_columns(connection) -> None:
                     f"SET interest_rate_known = {known} WHERE interest_rate_known IS NULL"
                 )
             )
+    for index_sql in (
+        "CREATE INDEX IF NOT EXISTS ix_finance_accounts_active_scope "
+        "ON finance_accounts (is_active, scope)",
+        "CREATE INDEX IF NOT EXISTS ix_finance_liabilities_active "
+        "ON finance_liabilities (is_active)",
+        "CREATE INDEX IF NOT EXISTS ix_finance_budget_plans_active "
+        "ON finance_budget_plans (is_active)",
+        "CREATE INDEX IF NOT EXISTS ix_cashflow_forecast_confirmed_date "
+        "ON cashflow_forecast (is_confirmed, forecast_date)",
+        "CREATE INDEX IF NOT EXISTS ix_finance_transactions_active_posted "
+        "ON finance_transactions (is_deleted, posted_on)",
+    ):
+        table = index_sql.split(" ON ", 1)[1].split(" ", 1)[0]
+        if table in inspector.get_table_names():
+            connection.execute(text(index_sql))
 
 
 def _sqlite_scalar_default_sql(column) -> str | None:

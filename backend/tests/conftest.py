@@ -69,6 +69,7 @@ async def reset_finance_rows(setup_db: None) -> AsyncGenerator[None, None]:
         FinanceImportBatchRow,
         FinanceInsightRow,
         FinanceLiabilityRow,
+        FinanceOverviewCacheRow,
         FinancePositionSnapshotRow,
         FinanceRecurringRuleRow,
         FinanceSinkingFundRow,
@@ -80,6 +81,7 @@ async def reset_finance_rows(setup_db: None) -> AsyncGenerator[None, None]:
 
     async with SessionLocal() as db:
         for model in (
+            FinanceOverviewCacheRow,
             FinanceInsightRow,
             CashflowForecastRow,
             MonthlyBudgetRow,

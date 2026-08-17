@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy import or_, select
@@ -110,38 +111,55 @@ class FinanceOverviewService:
         month: str | None = None,
         *,
         refresh_live: bool = False,
+        fresh: bool = False,
     ) -> FinanceOverviewResponse:
-        # Default path reads stored Neon figures only so the dashboard paints
-        # immediately. Live QuickFile / Lunch Flow sync is opt-in via refresh.
+        started = time.perf_counter()
+        if month is None:
+            month = datetime.now(timezone.utc).strftime("%Y-%m")
+
+        from app.services.finance.finance_overview_cache_service import (
+            finance_overview_cache_service,
+        )
+
+        # Login / first paint must never wait on QuickFile or Lunch Flow.
         if refresh_live:
             from app.services.finance.finance_live_refresh_service import (
                 finance_live_refresh_service,
             )
 
             await finance_live_refresh_service.ensure_fresh(db)
+            await finance_overview_cache_service.clear(db, month)
+
+        if not refresh_live and not fresh:
+            fingerprint = await finance_overview_cache_service.fingerprint(db)
+            cached = await finance_overview_cache_service.read(
+                db, month, current_fingerprint=fingerprint
+            )
+            if cached is not None:
+                cached.compute_ms = round((time.perf_counter() - started) * 1000, 1)
+                return cached
+
+        overview = await self._compute_overview(db, month, refresh_live=refresh_live)
+        overview.compute_ms = round((time.perf_counter() - started) * 1000, 1)
+        fingerprint = await finance_overview_cache_service.fingerprint(db)
+        await finance_overview_cache_service.write(db, month, overview, fingerprint)
+        return overview
+
+    async def _compute_overview(
+        self,
+        db: AsyncSession,
+        month: str,
+        *,
+        refresh_live: bool,
+    ) -> FinanceOverviewResponse:
         accounts = await finance_accounts_service.list_accounts(
             db, refresh_live=False
         )
+        if refresh_live:
+            await finance_liabilities_service.ensure_from_accounts(db)
         liabilities = await finance_liabilities_service.list_liabilities(
             db, sync_accounts=False
         )
-        if refresh_live:
-            await finance_liabilities_service.ensure_from_accounts(db)
-            liabilities = await finance_liabilities_service.list_liabilities(
-                db, sync_accounts=False
-            )
-        else:
-            # Cheap local step only — never waits on QuickFile / Lunch Flow.
-            try:
-                from app.services.finance.finance_budget_plan_service import (
-                    finance_budget_plan_service,
-                )
-
-                await finance_budget_plan_service.ensure_active_from_suggestion(db)
-            except Exception:
-                pass
-        if month is None:
-            month = datetime.now(timezone.utc).strftime("%Y-%m")
         personal_snap = await self.personal_snapshot_for_month(db, month)
         business_snap = await self.business_snapshot_for_month(db, month)
         account_views = accounts_from_schema(accounts)
@@ -168,7 +186,7 @@ class FinanceOverviewService:
             from app.services.finance.finance_budget_service import finance_budget_service
 
             budgeted, actual = await finance_budget_service.month_totals(db, month)
-            budget_income, budget_spending = await finance_budget_service.month_flow(db, month)
+            budget_spending = actual if actual > 0 else budgeted
         except Exception:
             pass
 
@@ -180,8 +198,9 @@ class FinanceOverviewService:
 
             plan = await finance_budget_plan_service.get_active(db)
             if plan is not None:
-                if budget_income <= 0:
-                    budget_income = plan.income_gbp
+                budget_income = plan.income_gbp
+                if budget_spending <= 0:
+                    budget_spending = plan.totals.total_spending_gbp
                 active_budget = finance_budget_plan_service.summarise_active(plan)
         except Exception:
             active_budget = None
@@ -230,6 +249,7 @@ class FinanceOverviewService:
             vat_reserve_warning=totals.vat_reserve_warning,
             corp_tax_reserve_warning=totals.corp_tax_reserve_warning,
             credit_card_balances_gbp=totals.credit_card_gbp,
+            personal_credit_card_balances_gbp=totals.personal_credit_card_gbp,
             loan_balances_gbp=totals.loan_gbp,
             mortgage_balance_gbp=totals.mortgage_gbp,
             pension_value_gbp=totals.pension_gbp,
@@ -288,17 +308,108 @@ class FinanceOverviewService:
             ),
             safe_to_spend=safe_to_spend,
             cash_status=str(safe_to_spend.get("combined", {}).get("status") or "HEALTHY"),
+            quickfile_synced_at=await self._sync_stamp(db, "quickfile"),
+            lunchflow_synced_at=await self._sync_stamp(db, "lunchflow"),
+            liquid_assets_gbp=round(
+                totals.available_cash_gbp
+                + totals.vat_reserve_gbp
+                + totals.corp_tax_reserve_gbp,
+                2,
+            ),
+            long_term_assets_gbp=round(
+                totals.property_gbp + totals.pension_gbp + totals.debtors_gbp,
+                2,
+            ),
+            property_value_gbp=totals.property_gbp,
+            debtors_gbp=totals.debtors_gbp,
+            short_term_debt_gbp=round(
+                totals.credit_card_gbp
+                + totals.personal_overdraft_gbp
+                + totals.business_overdraft_gbp,
+                2,
+            ),
+            long_term_debt_gbp=round(totals.loan_gbp + totals.mortgage_gbp, 2),
+            home_equity_gbp=round(totals.property_gbp - totals.mortgage_gbp, 2),
+            personal_short_term_debt_gbp=round(
+                totals.personal_overdraft_gbp
+                + sum(
+                    item.balance_gbp
+                    for item in liability_views
+                    if item.is_active
+                    and item.scope == "personal"
+                    and item.debt_type in {"credit_card"}
+                ),
+                2,
+            ),
+            personal_long_term_debt_gbp=round(
+                sum(
+                    item.balance_gbp
+                    for item in liability_views
+                    if item.is_active
+                    and item.scope == "personal"
+                    and item.debt_type not in {"credit_card", "directors_loan"}
+                ),
+                2,
+            ),
+            business_short_term_debt_gbp=round(
+                totals.business_overdraft_gbp
+                + sum(
+                    item.balance_gbp
+                    for item in liability_views
+                    if item.is_active
+                    and item.scope == "business"
+                    and item.debt_type in {"credit_card"}
+                ),
+                2,
+            ),
+            business_long_term_debt_gbp=round(
+                sum(
+                    item.balance_gbp
+                    for item in liability_views
+                    if item.is_active
+                    and item.scope == "business"
+                    and item.debt_type not in {"credit_card", "directors_loan"}
+                ),
+                2,
+            ),
         )
-        overview.insights = await finance_insights_service.refresh_for_overview(db, overview)
-        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
-        if month == current_month:
-            try:
-                from app.services.finance.finance_position_service import finance_position_service
+        if refresh_live:
+            overview.insights = await finance_insights_service.refresh_for_overview(
+                db, overview
+            )
+        else:
+            existing = await finance_insights_service.generate_and_list(db)
+            overview.insights = existing or await finance_insights_service.refresh_for_overview(
+                db, overview
+            )
+        if refresh_live:
+            current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+            if month == current_month:
+                try:
+                    from app.services.finance.finance_position_service import (
+                        finance_position_service,
+                    )
 
-                await finance_position_service.record_from_overview(db, overview, month=month)
-            except Exception:
-                pass
+                    await finance_position_service.record_from_overview(
+                        db, overview, month=month
+                    )
+                except Exception:
+                    pass
         return overview
+
+    async def _sync_stamp(self, db: AsyncSession, source: str) -> str | None:
+        try:
+            if source == "quickfile":
+                from app.services.quickfile_settings_service import (
+                    quickfile_settings_service,
+                )
+
+                return (await quickfile_settings_service.get_status(db)).last_sync_at
+            from app.services.lunchflow_settings_service import lunchflow_settings_service
+
+            return (await lunchflow_settings_service.get_status(db)).last_sync_at
+        except Exception:
+            return None
 
     async def _open_banking_flow(self, db: AsyncSession) -> MonthlyFlow:
         lunchflow = MonthlyFlow()

@@ -18,7 +18,7 @@ export function monthlyFlowHint(source: string | undefined): string {
     case "cashflow":
       return "From confirmed cash-flow entries";
     case "budget":
-      return "From this month's budget actuals";
+      return "From the active budget plan — not imported transactions";
     default:
       return "Save a personal snapshot, or sync Open Banking";
   }

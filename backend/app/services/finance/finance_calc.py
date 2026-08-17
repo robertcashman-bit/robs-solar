@@ -133,6 +133,7 @@ class FinanceTotals:
     vat_reserve_warning: bool
     corp_tax_reserve_warning: bool
     debt_reduction_gbp: float
+    personal_credit_card_gbp: float = 0.0
     formula: str = (
         "net_worth = (positive current + pension + property + other assets + debtors) "
         "− (active debts ex-DLA + overdrafts + unlinked account debts). "
@@ -364,8 +365,18 @@ def compute_totals(
 
     vat_accounts = _sum_type(accounts_list, "vat_reserve")
     corp_accounts = _sum_type(accounts_list, "corp_tax_reserve")
-    vat_reserve = vat_accounts if vat_accounts > 0 else round(business.vat_reserve_gbp, 2)
-    corp_reserve = corp_accounts if corp_accounts > 0 else round(business.corp_tax_reserve_gbp, 2)
+    # Snapshot reserves are the planned liability. A nearly-empty VAT bank
+    # pot must not hide a recorded reserve from QuickFile / the monthly snapshot.
+    vat_reserve = (
+        round(business.vat_reserve_gbp, 2)
+        if business.vat_reserve_gbp > 0
+        else vat_accounts
+    )
+    corp_reserve = (
+        round(business.corp_tax_reserve_gbp, 2)
+        if business.corp_tax_reserve_gbp > 0
+        else corp_accounts
+    )
 
     personal_debt = _debt_total(debts, scope="personal")
     business_debt = _debt_total(debts, scope="business")
@@ -386,6 +397,12 @@ def compute_totals(
     directors_loan = round(dla_debts + dla_accounts, 2)
 
     credit_cards = _typed_debt(debts, unlinked, {"credit_card"}, {"credit_card"})
+    personal_credit_cards = _typed_debt(
+        [debt for debt in debts if debt.scope == "personal"],
+        [account for account in unlinked if account.scope == "personal"],
+        {"credit_card"},
+        {"credit_card"},
+    )
     loans = _typed_debt(debts, unlinked, {"loan", "business_loan"}, {"loan", "capital_on_tap"})
     mortgage = _typed_debt(debts, unlinked, {"mortgage"}, {"mortgage"})
 
@@ -412,8 +429,17 @@ def compute_totals(
     cash_after_bills = round(personal_cash - personal_od - personal.household_bills_gbp, 2)
 
     profit = business.profit_estimate_gbp or (business.turnover_gbp - business.expenses_gbp)
-    vat_warning = vat_reserve < (business.expenses_gbp * 0.2 if business.expenses_gbp else 500)
-    corp_warning = corp_reserve < (profit * 0.19 if profit > 0 else 500)
+    has_business = (
+        business.turnover_gbp > 0
+        or business.expenses_gbp > 0
+        or business_cash > 0
+        or vat_reserve > 0
+        or corp_reserve > 0
+    )
+    vat_warning = has_business and vat_reserve < (
+        business.expenses_gbp * 0.2 if business.expenses_gbp else 500
+    )
+    corp_warning = has_business and profit > 0 and corp_reserve < (profit * 0.19)
 
     debt_reduction = 0.0
     for debt in debts:
@@ -437,6 +463,7 @@ def compute_totals(
         personal_debt_gbp=personal_debt,
         business_debt_gbp=business_debt,
         credit_card_gbp=credit_cards,
+        personal_credit_card_gbp=personal_credit_cards,
         loan_gbp=loans,
         mortgage_gbp=mortgage,
         directors_loan_gbp=directors_loan,

@@ -246,7 +246,11 @@ async def test_overview_activates_recommended_budget_from_live_income(
     await _admin(client, monkeypatch)
     await _set_lunchflow_income(4252.60, 1000)
 
-    first = await client.get("/finance/overview")
+    stored = await client.get("/finance/overview")
+    assert stored.status_code == 200
+    assert stored.json()["active_budget"] is None
+
+    first = await client.get("/finance/overview?live=1")
     assert first.status_code == 200
     budget = first.json()["active_budget"]
     assert budget is not None

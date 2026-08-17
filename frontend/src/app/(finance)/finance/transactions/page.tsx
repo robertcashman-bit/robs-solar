@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
@@ -28,6 +28,8 @@ type Txn = {
   account_name: string;
 };
 
+const PAGE_SIZE = 50;
+
 const FILTERS = [
   "all",
   "uncategorised",
@@ -54,8 +56,10 @@ export default function TransactionsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const loadedCount = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (append = false) => {
     setError(null);
     try {
       const params = new URLSearchParams();
@@ -65,11 +69,15 @@ export default function TransactionsPage() {
         params.set("filter", filter);
       }
       if (q.trim()) params.set("q", q.trim());
+      params.set("limit", String(PAGE_SIZE));
+      params.set("offset", String(append ? loadedCount.current : 0));
       const [data, cats] = await Promise.all([
         apiClient.get<Txn[]>(`/finance/transactions?${params}`),
         apiClient.get<Array<{ parent: string }>>("/finance/categories"),
       ]);
-      setRows(data);
+      setRows((prev) => (append ? [...prev, ...data] : data));
+      loadedCount.current = append ? loadedCount.current + data.length : data.length;
+      setHasMore(data.length === PAGE_SIZE);
       setCategories([...new Set(cats.map((item) => item.parent).filter(Boolean))]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load transactions");
@@ -188,7 +196,7 @@ export default function TransactionsPage() {
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void apiClient.post("/finance/transfers/detect").then(load)}
+                onClick={() => void apiClient.post("/finance/transfers/detect").then(() => load())}
                 className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
               >
                 Detect transfers
@@ -218,7 +226,7 @@ export default function TransactionsPage() {
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-3 py-6 text-[var(--muted)]">
-                    No transaction history available
+                    No transactions imported yet.
                   </td>
                 </tr>
               ) : (
@@ -255,6 +263,15 @@ export default function TransactionsPage() {
             </tbody>
           </table>
         </div>
+        {hasMore ? (
+          <button
+            type="button"
+            className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
+            onClick={() => void load(true)}
+          >
+            Load more
+          </button>
+        ) : null}
       </div>
     </AppShell>
   );

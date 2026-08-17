@@ -13,6 +13,7 @@ vi.mock("@/lib/api-client", () => ({
 }));
 
 vi.mock("@/lib/finance-events", () => ({
+  FINANCE_OVERVIEW_READY_EVENT: "robs-finance-overview-ready",
   notifyFinanceChanged: () => notify(),
 }));
 
@@ -34,6 +35,7 @@ describe("useFinanceBackgroundLiveRefresh", () => {
 
   it("refreshes live balances once for admins then notifies pages", async () => {
     render(<Probe role="admin" />);
+    window.dispatchEvent(new Event("robs-finance-overview-ready"));
     await waitFor(() => expect(post).toHaveBeenCalledWith("/finance/live-refresh", {}));
     await waitFor(() => expect(notify).toHaveBeenCalled());
     expect(await screen.findByText("idle")).toBeInTheDocument();
@@ -43,6 +45,12 @@ describe("useFinanceBackgroundLiveRefresh", () => {
     window.sessionStorage.setItem("robs-finance-live-refresh-at", String(Date.now()));
     render(<Probe role="admin" />);
     await waitFor(() => expect(screen.getByText("idle")).toBeInTheDocument());
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("does not call live-refresh before the dashboard is ready", async () => {
+    render(<Probe role="admin" />);
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
     expect(post).not.toHaveBeenCalled();
   });
 

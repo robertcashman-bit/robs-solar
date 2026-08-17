@@ -15,7 +15,7 @@ if [[ -d "$_THIS/../backend" ]]; then
 elif command -v resolve_robs_solar_root >/dev/null 2>&1; then
   ROOT="$(resolve_robs_solar_root || true)"
 fi
-ROOT="${ROOT:-${ROBS_SOLAR_ROOT:-$HOME/All/robs-solar}}"
+ROOT="${ROOT:-${ROBS_SOLAR_ROOT:-$HOME/robs-solar}}"
 cd "$ROOT/backend" || exit 1
 
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"

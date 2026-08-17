@@ -18,7 +18,15 @@ import { cashflowForecastSchema, type CashflowForecast } from "@/lib/finance-sch
 import { formatGbp, parseGbp } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
 
-const horizons = [30, 60, 90] as const;
+const horizons = [
+  { days: 7, label: "7d" },
+  { days: 14, label: "14d" },
+  { days: 30, label: "30d" },
+  { days: 60, label: "60d" },
+  { days: 90, label: "90d" },
+  { days: 180, label: "6m" },
+  { days: 365, label: "12m" },
+] as const;
 const scopes = ["all", "personal", "business"] as const;
 const scenarios = ["conservative", "expected", "optimistic"] as const;
 
@@ -108,7 +116,7 @@ export default function CashFlowPage() {
       <PageHeader
         eyebrow="Finance"
         title="Cash Flow"
-        description="30, 60, and 90-day forecast with expected income, bills, debt payments, and tax."
+        description="7-day to 12-month forecast with expected income, bills, debt payments, and tax."
         actions={
           <div className="flex flex-wrap gap-2">
             <div className="flex gap-1 rounded-lg border border-[var(--border)] p-1">
@@ -138,12 +146,12 @@ export default function CashFlowPage() {
             <div className="flex gap-1 rounded-lg border border-[var(--border)] p-1">
               {horizons.map((item) => (
                 <button
-                  key={item}
+                  key={item.days}
                   type="button"
-                  className={`rounded-md px-3 py-1 text-sm ${horizon === item ? "bg-emerald-500 text-white" : ""}`}
-                  onClick={() => setHorizon(item)}
+                  className={`rounded-md px-3 py-1 text-sm ${horizon === item.days ? "bg-emerald-500 text-white" : ""}`}
+                  onClick={() => setHorizon(item.days)}
                 >
-                  {item}d
+                  {item.label}
                 </button>
               ))}
             </div>

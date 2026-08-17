@@ -116,11 +116,12 @@ def require_admin_csrf(
 async def get_overview(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     live: bool = Query(default=False),
+    fresh: bool = Query(default=False),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> FinanceOverviewResponse:
     return await finance_overview_service.get_overview(
-        db, month=month, refresh_live=live
+        db, month=month, refresh_live=live, fresh=fresh
     )
 
 
@@ -595,7 +596,7 @@ async def delete_budget_plan(
 
 @router.get("/cashflow", response_model=CashflowForecastResponse)
 async def get_cashflow(
-    horizon: int = Query(default=30, ge=30, le=90),
+    horizon: int = Query(default=30, ge=7, le=365),
     scope: FinanceScope | None = None,
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
@@ -1017,7 +1018,8 @@ async def list_transactions(
     date_from: str | None = None,
     date_to: str | None = None,
     source: str | None = None,
-    limit: int = Query(default=500, ge=1, le=2000),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
@@ -1037,6 +1039,7 @@ async def list_transactions(
         date_to=date_to,
         source=source,
         limit=limit,
+        offset=offset,
     )
 
 

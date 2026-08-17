@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
-import { notifyFinanceChanged } from "@/lib/finance-events";
+import { FINANCE_OVERVIEW_READY_EVENT, notifyFinanceChanged } from "@/lib/finance-events";
 import { canWrite } from "@/lib/permissions";
 import type { UserInfo } from "@/lib/schemas";
 
 const COOLDOWN_KEY = "robs-finance-live-refresh-at";
 const COOLDOWN_MS = 15 * 60 * 1000;
+const FALLBACK_MS = 1800;
 
 function withinCooldown(): boolean {
   try {
@@ -31,8 +32,9 @@ function markRefreshed(): void {
 }
 
 /**
- * After stored Neon figures paint, refresh live balances once per session window.
- * Does not pull a year of transactions — that stays on explicit Refresh / Connect.
+ * After stored figures paint, refresh live balances once per session window.
+ * Waits for the dashboard GET (or a short fallback) so SQLite is not locked
+ * by QuickFile / Lunch Flow during first paint.
  */
 export function useFinanceBackgroundLiveRefresh(user: UserInfo | null | undefined) {
   const enabled = Boolean(user) && canWrite(user ?? null);
@@ -47,8 +49,14 @@ export function useFinanceBackgroundLiveRefresh(user: UserInfo | null | undefine
     if (started.current || withinCooldown()) {
       return;
     }
-    started.current = true;
-    const timer = window.setTimeout(() => {
+
+    let cancelled = false;
+
+    const run = () => {
+      if (cancelled || started.current || withinCooldown()) {
+        return;
+      }
+      started.current = true;
       void (async () => {
         setRefreshing(true);
         try {
@@ -58,11 +66,21 @@ export function useFinanceBackgroundLiveRefresh(user: UserInfo | null | undefine
         } catch {
           // Stored figures already shown.
         } finally {
-          setRefreshing(false);
+          if (!cancelled) {
+            setRefreshing(false);
+          }
         }
       })();
-    }, 50);
-    return () => window.clearTimeout(timer);
+    };
+
+    const onReady = () => run();
+    window.addEventListener(FINANCE_OVERVIEW_READY_EVENT, onReady);
+    const timer = window.setTimeout(run, FALLBACK_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener(FINANCE_OVERVIEW_READY_EVENT, onReady);
+    };
   }, [enabled]);
 
   return { refreshing };

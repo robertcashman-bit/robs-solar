@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import FinanceTransactionRow
@@ -36,6 +36,7 @@ class FinanceLedgerService:
         date_from: str | None = None,
         date_to: str | None = None,
         source: str | None = None,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         stmt = select(FinanceTransactionRow).order_by(
             FinanceTransactionRow.posted_on.desc(),
@@ -57,49 +58,62 @@ class FinanceLedgerService:
             stmt = stmt.where(FinanceTransactionRow.posted_on >= date_from)
         if date_to:
             stmt = stmt.where(FinanceTransactionRow.posted_on <= date_to)
-        rows = list((await db.scalars(stmt.limit(min(limit, 2000)))).all())
 
         key = (filter_key or "all").lower()
         if key == "uncategorised":
-            rows = [row for row in rows if not (row.category or "").strip()]
+            stmt = stmt.where(
+                or_(
+                    FinanceTransactionRow.category == "",
+                    FinanceTransactionRow.category.is_(None),
+                )
+            )
         elif key == "low_confidence":
-            rows = [
-                row
-                for row in rows
-                if (getattr(row, "category_confidence", "") or "").upper() == "LOW"
-                or not (row.category or "").strip()
-            ]
+            stmt = stmt.where(
+                or_(
+                    func.upper(FinanceTransactionRow.category_confidence) == "LOW",
+                    FinanceTransactionRow.category == "",
+                    FinanceTransactionRow.category.is_(None),
+                )
+            )
         elif key == "transfers":
-            rows = [row for row in rows if row.is_transfer]
+            stmt = stmt.where(FinanceTransactionRow.is_transfer.is_(True))
         elif key == "recurring":
-            rows = [row for row in rows if (row.subcategory or "").startswith("recurring")]
+            stmt = stmt.where(FinanceTransactionRow.subcategory.startswith("recurring"))
         elif key == "excluded":
-            rows = [row for row in rows if getattr(row, "excluded_from_budget", False)]
+            stmt = stmt.where(FinanceTransactionRow.excluded_from_budget.is_(True))
         elif key == "income":
-            rows = [row for row in rows if row.amount_pence > 0 and not row.is_transfer]
+            stmt = stmt.where(
+                FinanceTransactionRow.amount_pence > 0,
+                FinanceTransactionRow.is_transfer.is_(False),
+            )
         elif key == "expenses":
-            rows = [row for row in rows if row.amount_pence < 0 and not row.is_transfer]
+            stmt = stmt.where(
+                FinanceTransactionRow.amount_pence < 0,
+                FinanceTransactionRow.is_transfer.is_(False),
+            )
         elif key == "needs_review":
-            rows = [row for row in rows if row.subcategory == "needs_review"]
+            stmt = stmt.where(FinanceTransactionRow.subcategory == "needs_review")
 
         if q:
-            needle = q.strip().lower()
-            rows = [
-                row
-                for row in rows
-                if needle in (row.description or "").lower()
-                or needle in (row.category or "").lower()
-                or needle in (row.account_name or "").lower()
-                or needle in f"{from_pence(row.amount_pence):.2f}"
-            ]
+            needle = f"%{q.strip().lower()}%"
+            stmt = stmt.where(
+                or_(
+                    func.lower(FinanceTransactionRow.description).like(needle),
+                    func.lower(FinanceTransactionRow.category).like(needle),
+                    func.lower(FinanceTransactionRow.account_name).like(needle),
+                )
+            )
         if min_amount_gbp is not None:
-            min_p = int(round(min_amount_gbp * 100))
-            rows = [row for row in rows if abs(row.amount_pence) >= abs(min_p)]
+            min_p = abs(int(round(min_amount_gbp * 100)))
+            stmt = stmt.where(func.abs(FinanceTransactionRow.amount_pence) >= min_p)
         if max_amount_gbp is not None:
-            max_p = int(round(max_amount_gbp * 100))
-            rows = [row for row in rows if abs(row.amount_pence) <= abs(max_p)]
+            max_p = abs(int(round(max_amount_gbp * 100)))
+            stmt = stmt.where(func.abs(FinanceTransactionRow.amount_pence) <= max_p)
 
-        return [self.to_public(row) for row in rows[:limit]]
+        page = min(max(limit, 1), 200)
+        skip = max(offset, 0)
+        rows = list((await db.scalars(stmt.offset(skip).limit(page))).all())
+        return [self.to_public(row) for row in rows]
 
     def to_public(self, row: FinanceTransactionRow) -> dict[str, Any]:
         return {

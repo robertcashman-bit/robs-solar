@@ -129,6 +129,7 @@ class OptimisationRecommendationRow(Base):
 
 class FinanceAccountRow(Base):
     __tablename__ = "finance_accounts"
+    __table_args__ = (Index("ix_finance_accounts_active_scope", "is_active", "scope"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     scope: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -150,6 +151,7 @@ class FinanceAccountRow(Base):
 
 class FinanceLiabilityRow(Base):
     __tablename__ = "finance_liabilities"
+    __table_args__ = (Index("ix_finance_liabilities_active", "is_active"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     scope: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -220,6 +222,15 @@ class FinancePositionSnapshotRow(Base):
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class FinanceOverviewCacheRow(Base):
+    __tablename__ = "finance_overview_cache"
+
+    month: Mapped[str] = mapped_column(String(7), primary_key=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class MonthlyBudgetRow(Base):
     __tablename__ = "monthly_budget"
     __table_args__ = (Index("ix_monthly_budget_scope_month", "scope", "month"),)
@@ -237,7 +248,10 @@ class MonthlyBudgetRow(Base):
 
 class CashflowForecastRow(Base):
     __tablename__ = "cashflow_forecast"
-    __table_args__ = (Index("ix_cashflow_forecast_date", "forecast_date"),)
+    __table_args__ = (
+        Index("ix_cashflow_forecast_date", "forecast_date"),
+        Index("ix_cashflow_forecast_confirmed_date", "is_confirmed", "forecast_date"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     scope: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -299,6 +313,7 @@ class SolarSettingsRow(Base):
 
 class FinanceBudgetPlanRow(Base):
     __tablename__ = "finance_budget_plans"
+    __table_args__ = (Index("ix_finance_budget_plans_active", "is_active"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -358,6 +373,7 @@ class FinanceTransactionRow(Base):
         Index("ix_finance_transactions_posted", "posted_on"),
         Index("ix_finance_transactions_fingerprint", "fingerprint"),
         Index("ix_finance_transactions_account", "account_id"),
+        Index("ix_finance_transactions_active_posted", "is_deleted", "posted_on"),
         UniqueConstraint("fingerprint", name="uq_finance_transactions_fingerprint"),
     )
 

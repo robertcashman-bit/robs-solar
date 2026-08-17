@@ -111,3 +111,10 @@ async def test_scoped_cashflow_does_not_reseed_duplicates(
     assert sum("E2E-TEST-cashflow-personal-card" in label for label in labels) == 1
     assert sum("E2E-TEST-cashflow-business-loan" in label for label in labels) == 1
     assert await _stored_cashflow_count() == after_personal
+
+    week = await client.get("/finance/cashflow?horizon=7")
+    year = await client.get("/finance/cashflow?horizon=365")
+    assert week.status_code == 200
+    assert year.status_code == 200
+    assert week.json()["horizon_days"] == 7
+    assert year.json()["horizon_days"] == 365

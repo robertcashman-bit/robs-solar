@@ -56,6 +56,7 @@ const nextConfig: NextConfig = {
       { source: "/assistant", destination: "/", permanent: false },
       { source: "/alerts", destination: "/", permanent: false },
       { source: "/audit", destination: "/", permanent: false },
+      { source: "/finance/setup", destination: "/finance/onboarding", permanent: false },
     ];
   },
   async rewrites() {

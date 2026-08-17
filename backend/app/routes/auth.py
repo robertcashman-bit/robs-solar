@@ -154,17 +154,14 @@ async def login(request: LoginRequest, response: Response) -> LoginResponse:
 
 
 @router.post("/logout")
-async def logout(
-    response: Response,
-    session: SessionData = Depends(get_current_session),
-) -> dict[str, str]:
+async def logout(response: Response) -> dict[str, str]:
     response.delete_cookie(
         SESSION_COOKIE,
         path="/",
         secure=settings.cookie_secure,
         samesite=settings.cookie_samesite,
     )
-    return {"status": "logged_out", "username": session.username}
+    return {"status": "logged_out"}
 
 
 @router.get("/me", response_model=SessionResponse)

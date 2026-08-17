@@ -19,6 +19,7 @@ type BankImportCardProps = {
   readOnly?: boolean;
   autoImport?: boolean;
   showSettingsLink?: boolean;
+  deferMs?: number;
   onImported?: (message: string) => void;
 };
 
@@ -26,6 +27,7 @@ export function BankImportCard({
   readOnly = false,
   autoImport = false,
   showSettingsLink = true,
+  deferMs = 0,
   onImported,
 }: BankImportCardProps) {
   const { user, loading: authLoading } = useAuth();
@@ -49,9 +51,9 @@ export function BankImportCard({
 
   useEffect(() => {
     if (authLoading || !user) return;
-    const timer = window.setTimeout(() => void load(), 0);
+    const timer = window.setTimeout(() => void load(), deferMs);
     return () => window.clearTimeout(timer);
-  }, [authLoading, user, load]);
+  }, [authLoading, user, load, deferMs]);
 
   const importNow = useCallback(async () => {
     setBusy("import");

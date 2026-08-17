@@ -135,7 +135,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await apiClient.post("/auth/logout");
+    try {
+      await apiClient.post("/auth/logout");
+    } catch {
+      // Clear the local session even if the server is unreachable.
+    }
     setUser(null);
     setCsrfToken(null);
   }, []);

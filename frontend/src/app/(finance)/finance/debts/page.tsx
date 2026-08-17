@@ -62,15 +62,17 @@ export default function DebtsPage() {
 
   const load = useCallback(async () => {
     try {
-      const [list, strat] = await Promise.all([
-        apiClient.get<unknown>("/finance/liabilities"),
-        apiClient.get<unknown>("/finance/debts/strategy"),
-      ]);
+      const list = await apiClient.get<unknown>("/finance/liabilities");
       setDebts(z.array(financeLiabilitySchema).parse(list));
-      setStrategy(debtStrategySchema.parse(strat));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load debts");
+    }
+    try {
+      const strat = await apiClient.get<unknown>("/finance/debts/strategy");
+      setStrategy(debtStrategySchema.parse(strat));
+    } catch {
+      setStrategy(null);
     }
   }, []);
 

@@ -35,6 +35,12 @@ def test_csv_column_guess_and_parse() -> None:
     assert parsed["rows"][1]["amount_gbp"] == 2500.0
 
 
+def test_uk_slash_date_stays_on_the_same_calendar_day() -> None:
+    text = "Date,Description,Amount\n01/08/2026,TESCO,-12.00\n31/08/2026,RENT,-800.00\n"
+    parsed = parse_csv_text(text, account_name="Current", scope="personal")
+    assert [row["posted_on"] for row in parsed["rows"]] == ["2026-08-01", "2026-08-31"]
+
+
 def test_ofx_and_qif_parse() -> None:
     ofx = """
     <OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKTRANLIST>
