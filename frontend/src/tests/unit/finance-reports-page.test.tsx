@@ -23,6 +23,26 @@ vi.mock("@/lib/api-client", () => ({
           month: "2026-08",
           personal_snapshot: null,
           business_snapshot: null,
+          personal_report: {
+            month: "2026-08",
+            cash_gbp: 1200,
+            overdraft_gbp: 0,
+            debt_gbp: 200,
+            pension_gbp: 0,
+            property_gbp: 0,
+            net_worth_gbp: 1000,
+            income_gbp: null,
+            spending_gbp: null,
+            surplus_gbp: null,
+            flow_source: "none",
+            flow_note: "No personal snapshot or imported transactions for this month.",
+            transaction_count: 0,
+            spending_by_category: [],
+            largest_expenses: [],
+            debts: [],
+            empty_state:
+              "No personal snapshot or imported transactions for this month. Save a snapshot on Personal, or import a statement.",
+          },
           net_worth_gbp: 1000,
           total_debt_gbp: 200,
           debt_reduction_gbp: null,
@@ -65,6 +85,9 @@ describe("ReportsPage", () => {
     expect(screen.queryByText(/Sunsynk|Octopus|Tesla/i)).not.toBeInTheDocument();
     expect(screen.getByText("Against original balances where recorded")).toBeInTheDocument();
     expect(screen.queryByText("Personal snapshot")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Personal" })).toBeInTheDocument();
+    expect(screen.getByText(/Save a snapshot on Personal/i)).toBeInTheDocument();
+    expect(screen.getByText("Personal cash")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Active Budget" })).toBeInTheDocument();
     expect(screen.getByText("No budget is active yet.")).toBeInTheDocument();
     expect(screen.getByText("Budget vs actual")).toBeInTheDocument();
