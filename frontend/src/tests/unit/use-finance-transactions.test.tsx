@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { FINANCE_LAST_TRANSACTIONS_KEY } from "@/lib/finance-local-cache";
 import { useFinanceTransactions } from "@/lib/use-finance-transactions";
 
 const get = vi.fn();
@@ -57,7 +58,7 @@ describe("useFinanceTransactions", () => {
   });
 
   it("paints last saved transactions immediately without a loading wait", async () => {
-    window.localStorage.setItem("robs-finance-last-transactions", JSON.stringify(stored));
+    window.localStorage.setItem(FINANCE_LAST_TRANSACTIONS_KEY, JSON.stringify(stored));
     get.mockImplementation(
       () =>
         new Promise(() => {
