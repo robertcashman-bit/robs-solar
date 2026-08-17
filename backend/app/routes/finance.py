@@ -104,10 +104,28 @@ def require_admin_csrf(
 @router.get("/overview", response_model=FinanceOverviewResponse)
 async def get_overview(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
+    live: bool = Query(default=False),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> FinanceOverviewResponse:
-    return await finance_overview_service.get_overview(db, month=month)
+    return await finance_overview_service.get_overview(
+        db, month=month, refresh_live=live
+    )
+
+
+@router.post("/live-refresh")
+async def finance_live_refresh(
+    request: Request,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    await enforce_write_rate_limit(request)
+    from app.services.finance.finance_live_refresh_service import (
+        finance_live_refresh_service,
+    )
+
+    await finance_live_refresh_service.ensure_fresh(db)
+    return {"ok": True, "message": "Live connections refreshed"}
 
 
 @router.get("/accounts", response_model=list[FinanceAccount])

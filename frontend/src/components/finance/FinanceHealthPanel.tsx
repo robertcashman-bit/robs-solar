@@ -66,6 +66,7 @@ export function FinanceHealthPanel({ canEdit }: { canEdit: boolean }) {
     try {
       const result = await apiClient.post<{ location?: string }>("/finance/backups");
       setStatus(`Backup saved (${result.location || "local"}).`);
+      notifyFinanceChanged();
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Backup failed");
@@ -102,8 +103,8 @@ export function FinanceHealthPanel({ canEdit }: { canEdit: boolean }) {
           <li>
             Last backup:{" "}
             {health.last_backup
-              ? `${health.last_backup.location} ${health.last_backup.created_at || ""}`
-              : "none"}
+              ? `${health.last_backup.location} · ${new Date(health.last_backup.created_at || "").toLocaleString("en-GB")}`
+              : "none yet — tap Backup now"}
           </li>
           <li>Needs review: {health.needs_review ? "yes" : "no"}</li>
         </ul>

@@ -52,9 +52,9 @@ class FinanceLiveRefreshService:
             await db.rollback()
 
     async def _refresh_quickfile(self, db: AsyncSession) -> None:
-        if not quickfile_settings_service.env_configured():
-            return
         status = await quickfile_settings_service.get_status(db)
+        if not status.configured:
+            return
         if not is_stale(status.last_sync_at):
             return
         try:
@@ -64,9 +64,9 @@ class FinanceLiveRefreshService:
             logger.warning("Live QuickFile account refresh failed", exc_info=True)
 
     async def _refresh_lunchflow(self, db: AsyncSession) -> None:
-        if not lunchflow_settings_service.env_configured():
-            return
         status = await lunchflow_settings_service.get_status(db)
+        if not status.configured:
+            return
         if not is_stale(status.last_sync_at):
             return
         try:
@@ -76,7 +76,8 @@ class FinanceLiveRefreshService:
             logger.warning("Live Lunch Flow account refresh failed", exc_info=True)
 
     async def _refresh_quickfile_reports(self, db: AsyncSession) -> None:
-        if not quickfile_settings_service.env_configured():
+        status = await quickfile_settings_service.get_status(db)
+        if not status.configured:
             return
         try:
             from app.services.finance.quickfile_reports_service import (

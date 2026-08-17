@@ -63,6 +63,7 @@ class QuickFileSyncService:
         except Exception:
             logger.warning("QuickFile reports sync failed after account sync", exc_info=True)
 
+        await _safe_backup(db, trigger="quickfile_sync")
         return QuickFileSyncResult(
             accounts_synced=synced,
             debtors_gbp=debtors_gbp,
@@ -104,6 +105,15 @@ class QuickFileSyncService:
             row.is_active = True
             row.updated_at = now
         await db.commit()
+
+
+async def _safe_backup(db: AsyncSession, *, trigger: str) -> None:
+    try:
+        from app.services.finance.finance_backup_service import create_backup
+
+        await create_backup(db, trigger=trigger, actor="import")
+    except Exception:
+        logger.warning("QuickFile post-sync backup failed", exc_info=True)
 
 
 quickfile_sync_service = QuickFileSyncService()

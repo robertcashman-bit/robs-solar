@@ -76,7 +76,8 @@ class QuickFileReportsService:
         stored = await self.get_stored_reports(db)
         if stored is not None and not is_stale(stored.synced_at):
             return stored
-        if not quickfile_settings_service.env_configured():
+        status = await quickfile_settings_service.get_status(db)
+        if not status.configured:
             return stored
         config = await quickfile_settings_service.get_config(db)
         try:

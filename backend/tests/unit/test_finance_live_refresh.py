@@ -1,6 +1,7 @@
 """Dashboard live refresh skips recent syncs and runs when data is stale."""
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -52,11 +53,11 @@ async def test_ensure_fresh_skips_recent_syncs(monkeypatch: pytest.MonkeyPatch) 
     called = {"qf": False, "lf": False, "debts": False}
     extras = _patch_live_side_effects(monkeypatch)
 
-    class _Status:
-        last_sync_at = datetime.now(timezone.utc).isoformat()
-
     async def recent_status(_db):
-        return _Status()
+        return SimpleNamespace(
+            configured=True,
+            last_sync_at=datetime.now(timezone.utc).isoformat(),
+        )
 
     async def fail_sync(_db, _config):
         raise AssertionError("should not sync")
@@ -65,14 +66,6 @@ async def test_ensure_fresh_skips_recent_syncs(monkeypatch: pytest.MonkeyPatch) 
         called["debts"] = True
         return 0
 
-    monkeypatch.setattr(
-        "app.services.finance.finance_live_refresh_service.quickfile_settings_service.env_configured",
-        lambda: True,
-    )
-    monkeypatch.setattr(
-        "app.services.finance.finance_live_refresh_service.lunchflow_settings_service.env_configured",
-        lambda: True,
-    )
     monkeypatch.setattr(
         "app.services.finance.finance_live_refresh_service.quickfile_settings_service.get_status",
         recent_status,
@@ -112,11 +105,8 @@ async def test_ensure_fresh_syncs_when_stale(monkeypatch: pytest.MonkeyPatch) ->
     service = FinanceLiveRefreshService()
     called = {"qf": False, "lf": False}
 
-    class _Status:
-        last_sync_at = None
-
     async def empty_status(_db):
-        return _Status()
+        return SimpleNamespace(configured=True, last_sync_at=None)
 
     async def fake_config(_db):
         return object()
@@ -134,14 +124,6 @@ async def test_ensure_fresh_syncs_when_stale(monkeypatch: pytest.MonkeyPatch) ->
 
     extras = _patch_live_side_effects(monkeypatch)
 
-    monkeypatch.setattr(
-        "app.services.finance.finance_live_refresh_service.quickfile_settings_service.env_configured",
-        lambda: True,
-    )
-    monkeypatch.setattr(
-        "app.services.finance.finance_live_refresh_service.lunchflow_settings_service.env_configured",
-        lambda: True,
-    )
     monkeypatch.setattr(
         "app.services.finance.finance_live_refresh_service.quickfile_settings_service.get_status",
         empty_status,

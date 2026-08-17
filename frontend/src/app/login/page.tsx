@@ -161,7 +161,10 @@ export default function LoginPage() {
     } catch {
       // Ignore blocked storage and still send once this mount.
     }
-    void handleSendCode();
+    const timer = window.setTimeout(() => {
+      void handleSendCode();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [
     sendOnOpen,
     magicCodeEnabled,

@@ -105,17 +105,31 @@ def _business_from_row(row: BusinessFinanceSnapshotRow) -> BusinessFinanceSnapsh
 
 class FinanceOverviewService:
     async def get_overview(
-        self, db: AsyncSession, month: str | None = None
+        self,
+        db: AsyncSession,
+        month: str | None = None,
+        *,
+        refresh_live: bool = False,
     ) -> FinanceOverviewResponse:
-        from app.services.finance.finance_live_refresh_service import (
-            finance_live_refresh_service,
-        )
+        # Default path reads stored Neon figures only so the dashboard paints
+        # immediately. Live QuickFile / Lunch Flow sync is opt-in via refresh.
+        if refresh_live:
+            from app.services.finance.finance_live_refresh_service import (
+                finance_live_refresh_service,
+            )
 
-        await finance_live_refresh_service.ensure_fresh(db)
-        accounts = await finance_accounts_service.list_accounts(db)
-        liabilities = await finance_liabilities_service.list_liabilities(
-            db, sync_accounts=True
+            await finance_live_refresh_service.ensure_fresh(db)
+        accounts = await finance_accounts_service.list_accounts(
+            db, refresh_live=False
         )
+        liabilities = await finance_liabilities_service.list_liabilities(
+            db, sync_accounts=False
+        )
+        if refresh_live:
+            await finance_liabilities_service.ensure_from_accounts(db)
+            liabilities = await finance_liabilities_service.list_liabilities(
+                db, sync_accounts=False
+            )
         if month is None:
             month = datetime.now(timezone.utc).strftime("%Y-%m")
         personal_snap = await self.personal_snapshot_for_month(db, month)
