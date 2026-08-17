@@ -8,6 +8,7 @@ vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({
     user: { username: "admin", role: "admin" },
     loading: false,
+    authResolved: true,
   }),
 }));
 
