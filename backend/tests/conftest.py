@@ -209,6 +209,7 @@ _ENERGY_ROUTE_TEST_FILES = {
     "test_verify_writes.py",
     "test_settings_watch.py",
     "test_sunsynk_verification_routes.py",
+    "test_ai_routes.py",
 }
 
 
