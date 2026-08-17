@@ -64,18 +64,23 @@ export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelP
   }, [user]);
 
   const byId = Object.fromEntries(integrations.map((item) => [item.id, item]));
+  const banksLive = isActive(byId, "lunchflow") || isActive(byId, "open_banking");
   const liveBits = [
     "App login and manual finance accounts",
     isActive(byId, "quickfile") ? "QuickFile" : null,
     isActive(byId, "lunchflow") ? "Lunch Flow" : null,
-    isActive(byId, "open_banking") ? "Open Banking" : null,
+    isActive(byId, "open_banking") ? "TrueLayer" : null,
     isActive(byId, "funding_circle") ? "Funding Circle" : null,
   ].filter((item): item is string => Boolean(item));
   const missing = [
     isActive(byId, "quickfile") ? null : "QuickFile",
-    isActive(byId, "lunchflow") ? null : "Lunch Flow",
-    isActive(byId, "open_banking") ? null : "TrueLayer Open Banking",
-    isActive(byId, "funding_circle") ? null : "Funding Circle",
+    banksLive ? null : "Lunch Flow (or TrueLayer)",
+  ].filter((item): item is string => Boolean(item));
+  const optionalBits = [
+    banksLive && !isActive(byId, "open_banking")
+      ? "TrueLayer is optional while Lunch Flow is connected"
+      : null,
+    isActive(byId, "funding_circle") ? null : "Funding Circle loan figure (optional)",
   ].filter((item): item is string => Boolean(item));
 
   return (
@@ -83,8 +88,8 @@ export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelP
       <section className="solar-card space-y-3">
         <h2 className="text-lg font-semibold">What&apos;s connected</h2>
         <p className="text-sm text-[var(--muted)]">
-          Honest status for this Finance app. Overview balances stay manual until
-          QuickFile, Lunch Flow, or TrueLayer is connected. The same setup also lives on{" "}
+          QuickFile and Lunch Flow are the live connections for this app. TrueLayer
+          is only needed if you want a second bank login. The same setup also lives on{" "}
           <Link href="/finance/connect" className="underline underline-offset-2">
             Connect banks
           </Link>
@@ -95,10 +100,18 @@ export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelP
             <span className="font-medium text-emerald-600 dark:text-emerald-400">Live — </span>
             {liveBits.join(", ")}.
           </li>
-          <li>
-            <span className="font-medium text-amber-600 dark:text-amber-400">Not connected — </span>
-            {missing.join(", ") || "nothing in this list"}.
-          </li>
+          {missing.length > 0 ? (
+            <li>
+              <span className="font-medium text-amber-600 dark:text-amber-400">Needs setup — </span>
+              {missing.join(", ")}.
+            </li>
+          ) : null}
+          {optionalBits.length > 0 ? (
+            <li>
+              <span className="font-medium text-[var(--muted)]">Optional — </span>
+              {optionalBits.join("; ")}.
+            </li>
+          ) : null}
         </ul>
         <ol className="list-decimal space-y-2 pl-5 text-sm">
           <li>

@@ -86,7 +86,11 @@ class FinanceLedgerService:
         if scope in {"personal", "business"}:
             stmt = stmt.where(FinanceTransactionRow.scope == scope)
         if source:
-            stmt = stmt.where(FinanceTransactionRow.source == source)
+            aliases = {
+                "lunchflow": ("lunchflow", "lunch_flow"),
+                "lunch_flow": ("lunchflow", "lunch_flow"),
+            }.get(source, (source,))
+            stmt = stmt.where(FinanceTransactionRow.source.in_(aliases))
         rows = list((await db.scalars(stmt)).all())
         if prefer_current:
             current = [row for row in rows if "current" in (row.account_name or "").lower()]

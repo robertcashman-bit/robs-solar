@@ -58,7 +58,9 @@ class LunchFlowSyncService:
         row = await db.scalar(
             select(FinanceAccountRow).where(
                 FinanceAccountRow.external_id == external_id,
-                FinanceAccountRow.source == FinanceAccountSource.LUNCHFLOW.value,
+                FinanceAccountRow.source.in_(
+                    (FinanceAccountSource.LUNCHFLOW.value, "lunch_flow")
+                ),
             )
         )
         now = datetime.now(timezone.utc)
@@ -86,6 +88,7 @@ class LunchFlowSyncService:
             row.account_type = item["account_type"]
             row.provider = item.get("provider", row.provider)
             row.notes = item.get("notes", row.notes)
+            row.source = FinanceAccountSource.LUNCHFLOW.value
             row.is_active = True
             row.updated_at = now
 

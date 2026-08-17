@@ -74,11 +74,35 @@ describe("FinanceSettingsPanel", () => {
     );
     expect(screen.queryByText(/connect-personal-finance\.sh/)).not.toBeInTheDocument();
     expect(screen.getAllByText(/TrueLayer/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Not connected —/)).toBeInTheDocument();
+    expect(screen.getByText(/Needs setup —/)).toBeInTheDocument();
     expect(screen.queryByText(/Octopus/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Energy →/)).not.toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText(/QuickFile, Lunch Flow, TrueLayer Open Banking/)).toBeInTheDocument();
+      expect(screen.getByText(/QuickFile, Lunch Flow \(or TrueLayer\)/)).toBeInTheDocument();
     });
+  });
+
+  it("does not say settings are disconnected when QuickFile and Lunch Flow are live", async () => {
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === "/finance/integrations") {
+        return [
+          { id: "manual", label: "Manual entry", status: "active" },
+          { id: "quickfile", label: "QuickFile", status: "active" },
+          { id: "lunchflow", label: "Lunch Flow", status: "active" },
+          { id: "open_banking", label: "Open Banking", status: "inactive" },
+          { id: "funding_circle", label: "Funding Circle", status: "inactive" },
+        ];
+      }
+      if (path === "/auth/oidc/status") {
+        return { enabled: false };
+      }
+      return {};
+    });
+    render(<FinanceSettingsPanel />);
+    await waitFor(() => {
+      expect(screen.getByText(/QuickFile, Lunch Flow/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Needs setup —/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Optional —/)).toBeInTheDocument();
   });
 });

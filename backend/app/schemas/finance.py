@@ -38,6 +38,12 @@ class FinanceAccountSource(str, Enum):
     QUICKFILE = "quickfile"
     FUNDING_CIRCLE = "funding_circle"
 
+    @classmethod
+    def _missing_(cls, value: object):
+        if value == "lunch_flow":
+            return cls.LUNCHFLOW
+        return None
+
 
 class DebtType(str, Enum):
     CREDIT_CARD = "credit_card"
