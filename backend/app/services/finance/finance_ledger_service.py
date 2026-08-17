@@ -257,6 +257,105 @@ class FinanceLedgerService:
             await db.commit()
         return {"updated": updated, "category": category[:64]}
 
+    async def month_flow_totals(
+        self,
+        db: AsyncSession,
+        month: str,
+        *,
+        scope: str | None = None,
+    ) -> dict[str, Any]:
+        """Income and spending for a calendar month from stored transactions."""
+        stmt = select(FinanceTransactionRow).where(
+            _active_tx_filter(),
+            FinanceTransactionRow.posted_on.startswith(month),
+            FinanceTransactionRow.is_transfer.is_(False),
+            FinanceTransactionRow.excluded_from_budget.is_(False),
+        )
+        if scope in {"personal", "business"}:
+            stmt = stmt.where(FinanceTransactionRow.scope == scope)
+        rows = list((await db.scalars(stmt)).all())
+        income_pence = sum(row.amount_pence for row in rows if row.amount_pence > 0)
+        spend_pence = sum(-row.amount_pence for row in rows if row.amount_pence < 0)
+        return {
+            "transaction_count": len(rows),
+            "income_gbp": from_pence(income_pence),
+            "spending_gbp": from_pence(spend_pence),
+            "net_gbp": from_pence(income_pence - spend_pence),
+        }
+
+    async def spending_by_category(
+        self,
+        db: AsyncSession,
+        month: str,
+        *,
+        scope: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        category_expr = func.nullif(func.trim(FinanceTransactionRow.category), "")
+        labelled = func.coalesce(category_expr, "Uncategorised")
+        stmt = (
+            select(
+                labelled.label("category"),
+                func.sum(-FinanceTransactionRow.amount_pence).label("spend_pence"),
+                func.count(FinanceTransactionRow.id).label("txn_count"),
+            )
+            .where(
+                _active_tx_filter(),
+                FinanceTransactionRow.posted_on.startswith(month),
+                FinanceTransactionRow.is_transfer.is_(False),
+                FinanceTransactionRow.excluded_from_budget.is_(False),
+                FinanceTransactionRow.amount_pence < 0,
+            )
+            .group_by(labelled)
+            .order_by(func.sum(-FinanceTransactionRow.amount_pence).desc())
+            .limit(max(1, min(limit, 50)))
+        )
+        if scope in {"personal", "business"}:
+            stmt = stmt.where(FinanceTransactionRow.scope == scope)
+        rows = (await db.execute(stmt)).all()
+        return [
+            {
+                "category": str(row.category or "Uncategorised"),
+                "amount_gbp": from_pence(int(row.spend_pence or 0)),
+                "transaction_count": int(row.txn_count or 0),
+            }
+            for row in rows
+        ]
+
+    async def largest_expenses(
+        self,
+        db: AsyncSession,
+        month: str,
+        *,
+        scope: str | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        stmt = (
+            select(FinanceTransactionRow)
+            .where(
+                _active_tx_filter(),
+                FinanceTransactionRow.posted_on.startswith(month),
+                FinanceTransactionRow.is_transfer.is_(False),
+                FinanceTransactionRow.amount_pence < 0,
+            )
+            .order_by(FinanceTransactionRow.amount_pence.asc())
+            .limit(max(1, min(limit, 25)))
+        )
+        if scope in {"personal", "business"}:
+            stmt = stmt.where(FinanceTransactionRow.scope == scope)
+        rows = list((await db.scalars(stmt)).all())
+        return [
+            {
+                "id": row.id,
+                "posted_on": row.posted_on,
+                "description": row.description,
+                "category": row.category or "Uncategorised",
+                "amount_gbp": from_pence(row.amount_pence),
+                "account_name": row.account_name,
+            }
+            for row in rows
+        ]
+
     async def soft_delete(
         self,
         db: AsyncSession,

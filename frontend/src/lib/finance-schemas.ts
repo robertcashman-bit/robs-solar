@@ -472,6 +472,86 @@ export const quickFileReportsSchema = z.object({
   balance_sheet: quickFileBalanceSheetSchema.nullable().optional(),
 });
 
+const reportCategorySpendSchema = z.object({
+  category: z.string(),
+  amount_gbp: z.number(),
+  transaction_count: z.number().optional().default(0),
+});
+
+const reportExpenseLineSchema = z.object({
+  id: z.number(),
+  posted_on: z.string(),
+  description: z.string(),
+  category: z.string(),
+  amount_gbp: z.number(),
+  account_name: z.string().optional().default(""),
+});
+
+const reportDebtLineSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  debt_type: z.string(),
+  balance_gbp: z.number(),
+  interest_rate_pct: z.number(),
+  minimum_payment_gbp: z.number(),
+  interest_rate_known: z.boolean().optional().default(true),
+});
+
+export const personalFinanceReportSchema = z.object({
+  month: z.string(),
+  cash_gbp: z.number(),
+  overdraft_gbp: z.number().optional().default(0),
+  debt_gbp: z.number(),
+  pension_gbp: z.number(),
+  property_gbp: z.number().optional().default(0),
+  net_worth_gbp: z.number(),
+  income_gbp: z.number().nullable().optional(),
+  spending_gbp: z.number().nullable().optional(),
+  surplus_gbp: z.number().nullable().optional(),
+  household_bills_gbp: z.number().nullable().optional(),
+  debt_repayments_gbp: z.number().nullable().optional(),
+  flow_source: z.string().optional().default("none"),
+  flow_note: z.string().optional().default(""),
+  transaction_count: z.number().optional().default(0),
+  spending_by_category: z.array(reportCategorySpendSchema).optional().default([]),
+  largest_expenses: z.array(reportExpenseLineSchema).optional().default([]),
+  debts: z.array(reportDebtLineSchema).optional().default([]),
+  previous_month_income_gbp: z.number().nullable().optional(),
+  previous_month_spending_gbp: z.number().nullable().optional(),
+  income_change_gbp: z.number().nullable().optional(),
+  spending_change_gbp: z.number().nullable().optional(),
+  empty_state: z.string().nullable().optional(),
+});
+
+export const businessFinanceReportSchema = z.object({
+  month: z.string(),
+  cash_gbp: z.number(),
+  overdraft_gbp: z.number().optional().default(0),
+  debt_gbp: z.number(),
+  debtors_gbp: z.number().optional().default(0),
+  creditors_gbp: z.number().optional().default(0),
+  vat_reserve_gbp: z.number().optional().default(0),
+  corp_tax_reserve_gbp: z.number().optional().default(0),
+  directors_loan_gbp: z.number().optional().default(0),
+  company_owes_director_gbp: z.number().optional().default(0),
+  director_owes_company_gbp: z.number().optional().default(0),
+  company_position_gbp: z.number(),
+  turnover_gbp: z.number().nullable().optional(),
+  expenses_gbp: z.number().nullable().optional(),
+  profit_gbp: z.number().nullable().optional(),
+  ytd_turnover_gbp: z.number().nullable().optional(),
+  ytd_expenses_gbp: z.number().nullable().optional(),
+  ytd_profit_gbp: z.number().nullable().optional(),
+  vat_liability_gbp: z.number().nullable().optional(),
+  pl_source: z.string().optional().default("none"),
+  pl_note: z.string().optional().default(""),
+  transaction_count: z.number().optional().default(0),
+  spending_by_category: z.array(reportCategorySpendSchema).optional().default([]),
+  largest_expenses: z.array(reportExpenseLineSchema).optional().default([]),
+  debts: z.array(reportDebtLineSchema).optional().default([]),
+  empty_state: z.string().nullable().optional(),
+});
+
 export const financeReportsSchema = z.object({
   month: z.string(),
   personal_snapshot: personalFinanceSnapshotSchema.nullable().optional(),
@@ -517,6 +597,8 @@ export const financeReportsSchema = z.object({
   quickfile_reports: quickFileReportsSchema.nullable().optional(),
   active_budget: activeBudgetSummarySchema.nullable().optional(),
   budget_vs_actual: budgetVsActualSchema.nullable().optional(),
+  personal_report: personalFinanceReportSchema.nullable().optional(),
+  business_report: businessFinanceReportSchema.nullable().optional(),
 });
 
 export const quickFileConfigStatusSchema = z.object({
@@ -607,6 +689,8 @@ export type MonthlyBudgetLine = z.infer<typeof monthlyBudgetLineSchema>;
 export type CashflowForecast = z.infer<typeof cashflowForecastSchema>;
 export type DebtStrategy = z.infer<typeof debtStrategySchema>;
 export type FinanceReports = z.infer<typeof financeReportsSchema>;
+export type PersonalFinanceReport = z.infer<typeof personalFinanceReportSchema>;
+export type BusinessFinanceReport = z.infer<typeof businessFinanceReportSchema>;
 export type QuickFileProfitAndLossSummary = z.infer<typeof quickFileProfitAndLossSchema>;
 export type QuickFileReportSection = z.infer<typeof quickFileReportSectionSchema>;
 export type QuickFileReports = z.infer<typeof quickFileReportsSchema>;

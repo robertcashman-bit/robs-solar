@@ -665,6 +665,8 @@ class FinanceReportsResponse(BaseModel):
     quickfile_reports: QuickFileReportsResponse | None = None
     active_budget: ActiveBudgetSummary | None = None
     budget_vs_actual: BudgetVsActualResponse | None = None
+    personal_report: PersonalFinanceReport | None = None
+    business_report: BusinessFinanceReport | None = None
 
 
 class FinancePositionSnapshot(BaseModel):
@@ -694,6 +696,86 @@ class PlHistoryPoint(BaseModel):
     turnover_gbp: float
     expenses_gbp: float
     profit_gbp: float
+
+
+class ReportCategorySpend(BaseModel):
+    category: str
+    amount_gbp: float
+    transaction_count: int = 0
+
+
+class ReportExpenseLine(BaseModel):
+    id: int
+    posted_on: str
+    description: str
+    category: str
+    amount_gbp: float
+    account_name: str = ""
+
+
+class ReportDebtLine(BaseModel):
+    id: int
+    name: str
+    debt_type: str
+    balance_gbp: float
+    interest_rate_pct: float
+    minimum_payment_gbp: float
+    interest_rate_known: bool = True
+
+
+class PersonalFinanceReport(BaseModel):
+    month: str
+    cash_gbp: float
+    overdraft_gbp: float = 0.0
+    debt_gbp: float
+    pension_gbp: float
+    property_gbp: float = 0.0
+    net_worth_gbp: float
+    income_gbp: float | None = None
+    spending_gbp: float | None = None
+    surplus_gbp: float | None = None
+    household_bills_gbp: float | None = None
+    debt_repayments_gbp: float | None = None
+    flow_source: str = "none"
+    flow_note: str = ""
+    transaction_count: int = 0
+    spending_by_category: list[ReportCategorySpend] = Field(default_factory=list)
+    largest_expenses: list[ReportExpenseLine] = Field(default_factory=list)
+    debts: list[ReportDebtLine] = Field(default_factory=list)
+    previous_month_income_gbp: float | None = None
+    previous_month_spending_gbp: float | None = None
+    income_change_gbp: float | None = None
+    spending_change_gbp: float | None = None
+    empty_state: str | None = None
+
+
+class BusinessFinanceReport(BaseModel):
+    month: str
+    cash_gbp: float
+    overdraft_gbp: float = 0.0
+    debt_gbp: float
+    debtors_gbp: float = 0.0
+    creditors_gbp: float = 0.0
+    vat_reserve_gbp: float = 0.0
+    corp_tax_reserve_gbp: float = 0.0
+    directors_loan_gbp: float = 0.0
+    company_owes_director_gbp: float = 0.0
+    director_owes_company_gbp: float = 0.0
+    company_position_gbp: float
+    turnover_gbp: float | None = None
+    expenses_gbp: float | None = None
+    profit_gbp: float | None = None
+    ytd_turnover_gbp: float | None = None
+    ytd_expenses_gbp: float | None = None
+    ytd_profit_gbp: float | None = None
+    vat_liability_gbp: float | None = None
+    pl_source: str = "none"
+    pl_note: str = ""
+    transaction_count: int = 0
+    spending_by_category: list[ReportCategorySpend] = Field(default_factory=list)
+    largest_expenses: list[ReportExpenseLine] = Field(default_factory=list)
+    debts: list[ReportDebtLine] = Field(default_factory=list)
+    empty_state: str | None = None
 
 
 class QuickFileReportLine(BaseModel):
