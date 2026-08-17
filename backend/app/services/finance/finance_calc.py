@@ -790,6 +790,22 @@ def pick_open_banking_flow(*sources: MonthlyFlow) -> MonthlyFlow:
     return max(nonempty, key=lambda item: item.as_of)
 
 
+def monthly_flow_note(source: str | None) -> str:
+    """Human label for monthly income/spend source (actual vs plan vs none)."""
+    key = (source or "none").strip().lower()
+    if key == "snapshot":
+        return "From the latest personal snapshot"
+    if key == "open_banking":
+        return "From live Open Banking sync (last 30 days)"
+    if key == "cashflow":
+        return "From confirmed cash-flow entries"
+    if key == "budget":
+        return "Budget plan estimate — not live income or spending"
+    if key == "transactions":
+        return "From imported personal transactions (transfers excluded)"
+    return "No live sync, snapshot, or budget plan for this month"
+
+
 def resolve_monthly_flow(
     *,
     snapshot_present: bool,

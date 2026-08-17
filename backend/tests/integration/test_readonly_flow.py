@@ -10,8 +10,15 @@ async def test_health_endpoint(client: AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["adapter_mode"] == "simulator"
-    assert body["read_only"] is True
+    assert body["data_source"] == "finance"
+    assert body["adapter_mode"] == "simulator"  # solar leftover; unused for finance
+    assert body["read_only"] is True  # gates solar control writes only
+    assert body["solar_control_writes_gated"] is True
+    assert "quickfile_env_configured" in body
+    assert "lunchflow_env_configured" in body
+    assert "truelayer_env_configured" in body
+    assert "finance_bank_reads_ready" in body
+    assert body.get("plant_id") in (None, "")
 
 
 @pytest.mark.asyncio

@@ -18,7 +18,7 @@ const baseReport: PersonalFinanceReport = {
   household_bills_gbp: 800,
   debt_repayments_gbp: 200,
   flow_source: "snapshot",
-  flow_note: "From the saved personal snapshot for this month.",
+  flow_note: "From the latest personal snapshot",
   transaction_count: 0,
   spending_by_category: [
     { category: "Groceries", amount_gbp: 420, transaction_count: 8 },
@@ -62,7 +62,7 @@ describe("PersonalReportPanel", () => {
   it("renders headline figures, MoM change, categories, expenses and debts", () => {
     render(<PersonalReportPanel report={baseReport} />);
     expect(screen.getByRole("heading", { name: "Personal" })).toBeInTheDocument();
-    expect(screen.getByText("From the saved personal snapshot for this month.")).toBeInTheDocument();
+    expect(screen.getAllByText("From the latest personal snapshot").length).toBeGreaterThan(0);
     expect(screen.getByText("Income")).toBeInTheDocument();
     expect(screen.getByText("Spending")).toBeInTheDocument();
     expect(screen.getByText("Surplus")).toBeInTheDocument();
@@ -80,6 +80,30 @@ describe("PersonalReportPanel", () => {
     expect(screen.getByText("Car loan")).toBeInTheDocument();
   });
 
+  it("shows budget flow as planned figures, not unlabeled actuals", () => {
+    render(
+      <PersonalReportPanel
+        report={{
+          ...baseReport,
+          flow_source: "budget",
+          flow_note: "Budget plan estimate — not live income or spending",
+          income_change_gbp: null,
+          spending_change_gbp: null,
+          previous_month_income_gbp: null,
+          previous_month_spending_gbp: null,
+          spending_by_category: [],
+          largest_expenses: [],
+        }}
+      />,
+    );
+    expect(screen.getByText("Planned income")).toBeInTheDocument();
+    expect(screen.getByText("Planned spending")).toBeInTheDocument();
+    expect(screen.getByText("Planned surplus")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Budget plan estimate — not live income or spending").length,
+    ).toBeGreaterThan(0);
+  });
+
   it("shows empty_state guidance without inventing income figures", () => {
     render(
       <PersonalReportPanel
@@ -91,7 +115,7 @@ describe("PersonalReportPanel", () => {
           household_bills_gbp: null,
           debt_repayments_gbp: null,
           flow_source: "none",
-          flow_note: "No personal snapshot or imported transactions for this month.",
+          flow_note: "No live sync, snapshot, or budget plan for this month",
           spending_by_category: [],
           largest_expenses: [],
           debts: [],

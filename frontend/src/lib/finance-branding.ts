@@ -9,17 +9,38 @@ export function scopeLabel(scope: string): string {
   return scope === "business" ? COMPANY_SHORT : PERSONAL_LEDGER;
 }
 
+/** Label for monthly income/spend source — actual vs plan vs none. */
 export function monthlyFlowHint(source: string | undefined): string {
   switch (source) {
     case "snapshot":
       return "From the latest personal snapshot";
     case "open_banking":
-      return "From Open Banking (last 30 days)";
+      return "From live Open Banking sync (last 30 days)";
     case "cashflow":
       return "From confirmed cash-flow entries";
     case "budget":
-      return "From the active budget plan — not imported transactions";
+      return "Budget plan estimate — not live income or spending";
+    case "transactions":
+      return "From imported personal transactions (transfers excluded)";
     default:
-      return "Save a personal snapshot, or sync Open Banking";
+      return "No live sync, snapshot, or budget plan for this month";
+  }
+}
+
+/** Short badge for Safe to Spend / tile chips. */
+export function monthlyFlowBadge(source: string | undefined): string {
+  switch (source) {
+    case "snapshot":
+      return "Snapshot";
+    case "open_banking":
+      return "Live sync";
+    case "cashflow":
+      return "Cash-flow";
+    case "budget":
+      return "Budget plan";
+    case "transactions":
+      return "Imported";
+    default:
+      return "No data";
   }
 }

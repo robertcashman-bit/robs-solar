@@ -95,7 +95,8 @@ export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelP
           <Link href="/finance/connect" className="underline underline-offset-2">
             Connect banks
           </Link>
-          .
+          . Production health may still show a leftover solar adapter_mode — that does
+          not mean your money figures are simulated.
         </p>
         <ul className="space-y-2 text-sm">
           <li>

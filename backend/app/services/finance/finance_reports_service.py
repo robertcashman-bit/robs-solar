@@ -26,6 +26,7 @@ from app.services.finance.finance_calc import (
     compute_totals,
     directors_loan_sides,
     liabilities_from_schema,
+    monthly_flow_note,
     personal_net_worth,
     personal_snapshot_view,
     previous_month_key,
@@ -240,7 +241,7 @@ class FinanceReportsService:
         income = spending = surplus = None
         household = repayments = None
         flow_source = "none"
-        flow_note = "No personal snapshot or imported transactions for this month."
+        flow_note = monthly_flow_note("none")
         if personal is not None and (
             personal.monthly_income_gbp > 0 or personal.monthly_spending_gbp > 0
         ):
@@ -250,13 +251,26 @@ class FinanceReportsService:
             household = round(personal.household_bills_gbp, 2)
             repayments = round(personal.debt_repayments_gbp, 2)
             flow_source = "snapshot"
-            flow_note = "From the saved personal snapshot for this month."
+            flow_note = monthly_flow_note("snapshot")
         elif tx["transaction_count"] > 0:
             income = tx["income_gbp"]
             spending = tx["spending_gbp"]
             surplus = tx["net_gbp"]
             flow_source = "transactions"
-            flow_note = "From imported personal transactions (transfers excluded)."
+            flow_note = monthly_flow_note("transactions")
+        elif overview.monthly_flow_source in {"open_banking", "cashflow"} and (
+            overview.monthly_income_gbp > 0 or overview.monthly_spending_gbp > 0
+        ):
+            income = round(overview.monthly_income_gbp, 2)
+            spending = round(overview.monthly_spending_gbp, 2)
+            surplus = round(overview.monthly_surplus_gbp, 2)
+            household = (
+                round(overview.household_bills_gbp, 2)
+                if overview.household_bills_gbp
+                else None
+            )
+            flow_source = overview.monthly_flow_source
+            flow_note = monthly_flow_note(flow_source)
         elif overview.monthly_flow_source == "budget" and (
             overview.monthly_income_gbp > 0 or overview.monthly_spending_gbp > 0
         ):
@@ -264,7 +278,7 @@ class FinanceReportsService:
             spending = round(overview.monthly_spending_gbp, 2)
             surplus = round(overview.monthly_surplus_gbp, 2)
             flow_source = "budget"
-            flow_note = "From the active budget plan — not imported transactions."
+            flow_note = monthly_flow_note("budget")
 
         prev_key = previous_month_key(month)
         prev_snap = await finance_overview_service.personal_snapshot_for_month(db, prev_key)

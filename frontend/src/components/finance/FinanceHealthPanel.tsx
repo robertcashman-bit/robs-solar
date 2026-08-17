@@ -7,19 +7,39 @@ import { apiClient } from "@/lib/api-client";
 import { notifyFinanceChanged } from "@/lib/finance-events";
 import { useFinanceReload } from "@/lib/use-finance-reload";
 
+type IntegrationStatus = {
+  configured?: boolean;
+  connected?: boolean;
+  last_sync_at?: string | null;
+};
+
 type HealthPayload = {
   ok?: boolean;
   db_read?: boolean;
   db_write?: boolean;
+  data_source?: string;
   database_backend?: string;
   ephemeral_database?: boolean;
   web_backup_configured?: boolean;
+  finance_bank_reads_ready?: boolean;
   last_import?: { source?: string; imported?: number; created_at?: string } | null;
   last_backup?: { location?: string; created_at?: string } | null;
   last_health_check?: string | null;
   needs_review?: boolean;
   consistency?: { flags?: Array<{ check: string; note?: string; ok?: boolean }> };
+  integrations?: {
+    quickfile?: IntegrationStatus;
+    lunchflow?: IntegrationStatus;
+    truelayer?: IntegrationStatus;
+  };
 };
+
+function formatSync(value?: string | null): string {
+  if (!value) return "never";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("en-GB");
+}
 
 export function FinanceHealthPanel({ canEdit }: { canEdit: boolean }) {
   const [health, setHealth] = useState<HealthPayload | null>(null);
@@ -75,17 +95,49 @@ export function FinanceHealthPanel({ canEdit }: { canEdit: boolean }) {
     }
   }
 
+  const integrations = health?.integrations;
+
   return (
     <section className="solar-card space-y-3">
       <h2 className="text-lg font-semibold">Finance health</h2>
       <p className="text-sm text-[var(--muted)]">
-        Checks the database and flags inconsistencies. Self-heal only rebuilds derived
-        caches. It never invents or edits imported transactions.
+        Live finance status for QuickFile, Lunch Flow, and TrueLayer — plus database checks.
+        Leftover solar adapter_mode / READ_ONLY flags do not mean bank balances are simulated.
       </p>
       {error ? <ErrorBanner message={error} /> : null}
       {status ? <SuccessBanner message={status} /> : null}
       {health ? (
         <ul className="space-y-1 text-sm">
+          <li>
+            Data source: {health.data_source || "finance"}
+            {health.finance_bank_reads_ready ? " · bank reads ready" : " · connect QuickFile or Lunch Flow"}
+          </li>
+          <li>
+            QuickFile:{" "}
+            {integrations?.quickfile?.configured ? "configured" : "not configured"}
+            {" · last sync "}
+            {formatSync(integrations?.quickfile?.last_sync_at)}
+          </li>
+          <li>
+            Lunch Flow:{" "}
+            {integrations?.lunchflow?.connected
+              ? "connected"
+              : integrations?.lunchflow?.configured
+                ? "configured"
+                : "not configured"}
+            {" · last sync "}
+            {formatSync(integrations?.lunchflow?.last_sync_at)}
+          </li>
+          <li>
+            TrueLayer:{" "}
+            {integrations?.truelayer?.connected
+              ? "connected"
+              : integrations?.truelayer?.configured
+                ? "configured"
+                : "not configured"}
+            {" · last sync "}
+            {formatSync(integrations?.truelayer?.last_sync_at)}
+          </li>
           <li>Database: {health.database_backend} {health.db_write ? "read/write ok" : "write failed"}</li>
           <li>
             Persistence:{" "}

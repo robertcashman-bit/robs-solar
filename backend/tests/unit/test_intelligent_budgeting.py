@@ -161,3 +161,102 @@ def test_safe_to_spend_breakdown_transparent() -> None:
     assert "formula" in result["personal"]["breakdown"]
     assert result["personal"]["safe_to_spend_gbp"] == 1550.0  # 3000 - 900 - 50 - 500
     assert "disclaimer" in result["business"]["breakdown"]
+
+
+def test_safe_to_spend_uses_resolved_open_banking_flow() -> None:
+    totals = FinanceTotals(
+        personal_cash_gbp=2000,
+        business_cash_gbp=0,
+        available_cash_gbp=2000,
+        personal_overdraft_gbp=0,
+        business_overdraft_gbp=0,
+        available_credit_gbp=0,
+        credit_limit_gbp=0,
+        pension_gbp=0,
+        property_gbp=0,
+        other_assets_gbp=0,
+        debtors_gbp=0,
+        total_assets_gbp=2000,
+        personal_debt_gbp=0,
+        business_debt_gbp=0,
+        credit_card_gbp=0,
+        loan_gbp=0,
+        mortgage_gbp=0,
+        directors_loan_gbp=0,
+        creditors_gbp=0,
+        vat_reserve_gbp=0,
+        corp_tax_reserve_gbp=0,
+        total_liabilities_gbp=0,
+        net_worth_gbp=2000,
+        monthly_income_gbp=0,
+        monthly_spending_gbp=0,
+        monthly_surplus_gbp=0,
+        cash_after_bills_gbp=0,
+        vat_reserve_warning=False,
+        corp_tax_reserve_warning=False,
+        debt_reduction_gbp=0,
+    )
+    result = compute_safe_to_spend(
+        totals=totals,
+        personal=None,
+        business=None,
+        liabilities=[],
+        personal_buffer_gbp=500,
+        business_buffer_gbp=1000,
+        flow_source="open_banking",
+        resolved_income_gbp=3000,
+        resolved_spending_gbp=1200,
+        resolved_bills_gbp=900,
+    )
+    assert result["personal"]["flow_source"] == "open_banking"
+    assert result["personal"]["safe_to_spend_gbp"] == 1600.0  # 3000 - 900 - 0 - 500
+    assert "open banking" in result["personal"]["flow_note"].lower()
+
+
+def test_safe_to_spend_budget_is_plan_not_cash() -> None:
+    totals = FinanceTotals(
+        personal_cash_gbp=2000,
+        business_cash_gbp=0,
+        available_cash_gbp=2000,
+        personal_overdraft_gbp=0,
+        business_overdraft_gbp=0,
+        available_credit_gbp=0,
+        credit_limit_gbp=0,
+        pension_gbp=0,
+        property_gbp=0,
+        other_assets_gbp=0,
+        debtors_gbp=0,
+        total_assets_gbp=2000,
+        personal_debt_gbp=0,
+        business_debt_gbp=0,
+        credit_card_gbp=0,
+        loan_gbp=0,
+        mortgage_gbp=0,
+        directors_loan_gbp=0,
+        creditors_gbp=0,
+        vat_reserve_gbp=0,
+        corp_tax_reserve_gbp=0,
+        total_liabilities_gbp=0,
+        net_worth_gbp=2000,
+        monthly_income_gbp=0,
+        monthly_spending_gbp=0,
+        monthly_surplus_gbp=0,
+        cash_after_bills_gbp=0,
+        vat_reserve_warning=False,
+        corp_tax_reserve_warning=False,
+        debt_reduction_gbp=0,
+    )
+    result = compute_safe_to_spend(
+        totals=totals,
+        personal=None,
+        business=None,
+        liabilities=[],
+        flow_source="budget",
+        resolved_income_gbp=4000,
+        resolved_spending_gbp=2500,
+    )
+    assert result["personal"]["safe_to_spend_gbp"] == 0.0
+    assert result["personal"]["status"] == "BUDGET_PLAN_ONLY"
+    assert result["personal"]["breakdown"]["budget_plan_income_gbp"] == 4000.0
+    assert "budget plan" in result["personal"]["flow_note"].lower()
+    assert "not live" in result["personal"]["flow_note"].lower()

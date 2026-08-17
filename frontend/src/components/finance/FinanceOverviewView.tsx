@@ -60,6 +60,9 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
         <h2 className="solar-section-title">Safe to spend</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
           Deterministic calculation from recorded income, bills, debt minimums and buffers — not an AI guess.
+          {personalSafe?.flow_note || combinedSafe?.flow_note
+            ? ` ${personalSafe?.flow_note || combinedSafe?.flow_note}.`
+            : ""}
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {(scopeView === "combined" || scopeView === "personal") && personalSafe ? (
@@ -68,7 +71,11 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               value={personalSafe.safe_to_spend_gbp}
               positive={personalSafe.safe_to_spend_gbp > 0}
               warning={personalSafe.status !== "HEALTHY"}
-              hint={personalSafe.status}
+              hint={
+                personalSafe.flow_source === "budget"
+                  ? monthlyFlowHint("budget")
+                  : personalSafe.flow_note || personalSafe.status
+              }
             />
           ) : null}
           {(scopeView === "combined" || scopeView === "business") && businessSafe ? (
@@ -85,7 +92,11 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               label="Combined discretionary"
               value={combinedSafe.safe_to_spend_gbp}
               positive={combinedSafe.safe_to_spend_gbp > 0}
-              hint={overview.cash_status ?? combinedSafe.status}
+              hint={
+                combinedSafe.flow_source === "budget"
+                  ? monthlyFlowHint("budget")
+                  : overview.cash_status ?? combinedSafe.status
+              }
             />
           ) : null}
         </div>
@@ -157,10 +168,16 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
           />
           <MetricTile
             label="Monthly cashflow"
-            value={overview.monthly_surplus_gbp}
+            value={
+              overview.monthly_flow_source === "none" ? null : overview.monthly_surplus_gbp
+            }
             positive={overview.monthly_surplus_gbp >= 0}
             warning={overview.monthly_surplus_gbp < 0}
-            hint={monthlyFlowHint(overview.monthly_flow_source)}
+            hint={
+              overview.monthly_flow_source === "budget"
+                ? "Budget plan estimate — not live cashflow"
+                : monthlyFlowHint(overview.monthly_flow_source)
+            }
           />
           <MetricTile
             label="Cash available"
@@ -379,24 +396,39 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MetricTile
-            label="Monthly income"
+            label={
+              overview.monthly_flow_source === "budget" ? "Planned income" : "Monthly income"
+            }
             value={overview.monthly_flow_source === "none" ? null : overview.monthly_income_gbp}
             positive
             hint={monthlyFlowHint(overview.monthly_flow_source)}
           />
           <MetricTile
-            label="Monthly spending"
+            label={
+              overview.monthly_flow_source === "budget" ? "Planned spending" : "Monthly spending"
+            }
             value={overview.monthly_flow_source === "none" ? null : overview.monthly_spending_gbp}
+            hint={monthlyFlowHint(overview.monthly_flow_source)}
           />
           <MetricTile
             label="Household bills"
             value={overview.monthly_flow_source === "none" ? null : overview.household_bills_gbp}
+            hint={
+              overview.monthly_flow_source === "budget"
+                ? "Not set on the budget plan — use a snapshot for bills"
+                : monthlyFlowHint(overview.monthly_flow_source)
+            }
           />
           <MetricTile
-            label="Monthly surplus"
-            value={overview.monthly_surplus_gbp}
+            label={
+              overview.monthly_flow_source === "budget" ? "Planned surplus" : "Monthly surplus"
+            }
+            value={
+              overview.monthly_flow_source === "none" ? null : overview.monthly_surplus_gbp
+            }
             positive={overview.monthly_surplus_gbp >= 0}
             warning={overview.monthly_surplus_gbp < 0}
+            hint={monthlyFlowHint(overview.monthly_flow_source)}
           />
         </div>
       </section>

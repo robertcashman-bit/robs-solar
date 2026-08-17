@@ -28,6 +28,10 @@ class TrueLayerSettingsService:
             environment=settings.truelayer_environment,
         )
 
+    def env_configured(self) -> bool:
+        env = self._env_config()
+        return bool(env.client_id and env.client_secret and env.redirect_uri)
+
     async def _get_row(self, db: AsyncSession, key: str) -> AppSettingRow | None:
         return await db.scalar(select(AppSettingRow).where(AppSettingRow.key == key))
 

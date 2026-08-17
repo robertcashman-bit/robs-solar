@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { MetricTile } from "@/components/finance/MetricTile";
+import { monthlyFlowHint } from "@/lib/finance-branding";
 import type { PersonalFinanceReport } from "@/lib/finance-schemas";
 import { formatGbp } from "@/lib/money";
 
@@ -83,26 +84,29 @@ export function PersonalReportPanel({ report }: PersonalReportPanelProps) {
         {hasFlow ? (
           <>
             <MetricTile
-              label="Income"
+              label={report.flow_source === "budget" ? "Planned income" : "Income"}
               value={report.income_gbp}
-              hint={changeHint(
-                report.income_change_gbp,
-                report.previous_month_income_gbp,
-              )}
+              hint={
+                changeHint(report.income_change_gbp, report.previous_month_income_gbp) ||
+                monthlyFlowHint(report.flow_source)
+              }
             />
             <MetricTile
-              label="Spending"
+              label={report.flow_source === "budget" ? "Planned spending" : "Spending"}
               value={report.spending_gbp}
-              hint={changeHint(
-                report.spending_change_gbp,
-                report.previous_month_spending_gbp,
-              )}
+              hint={
+                changeHint(
+                  report.spending_change_gbp,
+                  report.previous_month_spending_gbp,
+                ) || monthlyFlowHint(report.flow_source)
+              }
             />
             <MetricTile
-              label="Surplus"
+              label={report.flow_source === "budget" ? "Planned surplus" : "Surplus"}
               value={report.surplus_gbp}
               positive={report.surplus_gbp != null && report.surplus_gbp > 0}
               warning={report.surplus_gbp != null && report.surplus_gbp < 0}
+              hint={monthlyFlowHint(report.flow_source)}
             />
           </>
         ) : null}

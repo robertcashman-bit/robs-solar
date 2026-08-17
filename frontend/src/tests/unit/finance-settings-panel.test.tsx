@@ -88,6 +88,9 @@ describe("FinanceSettingsPanel", () => {
     expect(screen.getByText(/Needs setup —/)).toBeInTheDocument();
     expect(screen.queryByText(/Octopus/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Energy →/)).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText(/leftover solar adapter_mode/i).length,
+    ).toBeGreaterThan(0);
     await waitFor(() => {
       expect(screen.getByText(/QuickFile, Lunch Flow \(or TrueLayer\)/)).toBeInTheDocument();
     });
@@ -122,7 +125,7 @@ describe("FinanceSettingsPanel", () => {
     });
     render(<FinanceSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByText(/QuickFile, Lunch Flow/)).toBeInTheDocument();
+      expect(screen.getAllByText(/QuickFile, Lunch Flow/).length).toBeGreaterThan(0);
     });
     expect(screen.queryByText(/Needs setup —/)).not.toBeInTheDocument();
     expect(screen.getByText(/Optional —/)).toBeInTheDocument();

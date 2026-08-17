@@ -234,6 +234,10 @@ class FinanceOverviewService:
             personal=personal_snapshot_view(personal_snap),
             business=business_snapshot_view(business_snap),
             liabilities=liability_views,
+            flow_source=flow_source,
+            resolved_income_gbp=income,
+            resolved_spending_gbp=spending,
+            resolved_bills_gbp=bills,
         )
 
         overview = FinanceOverviewResponse(

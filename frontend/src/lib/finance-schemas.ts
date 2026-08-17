@@ -103,6 +103,8 @@ export const financeOverviewSchema = z.object({
         .object({
           safe_to_spend_gbp: z.number(),
           status: z.string(),
+          flow_source: z.string().optional(),
+          flow_note: z.string().optional(),
           breakdown: z.record(z.string(), z.unknown()).optional(),
         })
         .optional(),
@@ -117,6 +119,8 @@ export const financeOverviewSchema = z.object({
         .object({
           safe_to_spend_gbp: z.number(),
           status: z.string(),
+          flow_source: z.string().optional(),
+          flow_note: z.string().optional(),
         })
         .optional(),
     })

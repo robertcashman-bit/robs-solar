@@ -133,4 +133,56 @@ describe("FinanceOverviewView", () => {
     expect(screen.queryByText("Solar savings this month are below forecast")).not.toBeInTheDocument();
     expect(screen.queryByText(/Open energy/i)).not.toBeInTheDocument();
   });
+
+  it("labels budget-plan monthly flow as plan, not live cash", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          monthly_flow_source: "budget",
+          monthly_income_gbp: 4000,
+          monthly_spending_gbp: 2200,
+          monthly_surplus_gbp: 1800,
+          household_bills_gbp: 0,
+          safe_to_spend: {
+            personal: {
+              safe_to_spend_gbp: 0,
+              status: "BUDGET_PLAN_ONLY",
+              flow_source: "budget",
+              flow_note: "Budget plan estimate — not live income or spending",
+            },
+            combined: {
+              safe_to_spend_gbp: 0,
+              status: "BUDGET_PLAN_ONLY",
+              flow_source: "budget",
+              flow_note: "Budget plan estimate — not live income or spending",
+            },
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText("Planned income")).toBeInTheDocument();
+    expect(screen.getByText("Planned spending")).toBeInTheDocument();
+    expect(screen.getByText("Planned surplus")).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/Budget plan estimate — not live income or spending/i).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("labels open-banking monthly flow as live sync", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          monthly_flow_source: "open_banking",
+          monthly_income_gbp: 2800,
+          monthly_spending_gbp: 900,
+        }}
+      />,
+    );
+    expect(screen.getAllByText("Monthly income").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/From live Open Banking sync/i).length,
+    ).toBeGreaterThan(0);
+  });
 });
