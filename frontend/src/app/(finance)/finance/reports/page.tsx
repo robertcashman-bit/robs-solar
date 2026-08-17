@@ -7,6 +7,7 @@ import { ActiveBudgetCard } from "@/components/finance/ActiveBudgetCard";
 import { BudgetVsActualPanel } from "@/components/finance/BudgetVsActualPanel";
 import { FinanceHistoryCharts } from "@/components/finance/FinanceHistoryCharts";
 import { MetricTile } from "@/components/finance/MetricTile";
+import { PersonalReportPanel } from "@/components/finance/PersonalReportPanel";
 import { PlHistoryChart } from "@/components/finance/PlHistoryChart";
 import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
 import { FinanceExportPanel } from "@/components/finance/FinanceExportPanel";
@@ -200,16 +201,7 @@ export default function ReportsPage() {
               }
             />
           </div>
-          {reports.personal_snapshot ? (
-            <section>
-              <h2 className="solar-section-title">Personal snapshot</h2>
-              <p className="mt-2 text-sm text-[var(--muted)]">
-                Income {formatGbp(reports.personal_snapshot.monthly_income_gbp)} · Spending{" "}
-                {formatGbp(reports.personal_snapshot.monthly_spending_gbp)} · Surplus{" "}
-                {formatGbp(reports.personal_snapshot.surplus_deficit_gbp)}
-              </p>
-            </section>
-          ) : null}
+          <PersonalReportPanel report={reports.personal_report} />
           <FinanceHistoryCharts reports={reports} />
           <section>
             <h2 className="solar-section-title">Live QuickFile statements</h2>
