@@ -1,4 +1,6 @@
-"""Auto-refresh stored QuickFile reports when env credentials are present."""
+"""Auto-refresh stored QuickFile reports when credentials are present."""
+
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,7 +23,9 @@ async def test_get_or_refresh_returns_stored(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.asyncio
-async def test_get_or_refresh_skips_when_env_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_or_refresh_skips_when_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     service = QuickFileReportsService()
     called = {"sync": False}
 
@@ -32,18 +36,21 @@ async def test_get_or_refresh_skips_when_env_empty(monkeypatch: pytest.MonkeyPat
         called["sync"] = True
         return QuickFileReportsResponse(synced_at="live")
 
+    async def fake_status(_db):
+        return SimpleNamespace(configured=False)
+
     monkeypatch.setattr(service, "get_stored_reports", fake_stored)
     monkeypatch.setattr(service, "sync_reports", fake_sync)
     monkeypatch.setattr(
-        "app.services.finance.quickfile_reports_service.quickfile_settings_service.env_configured",
-        lambda: False,
+        "app.services.finance.quickfile_reports_service.quickfile_settings_service.get_status",
+        fake_status,
     )
     assert await service.get_or_refresh_reports(object()) is None
     assert called["sync"] is False
 
 
 @pytest.mark.asyncio
-async def test_get_or_refresh_pulls_when_env_configured(
+async def test_get_or_refresh_pulls_when_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = QuickFileReportsService()
@@ -58,11 +65,14 @@ async def test_get_or_refresh_pulls_when_env_configured(
     async def fake_sync(_db, _config):
         return live
 
+    async def fake_status(_db):
+        return SimpleNamespace(configured=True)
+
     monkeypatch.setattr(service, "get_stored_reports", fake_stored)
     monkeypatch.setattr(service, "sync_reports", fake_sync)
     monkeypatch.setattr(
-        "app.services.finance.quickfile_reports_service.quickfile_settings_service.env_configured",
-        lambda: True,
+        "app.services.finance.quickfile_reports_service.quickfile_settings_service.get_status",
+        fake_status,
     )
     monkeypatch.setattr(
         "app.services.finance.quickfile_reports_service.quickfile_settings_service.get_config",
@@ -88,11 +98,14 @@ async def test_get_or_refresh_replaces_stale_stored(
     async def fake_sync(_db, _config):
         return live
 
+    async def fake_status(_db):
+        return SimpleNamespace(configured=True)
+
     monkeypatch.setattr(service, "get_stored_reports", fake_stored)
     monkeypatch.setattr(service, "sync_reports", fake_sync)
     monkeypatch.setattr(
-        "app.services.finance.quickfile_reports_service.quickfile_settings_service.env_configured",
-        lambda: True,
+        "app.services.finance.quickfile_reports_service.quickfile_settings_service.get_status",
+        fake_status,
     )
     monkeypatch.setattr(
         "app.services.finance.quickfile_reports_service.quickfile_settings_service.get_config",

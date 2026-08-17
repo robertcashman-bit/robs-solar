@@ -130,6 +130,16 @@ class FinanceOverviewService:
             liabilities = await finance_liabilities_service.list_liabilities(
                 db, sync_accounts=False
             )
+        else:
+            # Cheap local step only — never waits on QuickFile / Lunch Flow.
+            try:
+                from app.services.finance.finance_budget_plan_service import (
+                    finance_budget_plan_service,
+                )
+
+                await finance_budget_plan_service.ensure_active_from_suggestion(db)
+            except Exception:
+                pass
         if month is None:
             month = datetime.now(timezone.utc).strftime("%Y-%m")
         personal_snap = await self.personal_snapshot_for_month(db, month)
