@@ -54,10 +54,32 @@ def _to_schema(row: FinanceLiabilityRow) -> FinanceLiability:
     )
 
 
+_LAST4_RE = re.compile(r"(?<!\d)(\d{4})(?!\d)")
+
+
 def _normalise_debt_name(name: str) -> str:
     """Collapse punctuation/whitespace so near-identical debt names match."""
     cleaned = re.sub(r"[^a-z0-9]+", " ", (name or "").casefold())
     return " ".join(cleaned.split())
+
+
+def _extract_last4(name: str) -> str | None:
+    """Return the last 4-digit token in a debt/account name, if any."""
+    matches = _LAST4_RE.findall(name or "")
+    if not matches:
+        return None
+    return matches[-1]
+
+
+def _name_specificity(name: str) -> tuple[int, int]:
+    """Prefer longer / brand-bearing names (e.g. Lloyds … 6754 over bare 6754)."""
+    normalised = _normalise_debt_name(name)
+    brand_tokens = sum(1 for token in normalised.split() if not token.isdigit())
+    return (brand_tokens, len(normalised))
+
+
+def _balance_key(balance: float | None) -> float:
+    return round(float(balance or 0), 2)
 
 
 def _liability_richness(row: FinanceLiabilityRow) -> tuple[int, int, int]:
@@ -72,7 +94,11 @@ def _liability_richness(row: FinanceLiabilityRow) -> tuple[int, int, int]:
 def _prefer_liability(
     left: FinanceLiabilityRow, right: FinanceLiabilityRow
 ) -> FinanceLiabilityRow:
-    """Prefer account-linked rows, then richer metadata, then older id."""
+    """Prefer more specific name, then account-linked, richer metadata, older id."""
+    left_name = _name_specificity(left.name)
+    right_name = _name_specificity(right.name)
+    if left_name != right_name:
+        return left if left_name > right_name else right
     left_linked = left.account_id is not None
     right_linked = right.account_id is not None
     if left_linked != right_linked:
@@ -175,14 +201,40 @@ class FinanceLiabilitiesService:
         rows = await db.scalars(stmt)
         return [_to_schema(r) for r in rows.all()]
 
+    def _archive_group_onto_keeper(
+        self,
+        group: list[FinanceLiabilityRow],
+        *,
+        now: datetime,
+    ) -> int:
+        """Collapse ``group`` onto one preferred keeper; archive the rest."""
+        if len(group) < 2:
+            return 0
+        keeper = group[0]
+        for candidate in group[1:]:
+            keeper = _prefer_liability(keeper, candidate)
+        archived = 0
+        for row in group:
+            if row.id == keeper.id:
+                continue
+            _merge_liability_fields(keeper, row)
+            row.is_active = False
+            row.updated_at = now
+            archived += 1
+        keeper.updated_at = now
+        return archived
+
     async def dedupe_active_liabilities(self, db: AsyncSession) -> int:
         """Archive duplicate active debts. Never hard-deletes.
 
         Rules:
         * one active liability per linked ``account_id``
         * near-duplicates with the same scope + normalised name (compatible
-          debt_type) collapse onto the preferred row (account-linked first),
-          but never collapse two rows linked to different ``account_id`` values
+          debt_type) collapse onto the preferred row, but never collapse two
+          rows linked to different ``account_id`` values when matching by name
+          alone
+        * card-like rows that share scope + last-4 + balance (2dp) + compatible
+          debt_type collapse even when ``account_id`` / names differ
         """
         rows = list(
             (
@@ -205,21 +257,10 @@ class FinanceLiabilitiesService:
             by_account.setdefault(row.account_id, []).append(row)
 
         for group in by_account.values():
-            if len(group) < 2:
-                continue
-            keeper = group[0]
-            for candidate in group[1:]:
-                keeper = _prefer_liability(keeper, candidate)
-            for row in group:
-                if row.id == keeper.id:
-                    continue
-                _merge_liability_fields(keeper, row)
-                row.is_active = False
-                row.updated_at = now
-                archived += 1
+            count = self._archive_group_onto_keeper(group, now=now)
+            if count:
+                archived += count
                 touched = True
-            keeper.updated_at = now
-            touched = True
 
         active = [row for row in rows if row.is_active]
         by_name: dict[tuple[str, str], list[FinanceLiabilityRow]] = {}
@@ -249,21 +290,41 @@ class FinanceLiabilitiesService:
                 if not placed:
                     clusters.append([row])
             for cluster in clusters:
-                if len(cluster) < 2:
-                    continue
-                keeper = cluster[0]
-                for candidate in cluster[1:]:
-                    keeper = _prefer_liability(keeper, candidate)
-                for row in cluster:
-                    if row.id == keeper.id:
-                        continue
-                    _merge_liability_fields(keeper, row)
-                    row.is_active = False
-                    row.updated_at = now
-                    archived += 1
+                count = self._archive_group_onto_keeper(cluster, now=now)
+                if count:
+                    archived += count
                     touched = True
-                keeper.updated_at = now
-                touched = True
+
+        # Last-4 fingerprint: same card ending + same balance can appear under
+        # different account_ids / truncated names (e.g. Lloyds … 6754 vs 6754).
+        active = [row for row in rows if row.is_active]
+        by_last4: dict[tuple[str, str, float], list[FinanceLiabilityRow]] = {}
+        for row in active:
+            last4 = _extract_last4(row.name)
+            if last4 is None:
+                continue
+            key = (row.scope, last4, _balance_key(row.balance_gbp))
+            by_last4.setdefault(key, []).append(row)
+
+        for group in by_last4.values():
+            if len(group) < 2:
+                continue
+            clusters: list[list[FinanceLiabilityRow]] = []
+            for row in group:
+                placed = False
+                for cluster in clusters:
+                    if not _debt_types_compatible(cluster[0].debt_type, row.debt_type):
+                        continue
+                    cluster.append(row)
+                    placed = True
+                    break
+                if not placed:
+                    clusters.append([row])
+            for cluster in clusters:
+                count = self._archive_group_onto_keeper(cluster, now=now)
+                if count:
+                    archived += count
+                    touched = True
 
         if touched:
             await db.commit()
@@ -306,21 +367,32 @@ class FinanceLiabilitiesService:
             row = by_account_id.get(account.id)
             if row is None:
                 account_name = _normalise_debt_name(account.name)
+                account_last4 = _extract_last4(account.name)
                 match_idx: int | None = None
+                match_rank = -1  # higher is better: exact name beats last-4
                 for idx, candidate in enumerate(unmatched):
                     if candidate.scope != account.scope:
                         continue
-                    if _normalise_debt_name(candidate.name) != account_name:
-                        continue
                     if not _debt_types_compatible(candidate.debt_type, debt_type.value):
                         continue
-                    match_idx = idx
-                    # Prefer an exact debt_type match when several candidates exist.
+                    name_match = _normalise_debt_name(candidate.name) == account_name
+                    last4_match = (
+                        account_last4 is not None
+                        and _extract_last4(candidate.name) == account_last4
+                    )
+                    if not name_match and not last4_match:
+                        continue
+                    rank = 2 if name_match else 1
                     if candidate.debt_type == debt_type.value:
-                        break
+                        rank += 1
+                    if rank > match_rank:
+                        match_idx = idx
+                        match_rank = rank
                 if match_idx is not None:
                     row = unmatched.pop(match_idx)
                     row.account_id = account.id
+                    if _name_specificity(account.name) > _name_specificity(row.name):
+                        row.name = account.name
                     by_account_id[account.id] = row
             if debt_type != DebtType.DIRECTORS_LOAN and balance <= 0:
                 if row is not None and row.is_active:
