@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -53,6 +54,78 @@ def _to_schema(row: FinanceLiabilityRow) -> FinanceLiability:
     )
 
 
+def _normalise_debt_name(name: str) -> str:
+    """Collapse punctuation/whitespace so near-identical debt names match."""
+    cleaned = re.sub(r"[^a-z0-9]+", " ", (name or "").casefold())
+    return " ".join(cleaned.split())
+
+
+def _liability_richness(row: FinanceLiabilityRow) -> tuple[int, int, int]:
+    """Prefer rows with more useful payoff metadata when choosing a keeper."""
+    has_apr = bool(getattr(row, "interest_rate_known", True) and (row.interest_rate_pct or 0))
+    has_minimum = 1 if (row.minimum_payment_gbp or 0) > 0 else 0
+    notes = (row.notes or "").strip()
+    has_notes = 1 if notes and notes != "From account" else 0
+    return (1 if has_apr else 0, has_minimum, has_notes)
+
+
+def _prefer_liability(
+    left: FinanceLiabilityRow, right: FinanceLiabilityRow
+) -> FinanceLiabilityRow:
+    """Prefer account-linked rows, then richer metadata, then older id."""
+    left_linked = left.account_id is not None
+    right_linked = right.account_id is not None
+    if left_linked != right_linked:
+        return left if left_linked else right
+    left_score = _liability_richness(left)
+    right_score = _liability_richness(right)
+    if left_score != right_score:
+        return left if left_score > right_score else right
+    left_id = left.id if left.id is not None else 0
+    right_id = right.id if right.id is not None else 0
+    return left if left_id <= right_id else right
+
+
+def _merge_liability_fields(keeper: FinanceLiabilityRow, donor: FinanceLiabilityRow) -> None:
+    """Copy missing useful fields from an archived duplicate onto the keeper."""
+    if not keeper.interest_rate_pct and donor.interest_rate_pct:
+        keeper.interest_rate_pct = donor.interest_rate_pct
+    if getattr(keeper, "interest_rate_known", True) is False and getattr(
+        donor, "interest_rate_known", True
+    ):
+        keeper.interest_rate_known = True
+        if donor.interest_rate_pct:
+            keeper.interest_rate_pct = donor.interest_rate_pct
+    if not keeper.minimum_payment_gbp and donor.minimum_payment_gbp:
+        keeper.minimum_payment_gbp = donor.minimum_payment_gbp
+    if not keeper.overpayment_gbp and donor.overpayment_gbp:
+        keeper.overpayment_gbp = donor.overpayment_gbp
+    if keeper.original_balance_gbp is None and donor.original_balance_gbp is not None:
+        keeper.original_balance_gbp = donor.original_balance_gbp
+    if keeper.payment_day is None and donor.payment_day is not None:
+        keeper.payment_day = donor.payment_day
+    if keeper.account_id is None and donor.account_id is not None:
+        keeper.account_id = donor.account_id
+    if not keeper.dla_direction and donor.dla_direction:
+        keeper.dla_direction = donor.dla_direction
+    if keeper.credit_limit_gbp is None and donor.credit_limit_gbp is not None:
+        keeper.credit_limit_gbp = donor.credit_limit_gbp
+    donor_notes = (donor.notes or "").strip()
+    keeper_notes = (keeper.notes or "").strip()
+    if donor_notes and (not keeper_notes or keeper_notes == "From account"):
+        if donor_notes != "From account":
+            keeper.notes = donor.notes
+
+
+def _debt_types_compatible(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if left == DebtType.OTHER.value or right == DebtType.OTHER.value:
+        return True
+    loanish = {DebtType.LOAN.value, DebtType.BUSINESS_LOAN.value}
+    return left in loanish and right in loanish
+
+
 class FinanceLiabilitiesService:
     async def list_liabilities(
         self,
@@ -69,6 +142,9 @@ class FinanceLiabilitiesService:
 
             await finance_live_refresh_service.ensure_fresh(db)
             await self.ensure_from_accounts(db)
+        else:
+            # One-shot cleanup so production duplicates disappear on normal reads.
+            await self.dedupe_active_liabilities(db)
         stmt = select(FinanceLiabilityRow).order_by(FinanceLiabilityRow.balance_gbp.desc())
         if scope is not None:
             stmt = stmt.where(FinanceLiabilityRow.scope == scope.value)
@@ -77,19 +153,118 @@ class FinanceLiabilitiesService:
         rows = await db.scalars(stmt)
         return [_to_schema(r) for r in rows.all()]
 
+    async def dedupe_active_liabilities(self, db: AsyncSession) -> int:
+        """Archive duplicate active debts. Never hard-deletes.
+
+        Rules:
+        * one active liability per linked ``account_id``
+        * near-duplicates with the same scope + normalised name (compatible
+          debt_type) collapse onto the preferred row (account-linked first)
+        """
+        rows = list(
+            (
+                await db.scalars(
+                    select(FinanceLiabilityRow).where(FinanceLiabilityRow.is_active.is_(True))
+                )
+            ).all()
+        )
+        if not rows:
+            return 0
+
+        archived = 0
+        now = datetime.now(timezone.utc)
+        touched = False
+
+        by_account: dict[int, list[FinanceLiabilityRow]] = {}
+        for row in rows:
+            if row.account_id is None:
+                continue
+            by_account.setdefault(row.account_id, []).append(row)
+
+        for group in by_account.values():
+            if len(group) < 2:
+                continue
+            keeper = group[0]
+            for candidate in group[1:]:
+                keeper = _prefer_liability(keeper, candidate)
+            for row in group:
+                if row.id == keeper.id:
+                    continue
+                _merge_liability_fields(keeper, row)
+                row.is_active = False
+                row.updated_at = now
+                archived += 1
+                touched = True
+            keeper.updated_at = now
+            touched = True
+
+        active = [row for row in rows if row.is_active]
+        by_name: dict[tuple[str, str], list[FinanceLiabilityRow]] = {}
+        for row in active:
+            key = (row.scope, _normalise_debt_name(row.name))
+            by_name.setdefault(key, []).append(row)
+
+        for group in by_name.values():
+            if len(group) < 2:
+                continue
+            # Partition by compatible debt type so e.g. mortgage + card stay separate.
+            clusters: list[list[FinanceLiabilityRow]] = []
+            for row in group:
+                placed = False
+                for cluster in clusters:
+                    if _debt_types_compatible(cluster[0].debt_type, row.debt_type):
+                        cluster.append(row)
+                        placed = True
+                        break
+                if not placed:
+                    clusters.append([row])
+            for cluster in clusters:
+                if len(cluster) < 2:
+                    continue
+                keeper = cluster[0]
+                for candidate in cluster[1:]:
+                    keeper = _prefer_liability(keeper, candidate)
+                for row in cluster:
+                    if row.id == keeper.id:
+                        continue
+                    _merge_liability_fields(keeper, row)
+                    row.is_active = False
+                    row.updated_at = now
+                    archived += 1
+                    touched = True
+                keeper.updated_at = now
+                touched = True
+
+        if touched:
+            await db.commit()
+        return archived
+
     async def ensure_from_accounts(self, db: AsyncSession) -> int:
-        """Mirror loan-like accounts onto the Debts list, linked to avoid double-count."""
+        """Mirror loan-like accounts onto the Debts list, linked to avoid double-count.
+
+        Idempotent: never creates a second liability for an account that already
+        has one. Unmatched same-name manual debts are linked before create.
+        """
         accounts = (
             await db.scalars(
                 select(FinanceAccountRow).where(FinanceAccountRow.is_active.is_(True))
             )
         ).all()
-        liabilities = (await db.scalars(select(FinanceLiabilityRow))).all()
-        by_account_id = {row.account_id: row for row in liabilities if row.account_id}
+        liabilities = list((await db.scalars(select(FinanceLiabilityRow))).all())
+
+        by_account_id: dict[int, FinanceLiabilityRow] = {}
+        for row in liabilities:
+            if row.account_id is None:
+                continue
+            existing = by_account_id.get(row.account_id)
+            if existing is None:
+                by_account_id[row.account_id] = row
+            else:
+                # Keep a single preferred row in the lookup; extras are archived later.
+                by_account_id[row.account_id] = _prefer_liability(existing, row)
+
         unmatched = [
-            row
-            for row in liabilities
-            if row.account_id is None and row.is_active
+            row for row in liabilities if row.account_id is None and row.is_active
         ]
         created = 0
         now = datetime.now(timezone.utc)
@@ -100,40 +275,47 @@ class FinanceLiabilitiesService:
             balance = round(abs(account.balance_gbp or 0), 2)
             row = by_account_id.get(account.id)
             if row is None:
-                account_name = account.name.strip().lower()
-                for candidate in unmatched:
-                    if (
-                        candidate.scope == account.scope
-                        and candidate.name.strip().lower() == account_name
-                    ):
-                        row = candidate
-                        row.account_id = account.id
-                        unmatched.remove(candidate)
+                account_name = _normalise_debt_name(account.name)
+                match_idx: int | None = None
+                for idx, candidate in enumerate(unmatched):
+                    if candidate.scope != account.scope:
+                        continue
+                    if _normalise_debt_name(candidate.name) != account_name:
+                        continue
+                    if not _debt_types_compatible(candidate.debt_type, debt_type.value):
+                        continue
+                    match_idx = idx
+                    # Prefer an exact debt_type match when several candidates exist.
+                    if candidate.debt_type == debt_type.value:
                         break
+                if match_idx is not None:
+                    row = unmatched.pop(match_idx)
+                    row.account_id = account.id
+                    by_account_id[account.id] = row
             if debt_type != DebtType.DIRECTORS_LOAN and balance <= 0:
                 if row is not None and row.is_active:
                     row.balance_gbp = 0
                     row.updated_at = now
                 continue
             if row is None:
-                db.add(
-                    FinanceLiabilityRow(
-                        scope=account.scope,
-                        name=account.name,
-                        debt_type=debt_type.value,
-                        balance_gbp=balance,
-                        interest_rate_pct=account.interest_rate_pct or 0,
-                        minimum_payment_gbp=account.minimum_payment_gbp or 0,
-                        original_balance_gbp=balance,
-                        account_id=account.id,
-                        notes="From account",
-                        dla_direction=getattr(account, "dla_direction", None),
-                        credit_limit_gbp=getattr(account, "credit_limit_gbp", None),
-                        is_active=True,
-                        created_at=now,
-                        updated_at=now,
-                    )
+                new_row = FinanceLiabilityRow(
+                    scope=account.scope,
+                    name=account.name,
+                    debt_type=debt_type.value,
+                    balance_gbp=balance,
+                    interest_rate_pct=account.interest_rate_pct or 0,
+                    minimum_payment_gbp=account.minimum_payment_gbp or 0,
+                    original_balance_gbp=balance,
+                    account_id=account.id,
+                    notes="From account",
+                    dla_direction=getattr(account, "dla_direction", None),
+                    credit_limit_gbp=getattr(account, "credit_limit_gbp", None),
+                    is_active=True,
+                    created_at=now,
+                    updated_at=now,
                 )
+                db.add(new_row)
+                by_account_id[account.id] = new_row
                 created += 1
                 continue
             row.balance_gbp = balance
@@ -148,16 +330,26 @@ class FinanceLiabilitiesService:
                 row.credit_limit_gbp = account.credit_limit_gbp
             row.updated_at = now
         await db.commit()
+        await self.dedupe_active_liabilities(db)
         return created
 
     async def archive_for_account(self, db: AsyncSession, account_id: int) -> None:
-        row = await db.scalar(
-            select(FinanceLiabilityRow).where(FinanceLiabilityRow.account_id == account_id)
+        rows = list(
+            (
+                await db.scalars(
+                    select(FinanceLiabilityRow).where(
+                        FinanceLiabilityRow.account_id == account_id,
+                        FinanceLiabilityRow.is_active.is_(True),
+                    )
+                )
+            ).all()
         )
-        if row is None:
+        if not rows:
             return
-        row.is_active = False
-        row.updated_at = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            row.is_active = False
+            row.updated_at = now
         await db.commit()
 
     async def get(self, db: AsyncSession, liability_id: int) -> FinanceLiability | None:
