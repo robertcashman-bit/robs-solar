@@ -609,6 +609,8 @@ class FinanceOverviewResponse(BaseModel):
     upcoming_payments: list[dict[str, Any]] = Field(default_factory=list)
     pension_configured: bool = False
     mortgage_configured: bool = False
+    safe_to_spend: dict[str, Any] = Field(default_factory=dict)
+    cash_status: str = "HEALTHY"
 
 
 class CashflowScopeColumn(BaseModel):
@@ -734,6 +736,11 @@ class QuickFileConfigStatus(BaseModel):
     application_id: str = ""
     configured: bool = False
     last_sync_at: str | None = None
+    budget_account_external_ids: list[str] = Field(default_factory=list)
+
+
+class QuickFileBudgetAccountsUpdate(BaseModel):
+    external_ids: list[str] = Field(default_factory=list)
 
 
 class QuickFileSyncResult(BaseModel):

@@ -175,6 +175,33 @@ class FinanceInsightsService:
                 )
             )
 
+        safe = getattr(overview, "safe_to_spend", None) or {}
+        personal_safe = safe.get("personal") or {}
+        if personal_safe.get("status") in {"LOW_CASH", "PROJECTED_SHORTFALL"}:
+            amount = float(personal_safe.get("safe_to_spend_gbp") or 0)
+            candidates.append(
+                (
+                    FinanceInsightCategory.CASHFLOW.value,
+                    FinanceInsightSeverity.WARNING.value,
+                    "Available discretionary spending is limited",
+                    f"Safe to spend this month is about {amount:.0f} GBP after essentials, "
+                    "debt minimums and your cash buffer.",
+                )
+            )
+        business_safe = safe.get("business") or {}
+        biz_break = business_safe.get("breakdown") or {}
+        vat_short = float(biz_break.get("vat_reserve_topup_gbp") or 0)
+        if vat_short > 50:
+            candidates.append(
+                (
+                    FinanceInsightCategory.TAX.value,
+                    FinanceInsightSeverity.INFO.value,
+                    "VAT reserve may need a monthly top-up",
+                    f"Suggested VAT reserve top-up is about {vat_short:.0f} GBP this month "
+                    "(planning estimate only — not tax advice).",
+                )
+            )
+
         prior_snap = await db.scalar(
             select(PersonalFinanceSnapshotRow)
             .order_by(PersonalFinanceSnapshotRow.snapshot_date.desc())

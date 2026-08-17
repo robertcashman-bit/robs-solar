@@ -208,6 +208,15 @@ class FinanceOverviewService:
         )
         interest_gbp, interest_incomplete = monthly_interest_from_debts(liability_views)
 
+        from app.services.finance.finance_safe_spend_service import compute_safe_to_spend
+
+        safe_to_spend = compute_safe_to_spend(
+            totals=totals,
+            personal=personal_snapshot_view(personal_snap),
+            business=business_snapshot_view(business_snap),
+            liabilities=liability_views,
+        )
+
         overview = FinanceOverviewResponse(
             personal_bank_balance_gbp=personal_bank,
             business_bank_balance_gbp=business_bank,
@@ -277,6 +286,8 @@ class FinanceOverviewService:
                 account_type="mortgage",
                 debt_type="mortgage",
             ),
+            safe_to_spend=safe_to_spend,
+            cash_status=str(safe_to_spend.get("combined", {}).get("status") or "HEALTHY"),
         )
         overview.insights = await finance_insights_service.refresh_for_overview(db, overview)
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")

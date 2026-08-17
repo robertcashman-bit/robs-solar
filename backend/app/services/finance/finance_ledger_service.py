@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import FinanceTransactionRow
+from app.services.finance.category_registry import confirm_rule
 from app.services.finance.finance_audit_service import finance_audit_service
 from app.services.finance.money import from_pence
 
@@ -28,6 +29,13 @@ class FinanceLedgerService:
         account_id: int | None = None,
         include_deleted: bool = False,
         limit: int = 500,
+        filter_key: str | None = None,
+        q: str | None = None,
+        min_amount_gbp: float | None = None,
+        max_amount_gbp: float | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        source: str | None = None,
     ) -> list[dict[str, Any]]:
         stmt = select(FinanceTransactionRow).order_by(
             FinanceTransactionRow.posted_on.desc(),
@@ -43,8 +51,55 @@ class FinanceLedgerService:
             stmt = stmt.where(FinanceTransactionRow.category == category)
         if account_id is not None:
             stmt = stmt.where(FinanceTransactionRow.account_id == account_id)
-        rows = (await db.scalars(stmt.limit(limit))).all()
-        return [self.to_public(row) for row in rows]
+        if source:
+            stmt = stmt.where(FinanceTransactionRow.source == source)
+        if date_from:
+            stmt = stmt.where(FinanceTransactionRow.posted_on >= date_from)
+        if date_to:
+            stmt = stmt.where(FinanceTransactionRow.posted_on <= date_to)
+        rows = list((await db.scalars(stmt.limit(min(limit, 2000)))).all())
+
+        key = (filter_key or "all").lower()
+        if key == "uncategorised":
+            rows = [row for row in rows if not (row.category or "").strip()]
+        elif key == "low_confidence":
+            rows = [
+                row
+                for row in rows
+                if (getattr(row, "category_confidence", "") or "").upper() == "LOW"
+                or not (row.category or "").strip()
+            ]
+        elif key == "transfers":
+            rows = [row for row in rows if row.is_transfer]
+        elif key == "recurring":
+            rows = [row for row in rows if (row.subcategory or "").startswith("recurring")]
+        elif key == "excluded":
+            rows = [row for row in rows if getattr(row, "excluded_from_budget", False)]
+        elif key == "income":
+            rows = [row for row in rows if row.amount_pence > 0 and not row.is_transfer]
+        elif key == "expenses":
+            rows = [row for row in rows if row.amount_pence < 0 and not row.is_transfer]
+        elif key == "needs_review":
+            rows = [row for row in rows if row.subcategory == "needs_review"]
+
+        if q:
+            needle = q.strip().lower()
+            rows = [
+                row
+                for row in rows
+                if needle in (row.description or "").lower()
+                or needle in (row.category or "").lower()
+                or needle in (row.account_name or "").lower()
+                or needle in f"{from_pence(row.amount_pence):.2f}"
+            ]
+        if min_amount_gbp is not None:
+            min_p = int(round(min_amount_gbp * 100))
+            rows = [row for row in rows if abs(row.amount_pence) >= abs(min_p)]
+        if max_amount_gbp is not None:
+            max_p = int(round(max_amount_gbp * 100))
+            rows = [row for row in rows if abs(row.amount_pence) <= abs(max_p)]
+
+        return [self.to_public(row) for row in rows[:limit]]
 
     def to_public(self, row: FinanceTransactionRow) -> dict[str, Any]:
         return {
@@ -59,6 +114,10 @@ class FinanceLedgerService:
             "txn_type": row.txn_type,
             "category": row.category,
             "subcategory": row.subcategory,
+            "category_confidence": getattr(row, "category_confidence", "") or "",
+            "transfer_group_id": getattr(row, "transfer_group_id", None),
+            "excluded_from_budget": bool(getattr(row, "excluded_from_budget", False)),
+            "notes": getattr(row, "notes", "") or "",
             "source": row.source,
             "import_batch_id": row.import_batch_id,
             "is_transfer": row.is_transfer,
@@ -108,6 +167,8 @@ class FinanceLedgerService:
         category: str,
         subcategory: str = "",
         actor: str = "user",
+        create_rule: bool = False,
+        confidence: str = "HIGH",
     ) -> dict[str, Any] | None:
         row = await db.get(FinanceTransactionRow, txn_id)
         if row is None or row.is_deleted:
@@ -115,6 +176,8 @@ class FinanceLedgerService:
         previous = row.category
         row.category = category[:64]
         row.subcategory = subcategory[:64]
+        if hasattr(row, "category_confidence"):
+            row.category_confidence = (confidence or "HIGH")[:16]
         row.updated_at = datetime.now(timezone.utc)
         await finance_audit_service.record(
             db,
@@ -125,8 +188,60 @@ class FinanceLedgerService:
             new_value=row.category,
             actor=actor,
         )
-        await db.commit()
+        if create_rule and row.description.strip():
+            await confirm_rule(
+                db,
+                pattern=row.description.strip()[:80],
+                category=row.category,
+                scope=row.scope,
+            )
+        else:
+            await db.commit()
         return self.to_public(row)
+
+    async def bulk_categorise(
+        self,
+        db: AsyncSession,
+        txn_ids: list[int],
+        *,
+        category: str,
+        create_rule: bool = False,
+        actor: str = "user",
+    ) -> dict[str, Any]:
+        updated = 0
+        rule_pattern = ""
+        for txn_id in txn_ids[:200]:
+            row = await db.get(FinanceTransactionRow, txn_id)
+            if row is None or row.is_deleted:
+                continue
+            previous = row.category
+            row.category = category[:64]
+            if hasattr(row, "category_confidence"):
+                row.category_confidence = "HIGH"
+            row.updated_at = datetime.now(timezone.utc)
+            if not rule_pattern and row.description.strip():
+                rule_pattern = row.description.strip()[:80]
+            await finance_audit_service.record(
+                db,
+                entity_type="transaction",
+                entity_id=str(row.id),
+                field="category",
+                previous_value=previous,
+                new_value=row.category,
+                actor=actor,
+            )
+            updated += 1
+        if create_rule and rule_pattern:
+            scope_row = await db.get(FinanceTransactionRow, txn_ids[0])
+            await confirm_rule(
+                db,
+                pattern=rule_pattern,
+                category=category[:64],
+                scope=scope_row.scope if scope_row else "personal",
+            )
+        else:
+            await db.commit()
+        return {"updated": updated, "category": category[:64]}
 
     async def soft_delete(
         self,

@@ -96,6 +96,32 @@ export const financeOverviewSchema = z.object({
     .default([]),
   pension_configured: z.boolean().optional(),
   mortgage_configured: z.boolean().optional(),
+  safe_to_spend: z
+    .object({
+      personal: z
+        .object({
+          safe_to_spend_gbp: z.number(),
+          status: z.string(),
+          breakdown: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional(),
+      business: z
+        .object({
+          available_business_cash_gbp: z.number(),
+          status: z.string(),
+          breakdown: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional(),
+      combined: z
+        .object({
+          safe_to_spend_gbp: z.number(),
+          status: z.string(),
+        })
+        .optional(),
+    })
+    .optional()
+    .default({}),
+  cash_status: z.string().optional().default("HEALTHY"),
   active_budget: activeBudgetSummarySchema.nullable().optional(),
   insights: z.array(financeInsightSchema),
 });

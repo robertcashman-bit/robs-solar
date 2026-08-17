@@ -209,13 +209,37 @@ class HistoryBudgetService:
                 recurring=True,
             )
         elif windowed["recommended_gbp"] is not None:
+            from app.services.finance.finance_history_stats import (
+                classify_volatility,
+                median_gbp,
+                remove_outliers,
+            )
+
+            series = list(monthly_totals.values())
+            kept, outliers = remove_outliers(series)
+            med = median_gbp(kept or series)
+            volatility = classify_volatility(cv, recurring=False)
             amount = windowed["recommended_gbp"]
+            if volatility in {"VARIABLE", "EXCEPTIONAL"} and med > 0:
+                amount = med
             basis = {
-                "kind": "weighted_average",
+                "kind": (
+                    "weighted_average"
+                    if volatility not in {"VARIABLE", "EXCEPTIONAL"}
+                    else "median"
+                ),
                 "windows": windowed["available"],
                 "weights": windowed["weights"],
                 "formula": windowed["formula"],
                 "txn_count": len(group),
+                "median_gbp": med,
+                "volatility": volatility,
+                "outlier_months": len(outliers),
+                "trend_note": (
+                    "Volatile categories use median so one-offs do not distort the budget."
+                    if volatility in {"VARIABLE", "EXCEPTIONAL"}
+                    else "Weighted multi-window average of stored months."
+                ),
             }
             confidence = _confidence(
                 month_count=len(monthly_totals),

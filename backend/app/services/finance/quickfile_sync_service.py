@@ -33,7 +33,14 @@ class QuickFileSyncService:
             raise exc
 
         synced = 0
+        include_ids = await quickfile_settings_service.get_budget_account_ids(db)
         for item in accounts:
+            external_id = str(item.get("external_id") or "")
+            if include_ids and external_id and external_id not in include_ids:
+                # Still upsert but mark inactive so balances do not drive budget cash.
+                item = {**item, "include_in_budget": False}
+            else:
+                item = {**item, "include_in_budget": True}
             await self._upsert_account(db, item)
             synced += 1
 
@@ -92,7 +99,7 @@ class QuickFileSyncService:
                 notes=item.get("notes", ""),
                 source=FinanceAccountSource.QUICKFILE.value,
                 external_id=external_id,
-                is_active=True,
+                is_active=bool(item.get("include_in_budget", True)),
                 created_at=now,
                 updated_at=now,
             )
@@ -102,7 +109,7 @@ class QuickFileSyncService:
             row.balance_gbp = item.get("balance_gbp", 0.0)
             row.account_type = item["account_type"]
             row.notes = item.get("notes", row.notes)
-            row.is_active = True
+            row.is_active = bool(item.get("include_in_budget", True))
             row.updated_at = now
         await db.commit()
 

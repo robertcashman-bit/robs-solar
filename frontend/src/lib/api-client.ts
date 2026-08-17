@@ -85,4 +85,27 @@ export const apiClient = {
       body: body ? JSON.stringify(body) : undefined,
     }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  postForm: async <T>(path: string, form: FormData): Promise<T> => {
+    const headers = new Headers();
+    if (csrfToken) {
+      headers.set("X-CSRF-Token", csrfToken);
+    }
+    const response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers,
+      body: form,
+      credentials: "include",
+    });
+    if (!response.ok) {
+      let detail = response.statusText;
+      try {
+        const body = await response.json();
+        detail = typeof body.detail === "string" ? body.detail : detail;
+      } catch {
+        // ignore
+      }
+      throw new ApiError(String(detail), response.status);
+    }
+    return response.json() as Promise<T>;
+  },
 };

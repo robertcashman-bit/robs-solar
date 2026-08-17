@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -14,6 +15,7 @@ from app.services.settings_crypto import open_json, seal_json
 
 _QUICKFILE_KEY = "quickfile"
 _LAST_SYNC_KEY = "quickfile_last_sync_at"
+_BUDGET_ACCOUNTS_KEY = "quickfile_budget_account_ids"
 
 
 class QuickFileSettingsService:
@@ -43,6 +45,29 @@ class QuickFileSettingsService:
             application_id=stored.application_id or env.application_id,
         )
 
+    async def get_budget_account_ids(self, db: AsyncSession) -> list[str]:
+        row = await self._get_row(db, _BUDGET_ACCOUNTS_KEY)
+        if row is None or not (row.value or "").strip():
+            return []
+        try:
+            data = json.loads(row.value)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(data, list):
+            return []
+        return [str(item) for item in data if str(item).strip()]
+
+    async def set_budget_account_ids(self, db: AsyncSession, external_ids: list[str]) -> list[str]:
+        cleaned = [str(item).strip() for item in external_ids if str(item).strip()]
+        payload = json.dumps(cleaned)
+        row = await self._get_row(db, _BUDGET_ACCOUNTS_KEY)
+        if row is None:
+            db.add(AppSettingRow(key=_BUDGET_ACCOUNTS_KEY, value=payload))
+        else:
+            row.value = payload
+        await db.commit()
+        return cleaned
+
     async def get_status(self, db: AsyncSession) -> QuickFileConfigStatus:
         config = await self.get_config(db)
         sync_row = await self._get_row(db, _LAST_SYNC_KEY)
@@ -56,6 +81,7 @@ class QuickFileSettingsService:
             application_id=config.application_id,
             configured=configured,
             last_sync_at=last_sync,
+            budget_account_external_ids=await self.get_budget_account_ids(db),
         )
 
     async def set_config(

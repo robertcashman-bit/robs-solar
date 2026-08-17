@@ -188,16 +188,33 @@ class FinanceImportService:
         await db.flush()
         accounts = await self._account_map(db)
         imported = 0
+        from app.services.finance.finance_categoriser_service import finance_categoriser_service
+
         try:
             for item in preview["accepted"]:
                 account = accounts.get(item["account_key"]) or accounts.get(item["account_name"])
+                scope = (
+                    item["scope"]
+                    if item["scope"] in {"personal", "business"}
+                    else "personal"
+                )
+                category = item.get("category") or ""
+                confidence = ""
+                is_transfer = bool(item["is_transfer"])
+                if not category:
+                    guessed = await finance_categoriser_service.categorise(
+                        db, item["description"], scope=scope
+                    )
+                    category = guessed.get("category") or ""
+                    confidence = guessed.get("confidence") or ""
+                    if category == "Transfers" or finance_categoriser_service.looks_like_transfer(
+                        item["description"]
+                    ):
+                        is_transfer = True
+                        item["txn_type"] = "transfer"
                 db.add(
                     FinanceTransactionRow(
-                        scope=(
-                            item["scope"]
-                            if item["scope"] in {"personal", "business"}
-                            else "personal"
-                        ),
+                        scope=scope,
                         account_id=account.id if account else None,
                         account_name=item["account_name"] or (account.name if account else ""),
                         external_id=item["external_id"],
@@ -205,11 +222,12 @@ class FinanceImportService:
                         amount_pence=item["amount_pence"],
                         description=item["description"],
                         txn_type=item["txn_type"],
-                        category=item["category"],
+                        category=category,
+                        category_confidence=confidence,
                         source=source,
                         import_batch_id=batch.id,
                         fingerprint=item["fingerprint"],
-                        is_transfer=item["is_transfer"],
+                        is_transfer=is_transfer,
                         is_deleted=False,
                         currency="GBP",
                         created_at=now,
@@ -231,6 +249,14 @@ class FinanceImportService:
             )
             if persist:
                 await db.commit()
+                try:
+                    from app.services.finance.finance_transfer_service import (
+                        finance_transfer_service,
+                    )
+
+                    await finance_transfer_service.detect_and_mark(db, persist=True)
+                except Exception:
+                    pass
             else:
                 await db.flush()
         except Exception:

@@ -4,8 +4,18 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.cron import require_cron_secret
@@ -59,6 +69,7 @@ from app.schemas.finance import (
     MonthlyBudgetLineUpdate,
     PersonalFinanceSnapshot,
     PersonalFinanceSnapshotCreate,
+    QuickFileBudgetAccountsUpdate,
     QuickFileConfig,
     QuickFileConfigStatus,
     QuickFileReportsResponse,
@@ -711,6 +722,19 @@ async def quickfile_save_settings(
     return await quickfile_settings_service.set_config(db, body)
 
 
+@router.put("/integrations/quickfile/budget-accounts", response_model=QuickFileConfigStatus)
+async def quickfile_budget_accounts(
+    request: Request,
+    body: QuickFileBudgetAccountsUpdate,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> QuickFileConfigStatus:
+    """Select which QuickFile bank accounts feed the budget (empty = all)."""
+    await enforce_write_rate_limit(request)
+    await quickfile_settings_service.set_budget_account_ids(db, body.external_ids)
+    return await quickfile_settings_service.get_status(db)
+
+
 @router.post("/integrations/quickfile/test")
 async def quickfile_test_connection(
     request: Request,
@@ -968,6 +992,14 @@ async def list_transactions(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     category: str | None = None,
     account_id: int | None = None,
+    filter_key: str | None = Query(default=None, alias="filter"),
+    q: str | None = None,
+    min_amount_gbp: float | None = None,
+    max_amount_gbp: float | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    source: str | None = None,
+    limit: int = Query(default=500, ge=1, le=2000),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
@@ -979,6 +1011,40 @@ async def list_transactions(
         month=month,
         category=category,
         account_id=account_id,
+        filter_key=filter_key,
+        q=q,
+        min_amount_gbp=min_amount_gbp,
+        max_amount_gbp=max_amount_gbp,
+        date_from=date_from,
+        date_to=date_to,
+        source=source,
+        limit=limit,
+    )
+
+
+@router.post("/transactions/import/parse")
+async def parse_statement_import(
+    request: Request,
+    file: UploadFile = File(...),
+    account_name: str = Form(...),
+    scope: str = Form("personal"),
+    session: SessionData = Depends(require_admin_csrf),
+) -> dict:
+    await enforce_write_rate_limit(request)
+    from app.services.finance.statement_parsers import parse_statement_bytes
+
+    content = await file.read()
+    if len(content) > 8_000_000:
+        raise HTTPException(status_code=400, detail="File too large (max 8MB)")
+    if not account_name.strip():
+        raise HTTPException(status_code=400, detail="Account name is required")
+    if scope not in {"personal", "business"}:
+        raise HTTPException(status_code=400, detail="Scope must be personal or business")
+    return parse_statement_bytes(
+        content,
+        file.filename or "statement.csv",
+        account_name=account_name.strip(),
+        scope=scope,
     )
 
 
@@ -993,7 +1059,7 @@ async def preview_transaction_import(
     from app.services.finance.finance_import_service import finance_import_service
 
     rows = body.get("rows") if isinstance(body.get("rows"), list) else []
-    source = str(body.get("source") or "manual")
+    source = str(body.get("source") or "csv")
     preview = await finance_import_service.preview(db, rows, source=source)
     preview.pop("accepted", None)
     return preview
@@ -1011,13 +1077,37 @@ async def commit_transaction_import(
     from app.services.finance.finance_import_service import finance_import_service
 
     rows = body.get("rows") if isinstance(body.get("rows"), list) else []
-    source = str(body.get("source") or "manual")
+    source = str(body.get("source") or "csv")
     result = await finance_import_service.commit(db, rows, source=source, actor="user")
     try:
         await create_backup(db, trigger="manual_import", actor="user")
     except Exception:
         pass
     return result
+
+
+@router.post("/transactions/bulk-category")
+async def bulk_categorise_transactions(
+    request: Request,
+    body: dict,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await enforce_write_rate_limit(request)
+    from app.services.finance.finance_ledger_service import finance_ledger_service
+
+    ids = body.get("ids") if isinstance(body.get("ids"), list) else []
+    txn_ids = [int(item) for item in ids if str(item).isdigit() or isinstance(item, int)]
+    category = str(body.get("category") or "").strip()
+    if not category:
+        raise HTTPException(status_code=400, detail="Category is required")
+    return await finance_ledger_service.bulk_categorise(
+        db,
+        txn_ids,
+        category=category,
+        create_rule=bool(body.get("create_rule")),
+        actor="user",
+    )
 
 
 @router.post("/transactions/{txn_id}/category")
@@ -1036,6 +1126,7 @@ async def categorise_transaction(
         txn_id,
         category=str(body.get("category") or ""),
         subcategory=str(body.get("subcategory") or ""),
+        create_rule=bool(body.get("create_rule")),
         actor="user",
     )
     if result is None:
@@ -1062,6 +1153,197 @@ async def delete_transaction(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="Transaction not found")
+
+
+@router.post("/transfers/detect")
+async def detect_transfers(
+    request: Request,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await enforce_write_rate_limit(request)
+    from app.services.finance.finance_transfer_service import finance_transfer_service
+
+    return await finance_transfer_service.detect_and_mark(db)
+
+
+@router.get("/history-stats")
+async def history_stats(
+    scope: FinanceScope = FinanceScope.PERSONAL,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    from app.services.finance.finance_history_stats import finance_history_stats_service
+
+    return await finance_history_stats_service.category_stats(db, scope=scope.value)
+
+
+@router.get("/history-stats/explain")
+async def history_stats_explain(
+    category: str,
+    scope: FinanceScope = FinanceScope.PERSONAL,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    from app.services.finance.finance_history_stats import finance_history_stats_service
+
+    return await finance_history_stats_service.explain_category(
+        db, scope=scope.value, category=category
+    )
+
+
+
+@router.post("/finance-ai/interpret")
+async def finance_ai_interpret(
+    request: Request,
+    body: dict,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Interpret overview metrics only — never raw ledger rows."""
+    await enforce_write_rate_limit(request)
+    from app.services.finance.finance_ai_insights_service import finance_ai_insights_service
+    from app.services.finance.finance_overview_service import finance_overview_service
+
+    overview = await finance_overview_service.get_overview(db, refresh_live=False)
+    metrics = {
+        "cash_status": overview.cash_status,
+        "safe_to_spend": overview.safe_to_spend,
+        "monthly_income_gbp": overview.monthly_income_gbp,
+        "monthly_spending_gbp": overview.monthly_spending_gbp,
+        "monthly_surplus_gbp": overview.monthly_surplus_gbp,
+        "vat_reserve_gbp": overview.vat_reserve_gbp,
+        "corp_tax_reserve_gbp": overview.corp_tax_reserve_gbp,
+        "external_debt_gbp": overview.external_debt_gbp,
+    }
+    prompt = str(body.get("prompt") or "Explain my cashflow")
+    return await finance_ai_insights_service.interpret_metrics(metrics, prompt)
+
+
+@router.get("/data-quality")
+async def data_quality_report(
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    from app.services.finance.finance_data_quality_service import finance_data_quality_service
+
+    return await finance_data_quality_service.report(db)
+
+
+@router.get("/upcoming")
+async def upcoming_money(
+    days: int = Query(default=30, ge=1, le=365),
+    scope: FinanceScope | None = None,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Predicted bills/income from confirmed recurring + cashflow entries."""
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.db.models import CashflowForecastRow, FinanceRecurringRuleRow
+    from app.services.finance.money import quantize_gbp
+
+    today = datetime.now(timezone.utc).date()
+    end = today + timedelta(days=days)
+    items: list[dict] = []
+
+    stmt = select(FinanceRecurringRuleRow).where(FinanceRecurringRuleRow.status == "confirmed")
+    if scope:
+        stmt = stmt.where(FinanceRecurringRuleRow.scope == scope.value)
+    for row in (await db.scalars(stmt)).all():
+        evidence = {}
+        try:
+            evidence = json.loads(row.evidence_json or "{}")
+        except Exception:
+            evidence = {}
+        next_date = str(evidence.get("expected_next_date") or "")
+        if not next_date:
+            day = int(evidence.get("typical_day") or today.day)
+            day = min(max(day, 1), 28)
+            candidate = today.replace(day=day)
+            if candidate < today:
+                month = today.month + 1
+                year = today.year + (1 if month > 12 else 0)
+                month = 1 if month > 12 else month
+                candidate = candidate.replace(year=year, month=month)
+            next_date = candidate.isoformat()
+        if today.isoformat() <= next_date <= end.isoformat():
+            items.append(
+                {
+                    "date": next_date,
+                    "label": row.description,
+                    "amount_gbp": float(quantize_gbp(row.amount_gbp) or 0),
+                    "account": row.scope,
+                    "confidence": "HIGH",
+                    "source": "recurring",
+                    "category": row.category,
+                }
+            )
+
+    cf_stmt = select(CashflowForecastRow).where(
+        CashflowForecastRow.forecast_date >= today.isoformat(),
+        CashflowForecastRow.forecast_date <= end.isoformat(),
+    )
+    if scope:
+        cf_stmt = cf_stmt.where(CashflowForecastRow.scope == scope.value)
+    for row in (await db.scalars(cf_stmt)).all():
+        items.append(
+            {
+                "date": row.forecast_date,
+                "label": row.label,
+                "amount_gbp": float(row.amount_gbp),
+                "account": row.scope,
+                "confidence": "HIGH" if row.is_confirmed else "MEDIUM",
+                "source": row.source or "cashflow",
+                "category": row.entry_type,
+            }
+        )
+
+    items.sort(key=lambda item: item["date"])
+    return {"days": days, "items": items, "count": len(items)}
+
+
+@router.get("/export/transactions.csv")
+async def export_transactions_csv(
+    scope: FinanceScope | None = None,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
+    import csv
+    import io
+
+    from app.services.finance.finance_ledger_service import finance_ledger_service
+
+    rows = await finance_ledger_service.list_transactions(
+        db, scope=scope.value if scope else None, limit=5000
+    )
+    buf = io.StringIO()
+    writer = csv.DictWriter(
+        buf,
+        fieldnames=[
+            "posted_on",
+            "scope",
+            "account_name",
+            "description",
+            "amount_gbp",
+            "category",
+            "txn_type",
+            "is_transfer",
+            "source",
+        ],
+    )
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({key: row.get(key) for key in writer.fieldnames})
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=transactions.csv"},
+    )
 
 
 @router.get("/import-history")

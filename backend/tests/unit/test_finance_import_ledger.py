@@ -68,7 +68,7 @@ async def test_commit_persists_and_flags_duplicates(setup_db: None) -> None:
         rows = (await db.scalars(select(FinanceTransactionRow))).all()
         assert len(rows) == 1
         assert rows[0].amount_pence == -1234
-        assert rows[0].category == ""
+        assert rows[0].category == "Food"
 
 
 @pytest.mark.asyncio

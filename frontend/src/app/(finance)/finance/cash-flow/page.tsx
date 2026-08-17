@@ -20,12 +20,14 @@ import { canWrite } from "@/lib/permissions";
 
 const horizons = [30, 60, 90] as const;
 const scopes = ["all", "personal", "business"] as const;
+const scenarios = ["conservative", "expected", "optimistic"] as const;
 
 export default function CashFlowPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const [horizon, setHorizon] = useState<number>(30);
   const [scope, setScope] = useState<(typeof scopes)[number]>("all");
+  const [scenario, setScenario] = useState<(typeof scenarios)[number]>("expected");
   const [forecast, setForecast] = useState<CashflowForecast | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -122,6 +124,18 @@ export default function CashFlowPage() {
               ))}
             </div>
             <div className="flex gap-1 rounded-lg border border-[var(--border)] p-1">
+              {scenarios.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className={`rounded-md px-3 py-1 text-sm capitalize ${scenario === item ? "bg-teal-600 text-white" : ""}`}
+                  onClick={() => setScenario(item)}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1 rounded-lg border border-[var(--border)] p-1">
               {horizons.map((item) => (
                 <button
                   key={item}
@@ -140,11 +154,29 @@ export default function CashFlowPage() {
       {status ? <div className="mt-4"><SuccessBanner message={status} /></div> : null}
       {forecast ? (
         <>
+          <p className="mt-4 text-sm text-[var(--muted)]">
+            Scenario <span className="font-medium text-[var(--foreground)]">{scenario}</span>
+            {scenario === "conservative"
+              ? " — income entries shown at 85% for planning stress."
+              : scenario === "optimistic"
+                ? " — income entries shown at 115%."
+                : " — expected recurring and confirmed entries as recorded."}
+          </p>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <MetricTile label="Starting balance" value={forecast.starting_balance_gbp} />
             <MetricTile
               label="Projected balance"
-              value={forecast.projected_balance_gbp}
+              value={
+                forecast.projected_balance_gbp +
+                forecast.entries
+                  .filter((entry) => entry.entry_type === "income")
+                  .reduce((sum, entry) => {
+                    const base = entry.amount_gbp;
+                    const factor =
+                      scenario === "conservative" ? 0.85 : scenario === "optimistic" ? 1.15 : 1;
+                    return sum + base * (factor - 1);
+                  }, 0)
+              }
               warning={forecast.cash_pressure_warning}
             />
             <MetricTile label="Horizon" value={forecast.horizon_days} format="number" hint="days" />

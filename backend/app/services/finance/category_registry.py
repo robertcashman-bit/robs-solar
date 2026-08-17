@@ -16,11 +16,71 @@ from app.services.finance.budget_suggestion_service import (
 _CUSTOM_KEY = "finance.custom_categories"
 _RULES_KEY = "finance.category_rules"
 
+# Extra labels used by the categoriser / DLS practice without changing budget suggestion cores.
+_PERSONAL_EXTRA = [
+    "Salary",
+    "Dividends",
+    "Director loan repayment",
+    "Other income",
+    "Mortgage / household contribution",
+    "Council tax",
+    "Restaurants",
+    "Fuel",
+    "Car",
+    "Internet",
+    "Shopping",
+    "Entertainment",
+    "Travel",
+    "Professional costs",
+    "Education support",
+    "Cash withdrawals",
+    "Credit card payments",
+    "Loan repayments",
+    "Interest",
+    "Bank charges",
+    "Tax",
+    "Transfers",
+]
+_BUSINESS_EXTRA = [
+    "Legal fee income",
+    "Police station attendance income",
+    "Duty solicitor income",
+    "Mileage income",
+    "Parking reimbursement",
+    "Other business income",
+    "Director payments",
+    "Pension contributions",
+    "Tesla / vehicle finance",
+    "Vehicle expenses",
+    "Professional indemnity",
+    "Professional subscriptions",
+    "Legal software",
+    "IT/software",
+    "Website/hosting",
+    "Telephone/mobile",
+    "Parking",
+    "Bank charges",
+    "Loan interest",
+    "Credit card repayment",
+    "Capital on Tap",
+    "Funding Circle",
+    "FlexiPay",
+    "VAT",
+    "Corporation tax",
+    "Other tax",
+    "Office costs",
+    "Advertising/marketing",
+    "Other business expense",
+    "Transfers",
+]
+
 PERSONAL_REGISTRY = [
-    {"parent": name, "subcategory": "", "scope": "personal"} for name in PERSONAL_CATEGORIES
+    {"parent": name, "subcategory": "", "scope": "personal"}
+    for name in list(dict.fromkeys([*PERSONAL_CATEGORIES, *_PERSONAL_EXTRA]))
 ]
 BUSINESS_REGISTRY = [
-    {"parent": name, "subcategory": "", "scope": "business"} for name in BUSINESS_CATEGORIES
+    {"parent": name, "subcategory": "", "scope": "business"}
+    for name in list(dict.fromkeys([*BUSINESS_CATEGORIES, *_BUSINESS_EXTRA]))
 ]
 
 
@@ -77,12 +137,16 @@ async def confirm_rule(
     pattern: str,
     category: str,
     scope: str,
+    match_type: str = "CONTAINS",
+    priority: int = 5,
 ) -> dict[str, str]:
     rules = await _load_json(db, _RULES_KEY, [])
     entry = {
         "pattern": pattern.strip().upper()[:80],
         "category": category[:64],
         "scope": scope,
+        "match_type": (match_type or "CONTAINS").upper()[:16],
+        "priority": int(priority),
         "confirmed": True,
     }
     existing = next(

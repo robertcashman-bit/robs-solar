@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 import { ActiveBudgetCard } from "@/components/finance/ActiveBudgetCard";
 import { InsightCard } from "@/components/finance/InsightCard";
@@ -15,6 +16,8 @@ type FinanceOverviewViewProps = {
 };
 
 export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverviewViewProps) {
+  const [scopeView, setScopeView] = useState<"combined" | "personal" | "business">("combined");
+  const [showSafeCalc, setShowSafeCalc] = useState(false);
   const financeInsights = overview.insights.filter((item) => item.category !== "energy");
   const attention = financeInsights.filter(
     (item) => item.severity === "warning" || item.severity === "critical",
@@ -29,9 +32,86 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
   const budget = overview.active_budget;
   const propertyMissing =
     (overview.property_gbp ?? 0) <= 0 && (overview.mortgage_balance_gbp ?? 0) > 0;
+  const safe = overview.safe_to_spend ?? {};
+  const personalSafe = safe.personal;
+  const businessSafe = safe.business;
+  const combinedSafe = safe.combined;
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-wrap gap-2">
+        {(["combined", "personal", "business"] as const).map((item) => (
+          <button
+            key={item}
+            type="button"
+            onClick={() => setScopeView(item)}
+            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+              scopeView === item
+                ? "bg-emerald-600 text-white"
+                : "border border-[var(--border)] text-[var(--muted)]"
+            }`}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+
+      <section>
+        <h2 className="solar-section-title">Safe to spend</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Deterministic calculation from recorded income, bills, debt minimums and buffers — not an AI guess.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {(scopeView === "combined" || scopeView === "personal") && personalSafe ? (
+            <MetricTile
+              label="Safe to spend (personal)"
+              value={personalSafe.safe_to_spend_gbp}
+              positive={personalSafe.safe_to_spend_gbp > 0}
+              warning={personalSafe.status !== "HEALTHY"}
+              hint={personalSafe.status}
+            />
+          ) : null}
+          {(scopeView === "combined" || scopeView === "business") && businessSafe ? (
+            <MetricTile
+              label="Available business cash"
+              value={businessSafe.available_business_cash_gbp}
+              positive={businessSafe.available_business_cash_gbp > 0}
+              warning={businessSafe.status !== "HEALTHY"}
+              hint={businessSafe.status}
+            />
+          ) : null}
+          {scopeView === "combined" && combinedSafe ? (
+            <MetricTile
+              label="Combined discretionary"
+              value={combinedSafe.safe_to_spend_gbp}
+              positive={combinedSafe.safe_to_spend_gbp > 0}
+              hint={overview.cash_status ?? combinedSafe.status}
+            />
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="mt-3 text-sm underline underline-offset-2"
+          onClick={() => setShowSafeCalc((value) => !value)}
+        >
+          {showSafeCalc ? "Hide calculation" : "Show calculation"}
+        </button>
+        {showSafeCalc ? (
+          <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+            {personalSafe?.breakdown ? (
+              <pre className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-xs">
+                {JSON.stringify(personalSafe.breakdown, null, 2)}
+              </pre>
+            ) : null}
+            {businessSafe?.breakdown ? (
+              <pre className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-xs">
+                {JSON.stringify(businessSafe.breakdown, null, 2)}
+              </pre>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+
       <section>
         <h2 className="solar-section-title">Balances</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
@@ -44,6 +124,10 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
             No current-account balances yet. Connect Open Banking or QuickFile on{" "}
             <Link href="/finance/connect" className="underline underline-offset-2">
               Connect banks
+            </Link>
+            , or{" "}
+            <Link href="/finance/import" className="underline underline-offset-2">
+              import a statement
             </Link>
             , or add them on Personal and Company.
           </p>
