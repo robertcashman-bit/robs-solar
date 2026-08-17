@@ -5,6 +5,8 @@ import {
   FINANCE_LAST_TRANSACTIONS_KEY,
   FINANCE_LIVE_REFRESH_AT_KEY,
   clearFinanceLocalCaches,
+  financeCacheWriteEpoch,
+  isFinanceCacheWriteCurrent,
 } from "@/lib/finance-local-cache";
 
 describe("clearFinanceLocalCaches", () => {
@@ -21,5 +23,13 @@ describe("clearFinanceLocalCaches", () => {
     expect(window.localStorage.getItem(FINANCE_LAST_OVERVIEW_KEY)).toBeNull();
     expect(window.localStorage.getItem(FINANCE_LAST_TRANSACTIONS_KEY)).toBeNull();
     expect(window.sessionStorage.getItem(FINANCE_LIVE_REFRESH_AT_KEY)).toBeNull();
+  });
+
+  it("invalidates in-flight cache write epochs so logout clears stick", () => {
+    const epoch = financeCacheWriteEpoch();
+    expect(isFinanceCacheWriteCurrent(epoch)).toBe(true);
+    clearFinanceLocalCaches();
+    expect(isFinanceCacheWriteCurrent(epoch)).toBe(false);
+    expect(isFinanceCacheWriteCurrent(financeCacheWriteEpoch())).toBe(true);
   });
 });
