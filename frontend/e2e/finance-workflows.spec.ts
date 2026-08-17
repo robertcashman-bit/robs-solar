@@ -16,7 +16,7 @@ test("finance routes load from navigation", async ({ page }) => {
   ] as const;
   for (const [nav, path, heading] of routes) {
     await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: nav }).click();
-    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
   }
 });

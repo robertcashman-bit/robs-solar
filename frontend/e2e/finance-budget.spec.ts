@@ -10,10 +10,10 @@ test("suggested budgets can be edited, saved, and activated", async ({ page }) =
   await page.getByPlaceholder("Household bills").fill("900");
   await page.getByPlaceholder("Debt repayments").fill("180");
   await page.getByRole("button", { name: "Save snapshot" }).click();
-  await expect(page.getByText("Snapshot saved")).toBeVisible();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
   await page.goto("/finance/budget");
-  await expect(page.getByRole("heading", { name: "Budget" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Budget", level: 2 }).first()).toBeVisible();
   await page.getByRole("tab", { name: "Suggested" }).click();
   await expect(page.getByRole("heading", { name: "Balanced" })).toBeVisible();
   await page.getByRole("button", { name: "Use Balanced" }).click();
