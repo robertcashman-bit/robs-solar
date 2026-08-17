@@ -12,8 +12,8 @@ vi.mock("@/lib/api-client", async () => {
   return {
     ...actual,
     apiClient: {
-      get: (...args: unknown[]) => get(...args),
-      post: (...args: unknown[]) => post(...args),
+      get: (path: string) => get(path),
+      post: (path: string, body?: unknown) => post(path, body),
     },
   };
 });
@@ -43,7 +43,7 @@ function LoginProbe() {
       <button
         type="button"
         onClick={() => {
-          void verifyMagicCode("rob@example.com", "123456");
+          void verifyMagicCode("rob@example.com", "123456").catch(() => undefined);
         }}
       >
         verify
@@ -72,11 +72,20 @@ describe("AuthProvider session bootstrap", () => {
   });
 
   it("fail-safe stops loading without clearing a user set by magic-code verify", async () => {
-    let resolveMe: ((value: unknown) => void) | null = null;
+    let resolveBootstrapMe: ((value: unknown) => void) | null = null;
+    let meCalls = 0;
     get.mockImplementation((path: string) => {
       if (path === "/auth/me") {
-        return new Promise((resolve) => {
-          resolveMe = resolve;
+        meCalls += 1;
+        if (meCalls === 1) {
+          return new Promise((resolve) => {
+            resolveBootstrapMe = resolve;
+          });
+        }
+        // Post-verify cookie confirmation.
+        return Promise.resolve({
+          user: { username: "rob", role: "admin" },
+          csrf_token: "csrf-confirmed",
         });
       }
       if (path === "/auth/magic-code/status") {
@@ -106,6 +115,11 @@ describe("AuthProvider session bootstrap", () => {
       expect(screen.getByTestId("user")).toHaveTextContent("rob");
       expect(screen.getByTestId("resolved")).toHaveTextContent("true");
     });
+    expect(post).toHaveBeenCalledWith("/auth/magic-code/verify", {
+      email: "rob@example.com",
+      code: "123456",
+    });
+    expect(meCalls).toBeGreaterThanOrEqual(2);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
@@ -117,14 +131,48 @@ describe("AuthProvider session bootstrap", () => {
 
     // Late bootstrap timeout must not wipe the verified session.
     await act(async () => {
-      resolveMe?.(Promise.reject(new ApiError("The server took too long to respond.", 504)));
+      resolveBootstrapMe?.(Promise.reject(new ApiError("The server took too long to respond.", 504)));
     });
-    // The mock returns a Promise that rejects — settle microtasks.
     await act(async () => {
       await Promise.resolve();
     });
 
     expect(screen.getByTestId("user")).toHaveTextContent("rob");
+    expect(screen.getByTestId("resolved")).toHaveTextContent("true");
+  });
+
+  it("rejects magic-code verify when immediate /auth/me is 401 (cookie not stored)", async () => {
+    get.mockImplementation((path: string) => {
+      if (path === "/auth/me") {
+        return Promise.reject(new ApiError("Not authenticated", 401));
+      }
+      if (path === "/auth/magic-code/status") {
+        return Promise.resolve({ enabled: true, dev_delivery: false });
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+    post.mockResolvedValue({
+      user: { username: "rob", role: "admin" },
+      csrf_token: "csrf-after-verify",
+    });
+
+    render(
+      <AuthProvider>
+        <LoginProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("resolved")).toHaveTextContent("true");
+    });
+
+    await act(async () => {
+      screen.getByRole("button", { name: "verify" }).click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("user")).toHaveTextContent("none");
+    });
     expect(screen.getByTestId("resolved")).toHaveTextContent("true");
   });
 

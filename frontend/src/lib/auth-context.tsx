@@ -49,6 +49,9 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+const COOKIE_NOT_STORED_MESSAGE =
+  "Sign-in cookie was not stored by the browser. Allow cookies for this site and try again.";
+
 function isUnauthenticatedError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
@@ -69,6 +72,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthResolved(true);
     setLoading(false);
   }, []);
+
+  /**
+   * Login/verify responses set `robs_solar_session` via Set-Cookie. Confirm the
+   * browser actually stored it with an immediate /auth/me before treating the
+   * user as signed in — otherwise a full page load on Vercel multi-service
+   * looks logged-out and kicks them back to /login.
+   */
+  const confirmSessionCookie = useCallback(
+    async (fallback: { user: UserInfo; csrf_token: string }) => {
+      try {
+        const session = sessionResponseSchema.parse(await apiClient.get("/auth/me"));
+        applySessionUser(session.user, session.csrf_token);
+      } catch (error) {
+        if (isUnauthenticatedError(error)) {
+          setUser(null);
+          setCsrfToken(null);
+          setAuthResolved(true);
+          setLoading(false);
+          throw new ApiError(COOKIE_NOT_STORED_MESSAGE, 401);
+        }
+        // Timeout / network after Set-Cookie: keep the login payload so a warm
+        // follow-up can succeed; do not claim the cookie failed.
+        applySessionUser(fallback.user, fallback.csrf_token);
+      }
+    },
+    [applySessionUser],
+  );
 
   const refreshUser = useCallback(async () => {
     const generation = authGenerationRef.current;
@@ -152,9 +182,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = loginResponseSchema.parse(
         await apiClient.post("/auth/login", { username, password }),
       );
-      applySessionUser(data.user, data.csrf_token);
+      await confirmSessionCookie(data);
     },
-    [applySessionUser],
+    [confirmSessionCookie],
   );
 
   const requestMagicCode = useCallback(async (email: string) => {
@@ -174,9 +204,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = loginResponseSchema.parse(
         await apiClient.post("/auth/magic-code/verify", { email, code }),
       );
-      applySessionUser(data.user, data.csrf_token);
+      await confirmSessionCookie(data);
     },
-    [applySessionUser],
+    [confirmSessionCookie],
   );
 
   const consumeMagicLink = useCallback(
@@ -184,9 +214,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = loginResponseSchema.parse(
         await apiClient.post("/auth/magic-link/consume", { token }),
       );
-      applySessionUser(data.user, data.csrf_token);
+      await confirmSessionCookie(data);
     },
-    [applySessionUser],
+    [confirmSessionCookie],
   );
 
   const logout = useCallback(async () => {
