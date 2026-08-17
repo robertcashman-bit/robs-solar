@@ -29,7 +29,8 @@ describe("FinanceHealthPanel", () => {
   it("shows persistence warning and self-heal action", async () => {
     render(<FinanceHealthPanel canEdit />);
     expect(await screen.findByText("Finance health")).toBeInTheDocument();
-    expect(screen.getByText(/wiped on deploy/i)).toBeInTheDocument();
+    expect(await screen.findByText(/wiped on deploy/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Self-heal caches" })).toBeInTheDocument();
+    expect(screen.getByText(/none yet — tap Backup now/i)).toBeInTheDocument();
   });
 });

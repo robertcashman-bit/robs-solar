@@ -101,7 +101,7 @@ class MagicCodeService:
     def _hash_code(self, email: str, code: str) -> str:
         return hmac.new(
             settings.secret_key.encode("utf-8"),
-            f"{email.strip().lower()}:{code}".encode("utf-8"),
+            f"{email.strip().lower()}:{code}".encode(),
             hashlib.sha256,
         ).hexdigest()
 
