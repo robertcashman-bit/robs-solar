@@ -10,7 +10,10 @@ type PersonalReportPanelProps = {
   report: PersonalFinanceReport | null | undefined;
 };
 
-function changeHint(change: number | null | undefined, previous: number | null | undefined): string | undefined {
+function changeHint(
+  change: number | null | undefined,
+  previous: number | null | undefined,
+): string | undefined {
   if (change == null || previous == null) {
     return undefined;
   }
@@ -25,7 +28,10 @@ export function PersonalReportPanel({ report }: PersonalReportPanelProps) {
         <h2 className="solar-section-title">Personal</h2>
         <p className="mt-3 rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-sm text-[var(--muted)]">
           Personal report is unavailable for this month. Save a snapshot on{" "}
-          <Link href="/finance/personal" className="underline underline-offset-2">
+          <Link
+            href="/finance/personal"
+            className="underline underline-offset-2"
+          >
             Personal
           </Link>{" "}
           or{" "}
@@ -39,7 +45,9 @@ export function PersonalReportPanel({ report }: PersonalReportPanelProps) {
   }
 
   const hasFlow =
-    report.income_gbp != null || report.spending_gbp != null || report.surplus_gbp != null;
+    report.income_gbp != null ||
+    report.spending_gbp != null ||
+    report.surplus_gbp != null;
   const showPension = report.pension_gbp !== 0;
   const showProperty = (report.property_gbp ?? 0) !== 0;
   const categories = report.spending_by_category ?? [];
@@ -50,7 +58,7 @@ export function PersonalReportPanel({ report }: PersonalReportPanelProps) {
     <section className="space-y-4" aria-label="Personal report">
       <div>
         <h2 className="solar-section-title">Personal</h2>
-        {report.flow_note ? (
+        {report.flow_note && !report.empty_state ? (
           <p className="mt-1 text-sm text-[var(--muted)]">{report.flow_note}</p>
         ) : null}
       </div>
@@ -58,7 +66,10 @@ export function PersonalReportPanel({ report }: PersonalReportPanelProps) {
       {report.empty_state ? (
         <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-4 text-sm text-[var(--muted)]">
           {report.empty_state}{" "}
-          <Link href="/finance/personal" className="underline underline-offset-2">
+          <Link
+            href="/finance/personal"
+            className="underline underline-offset-2"
+          >
             Open Personal
           </Link>
           {" · "}
@@ -74,13 +85,18 @@ export function PersonalReportPanel({ report }: PersonalReportPanelProps) {
             <MetricTile
               label="Income"
               value={report.income_gbp}
-              hint={changeHint(report.income_change_gbp, report.previous_month_income_gbp)}
+              hint={changeHint(
+                report.income_change_gbp,
+                report.previous_month_income_gbp,
+              )}
             />
             <MetricTile
               label="Spending"
               value={report.spending_gbp}
-              warning={report.spending_gbp != null && report.spending_gbp > 0}
-              hint={changeHint(report.spending_change_gbp, report.previous_month_spending_gbp)}
+              hint={changeHint(
+                report.spending_change_gbp,
+                report.previous_month_spending_gbp,
+              )}
             />
             <MetricTile
               label="Surplus"
@@ -96,18 +112,28 @@ export function PersonalReportPanel({ report }: PersonalReportPanelProps) {
           value={report.debt_gbp}
           warning={report.debt_gbp > 0}
         />
-        {showPension ? <MetricTile label="Pension" value={report.pension_gbp} /> : null}
-        {showProperty ? <MetricTile label="Property" value={report.property_gbp} /> : null}
+        {showPension ? (
+          <MetricTile label="Pension" value={report.pension_gbp} />
+        ) : null}
+        {showProperty ? (
+          <MetricTile label="Property" value={report.property_gbp} />
+        ) : null}
         <MetricTile
           label="Personal net worth"
           value={report.net_worth_gbp}
           positive={report.net_worth_gbp > 0}
         />
         {report.household_bills_gbp != null ? (
-          <MetricTile label="Household bills" value={report.household_bills_gbp} />
+          <MetricTile
+            label="Household bills"
+            value={report.household_bills_gbp}
+          />
         ) : null}
         {report.debt_repayments_gbp != null ? (
-          <MetricTile label="Debt repayments" value={report.debt_repayments_gbp} />
+          <MetricTile
+            label="Debt repayments"
+            value={report.debt_repayments_gbp}
+          />
         ) : null}
       </div>
 
@@ -116,7 +142,9 @@ export function PersonalReportPanel({ report }: PersonalReportPanelProps) {
           <h3 className="text-sm font-semibold">Spending by category</h3>
           <div className="mt-3 overflow-x-auto rounded-2xl border border-[var(--border)]">
             <table className="min-w-[420px] w-full text-sm">
-              <caption className="sr-only">Personal spending by category</caption>
+              <caption className="sr-only">
+                Personal spending by category
+              </caption>
               <thead>
                 <tr className="border-b border-[var(--border)] text-left text-xs uppercase tracking-wide text-[var(--muted)]">
                   <th className="px-4 py-3">Category</th>
@@ -126,9 +154,14 @@ export function PersonalReportPanel({ report }: PersonalReportPanelProps) {
               </thead>
               <tbody>
                 {categories.map((row) => (
-                  <tr key={row.category} className="border-b border-[var(--border)]">
+                  <tr
+                    key={row.category}
+                    className="border-b border-[var(--border)]"
+                  >
                     <td className="px-4 py-3">{row.category}</td>
-                    <td className="px-4 py-3 tabular-nums">{formatGbp(row.amount_gbp)}</td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {formatGbp(row.amount_gbp)}
+                    </td>
                     <td className="px-4 py-3 tabular-nums text-[var(--muted)]">
                       {row.transaction_count}
                     </td>
@@ -150,7 +183,9 @@ export function PersonalReportPanel({ report }: PersonalReportPanelProps) {
                 className="flex items-start justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm"
               >
                 <span>
-                  <span className="font-medium">{item.description || item.category}</span>
+                  <span className="font-medium">
+                    {item.description || item.category}
+                  </span>
                   <span className="mt-0.5 block text-xs text-[var(--muted)]">
                     {item.posted_on}
                     {item.category ? ` · ${item.category}` : ""}
@@ -184,7 +219,9 @@ export function PersonalReportPanel({ report }: PersonalReportPanelProps) {
                       : " · APR unknown"}
                   </span>
                 </span>
-                <span className="font-semibold tabular-nums">{formatGbp(debt.balance_gbp)}</span>
+                <span className="font-semibold tabular-nums">
+                  {formatGbp(debt.balance_gbp)}
+                </span>
               </li>
             ))}
           </ul>
