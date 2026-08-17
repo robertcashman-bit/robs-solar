@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { apiClient } from "@/lib/api-client";
@@ -40,10 +40,6 @@ export function CategoryRulesPanel({ canEdit = false }: CategoryRulesPanelProps)
       ]);
       setRules(Array.isArray(ruleData) ? ruleData : []);
       setCategories(Array.isArray(catData) ? catData : []);
-      const first = Array.isArray(catData) ? catData[0]?.parent : undefined;
-      if (first) {
-        setForm((prev) => ({ ...prev, category: prev.category || first }));
-      }
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load category rules");
@@ -52,14 +48,21 @@ export function CategoryRulesPanel({ canEdit = false }: CategoryRulesPanelProps)
 
   useFinanceReload(load, true);
 
-  useEffect(() => {
-    const parents = categories
-      .filter((item) => item.scope === form.scope)
-      .map((item) => item.parent);
-    if (parents.length && !parents.includes(form.category)) {
-      setForm((prev) => ({ ...prev, category: parents[0] }));
-    }
-  }, [categories, form.scope, form.category]);
+  const scopedCategories = useMemo(
+    () => [
+      ...new Set(
+        categories
+          .filter((item) => item.scope === form.scope)
+          .map((item) => item.parent)
+          .filter(Boolean),
+      ),
+    ],
+    [categories, form.scope],
+  );
+
+  const selectedCategory = scopedCategories.includes(form.category)
+    ? form.category
+    : scopedCategories[0] || form.category;
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -67,7 +70,10 @@ export function CategoryRulesPanel({ canEdit = false }: CategoryRulesPanelProps)
     setSaving(true);
     setStatus(null);
     try {
-      await apiClient.post("/finance/category-rules", form);
+      await apiClient.post("/finance/category-rules", {
+        ...form,
+        category: selectedCategory,
+      });
       setStatus("Rule saved — future imports will use this category.");
       setForm((prev) => ({ ...prev, pattern: "" }));
       await load();
@@ -77,15 +83,6 @@ export function CategoryRulesPanel({ canEdit = false }: CategoryRulesPanelProps)
       setSaving(false);
     }
   }
-
-  const scopedCategories = [
-    ...new Set(
-      categories
-        .filter((item) => item.scope === form.scope)
-        .map((item) => item.parent)
-        .filter(Boolean),
-    ),
-  ];
 
   return (
     <section className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
@@ -109,14 +106,29 @@ export function CategoryRulesPanel({ canEdit = false }: CategoryRulesPanelProps)
           <select
             className="solar-input"
             value={form.scope}
-            onChange={(event) => setForm({ ...form, scope: event.target.value })}
+            onChange={(event) => {
+              const scope = event.target.value;
+              const parents = [
+                ...new Set(
+                  categories
+                    .filter((item) => item.scope === scope)
+                    .map((item) => item.parent)
+                    .filter(Boolean),
+                ),
+              ];
+              setForm({
+                ...form,
+                scope,
+                category: parents[0] || form.category,
+              });
+            }}
           >
             <option value="personal">Personal</option>
             <option value="business">Business</option>
           </select>
           <select
             className="solar-input"
-            value={form.category}
+            value={selectedCategory}
             onChange={(event) => setForm({ ...form, category: event.target.value })}
           >
             {scopedCategories.map((name) => (
