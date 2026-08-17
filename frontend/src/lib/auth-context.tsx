@@ -11,12 +11,19 @@ import {
 } from "react";
 
 import { apiClient, setCsrfToken } from "@/lib/api-client";
-import { loginResponseSchema, sessionResponseSchema, type UserInfo } from "@/lib/schemas";
+import {
+  loginResponseSchema,
+  magicLoginRequestResponseSchema,
+  sessionResponseSchema,
+  type UserInfo,
+} from "@/lib/schemas";
 
 type AuthContextValue = {
   user: UserInfo | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
+  requestMagicCode: (email: string) => Promise<void>;
+  verifyMagicCode: (email: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
@@ -73,6 +80,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
   }, []);
 
+  const requestMagicCode = useCallback(async (email: string) => {
+    magicLoginRequestResponseSchema.parse(
+      await apiClient.post("/auth/magic/request", { email }),
+    );
+  }, []);
+
+  const verifyMagicCode = useCallback(async (email: string, code: string) => {
+    const data = loginResponseSchema.parse(
+      await apiClient.post("/auth/magic/verify", { email, code }),
+    );
+    setCsrfToken(data.csrf_token);
+    setUser(data.user);
+  }, []);
+
   const logout = useCallback(async () => {
     await apiClient.post("/auth/logout");
     setUser(null);
@@ -80,8 +101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, refreshUser }),
-    [user, loading, login, logout, refreshUser],
+    () => ({ user, loading, login, requestMagicCode, verifyMagicCode, logout, refreshUser }),
+    [user, loading, login, requestMagicCode, verifyMagicCode, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

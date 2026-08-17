@@ -3,7 +3,7 @@
   "name": "Rob's Finance",
   "short_name": "Rob's Finance",
   "description": "Personal and business finance dashboard — balances, debts, cash flow, and tax.",
-  "start_url": "/",
+  "start_url": "/login",
   "display": "standalone",
   "background_color": "#0c0f14",
   "theme_color": "#10b981",

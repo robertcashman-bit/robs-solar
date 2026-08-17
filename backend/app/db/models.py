@@ -327,6 +327,16 @@ class FinanceTransactionRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class MagicLoginCodeRow(Base):
+    __tablename__ = "finance_magic_login_codes"
+
+    email_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class SolarSettingsRow(Base):
     __tablename__ = "solar_settings"
 

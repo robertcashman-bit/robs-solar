@@ -89,6 +89,10 @@ export const loginResponseSchema = z.object({
   csrf_token: z.string(),
 });
 
+export const magicLoginRequestResponseSchema = z.object({
+  ok: z.boolean(),
+});
+
 export const sessionResponseSchema = z.object({
   user: userInfoSchema,
   csrf_token: z.string(),

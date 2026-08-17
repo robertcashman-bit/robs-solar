@@ -162,6 +162,19 @@ class Settings(BaseSettings):
     # daily loop is disabled — production relies on GET /finance/cron/daily-sync instead.
     cron_secret: str = ""
 
+    # Magic-code sign-in (email OTP). Names match the previous hosted All deploy.
+    admin_email: str = ""
+    magic_code_enabled: bool = True
+    magic_code_admin_emails: str = ""
+    resend_api_key: str = ""
+    resend_from_email: str = "Rob's Finance <onboarding@resend.dev>"
+    public_app_url: str = ""
+
+    @property
+    def magic_code_admin_email_set(self) -> frozenset[str]:
+        raw = self.magic_code_admin_emails or self.admin_email
+        return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
+
     @property
     def neon_database_url(self) -> str:
         return self.robs_finance_database_url or self.robs_finance_postgres_url

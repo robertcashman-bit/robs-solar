@@ -4,6 +4,7 @@ const authFile = "e2e/.auth/admin.json";
 
 setup("authenticate as admin", async ({ page }) => {
   await page.goto("/login");
+  await page.getByRole("button", { name: "Use password instead" }).click();
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill("change-me-admin");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();

@@ -170,6 +170,41 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class MagicLoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        email = value.strip().lower()
+        local, _, domain = email.partition("@")
+        if not local or "." not in domain or " " in email:
+            raise ValueError("Enter a valid email address")
+        return email
+
+
+class MagicLoginVerifyRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    code: str = Field(min_length=6, max_length=6)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return MagicLoginRequest.normalize_email(value)
+
+    @field_validator("code")
+    @classmethod
+    def digits_only(cls, value: str) -> str:
+        code = value.strip()
+        if not code.isdigit() or len(code) != 6:
+            raise ValueError("Enter the 6-digit code from your email")
+        return code
+
+
+class MagicLoginRequestResponse(BaseModel):
+    ok: bool = True
+
+
 class UserInfo(BaseModel):
     username: str
     role: UserRole

@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import LoginPage from "@/app/login/page";
@@ -10,6 +11,8 @@ vi.mock("@/lib/auth-context", () => ({
     user: null,
     loading: false,
     login: vi.fn(),
+    requestMagicCode: vi.fn(),
+    verifyMagicCode: vi.fn(),
   }),
 }));
 
@@ -18,18 +21,23 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("LoginPage", () => {
-  it("renders sign-in form with legal links", () => {
+  it("renders magic-code sign-in with legal links", () => {
     render(<LoginPage />);
     expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
-    expect(screen.getByText(/Personal finance, business tracking, and home energy monitoring/)).toBeInTheDocument();
+    expect(screen.getByText(/one-time magic code/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toBeRequired();
+    expect(screen.getByRole("button", { name: "Email me a magic code" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "terms" })).toHaveAttribute("href", "/terms");
     expect(screen.getByRole("link", { name: "privacy policy" })).toHaveAttribute("href", "/privacy");
   });
 
-  it("has required username and password fields", () => {
+  it("reveals password sign-in as a fallback", async () => {
+    const user = userEvent.setup();
     render(<LoginPage />);
+    await user.click(screen.getByRole("button", { name: "Use password instead" }));
     expect(screen.getByLabelText("Username")).toBeRequired();
     expect(screen.getByLabelText("Password")).toBeRequired();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
 });
 

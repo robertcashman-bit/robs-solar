@@ -26,20 +26,21 @@ export async function expectEnergyDashboard(page: Page) {
 }
 
 /** Full login flow — use only when testing sign-in itself. */
-export async function loginAsAdmin(page: Page) {
+async function loginWithPassword(page: Page, username: string, password: string) {
   await page.goto("/login");
-  await page.getByLabel("Username").fill("admin");
-  await page.getByLabel("Password").fill("change-me-admin");
+  await page.getByRole("button", { name: "Use password instead" }).click();
+  await page.getByLabel("Username").fill(username);
+  await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expectFinanceOverviewAfterLogin(page);
 }
 
+export async function loginAsAdmin(page: Page) {
+  await loginWithPassword(page, "admin", "change-me-admin");
+}
+
 export async function loginAsViewer(page: Page) {
-  await page.goto("/login");
-  await page.getByLabel("Username").fill("viewer");
-  await page.getByLabel("Password").fill("change-me-viewer");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expectFinanceOverviewAfterLogin(page);
+  await loginWithPassword(page, "viewer", "change-me-viewer");
 }
 
 /** Navigate to a protected route (admin session is preloaded via storageState). */
