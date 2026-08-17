@@ -101,6 +101,8 @@ export const healthResponseSchema = z.object({
   read_only: z.boolean(),
   timestamp: z.string(),
   plant_id: z.string().nullable().optional(),
+  database: z.string().optional(),
+  database_persistent: z.boolean().optional(),
 });
 
 export const auditEntrySchema = z.object({

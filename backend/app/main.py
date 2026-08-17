@@ -60,6 +60,7 @@ async def lifespan(_: FastAPI):
     warn_if_default_passwords()
     _warn_production_simulator()
     await init_db()
+    await _seed_finance_integrations()
     await _load_octopus_credentials()
     start_sampler()
     start_auto_scheduler()
@@ -68,6 +69,22 @@ async def lifespan(_: FastAPI):
     await stop_finance_daily_sync()
     await stop_auto_scheduler()
     await stop_sampler()
+
+
+async def _seed_finance_integrations() -> None:
+    from app.db.session import SessionLocal
+    from app.services.lunch_flow_settings_service import lunch_flow_settings_service
+    from app.services.quickfile_settings_service import quickfile_settings_service
+
+    async with SessionLocal() as db:
+        quickfile_seeded = await quickfile_settings_service.seed_from_env(db)
+        lunch_flow_seeded = await lunch_flow_settings_service.seed_from_env(db)
+    if quickfile_seeded or lunch_flow_seeded:
+        logger.info(
+            "Seeded finance integrations from environment (quickfile=%s lunch_flow=%s)",
+            quickfile_seeded,
+            lunch_flow_seeded,
+        )
 
 
 async def _load_octopus_credentials() -> None:

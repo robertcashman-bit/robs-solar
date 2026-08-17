@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     app_env: str = "development"
     secret_key: str = "change-me"
     database_url: str = "sqlite+aiosqlite:///./data/robs_solar.db"
+    # Neon (Vercel Marketplace). Used when DATABASE_URL is ephemeral /tmp SQLite.
+    robs_finance_database_url: str = ""
+    robs_finance_database_url_unpooled: str = ""
+    robs_finance_postgres_url: str = ""
+    robs_finance_postgres_url_non_pooling: str = ""
     read_only: bool = True
     adapter_mode: str = "simulator"
     cors_origins: str = "http://127.0.0.1:3000"
@@ -156,6 +161,14 @@ class Settings(BaseSettings):
     # Vercel Cron sends Authorization: Bearer <CRON_SECRET>. When set, the in-process
     # daily loop is disabled — production relies on GET /finance/cron/daily-sync instead.
     cron_secret: str = ""
+
+    @property
+    def neon_database_url(self) -> str:
+        return self.robs_finance_database_url or self.robs_finance_postgres_url
+
+    @property
+    def neon_database_url_unpooled(self) -> str:
+        return self.robs_finance_database_url_unpooled or self.robs_finance_postgres_url_non_pooling
 
     @property
     def cors_origin_list(self) -> list[str]:

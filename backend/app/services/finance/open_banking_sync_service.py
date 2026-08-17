@@ -84,6 +84,7 @@ def _parse_enable_transaction(
 
     return {
         "account_id": account_id,
+        "scope": "personal",
         "external_id": external_id,
         "transaction_date": transaction_date[:10],
         "description": description[:512],

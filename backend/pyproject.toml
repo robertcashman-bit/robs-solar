@@ -15,6 +15,7 @@ dependencies = [
   "sqlalchemy>=2.0,<3",
   "greenlet>=3.0,<4",
   "aiosqlite>=0.20,<1",
+  "asyncpg>=0.29,<1",
   "httpx>=0.28,<1",
   "bcrypt>=4.0,<5",
   "cryptography>=43,<45",
@@ -45,6 +46,9 @@ include = ["app*"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.vercel]
+entrypoint = "main:app"
 
 [tool.ruff]
 line-length = 100

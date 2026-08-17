@@ -192,6 +192,8 @@ class HealthResponse(BaseModel):
     read_only: bool
     timestamp: datetime
     plant_id: Optional[str] = None
+    database: str = "sqlite"
+    database_persistent: bool = True
 
 
 class AuditOutcome(str, Enum):

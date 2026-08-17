@@ -3,3 +3,16 @@ render.yaml
 *.db
 .env
 .env.*
+node_modules
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/coverage
+frontend/playwright-report
+frontend/test-results
+backend/.venv
+backend/data
+**/.venv
+**/__pycache__
+.pytest_cache
+*.log

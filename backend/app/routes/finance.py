@@ -38,6 +38,7 @@ from app.schemas.finance import (
     FinanceAccountCreate,
     FinanceAccountUpdate,
     FinanceDailySyncResult,
+    FinanceIntegrationsReconnectResult,
     FinanceLiability,
     FinanceLiabilityCreate,
     FinanceLiabilityUpdate,
@@ -649,12 +650,44 @@ async def list_integrations(
     providers = integration_registry.list_providers()
     qf_status = await quickfile_settings_service.get_status(db)
     ob_status = await open_banking_settings_service.get_status(db)
+    lf_status = await lunch_flow_settings_service.get_status(db)
     for provider in providers:
         if provider["id"] == "quickfile":
             provider["status"] = "active" if qf_status.configured else "inactive"
         if provider["id"] == "open_banking":
             provider["status"] = "active" if ob_status.configured else "inactive"
+        if provider["id"] == "lunch_flow":
+            provider["status"] = "active" if lf_status.configured else "inactive"
     return providers
+
+
+@router.post("/integrations/reconnect", response_model=FinanceIntegrationsReconnectResult)
+async def reconnect_finance_integrations(
+    request: Request,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> FinanceIntegrationsReconnectResult:
+    await enforce_write_rate_limit(request)
+    quickfile_seeded = await quickfile_settings_service.reconnect_from_env(db)
+    lunch_flow_seeded = await lunch_flow_settings_service.reconnect_from_env(db)
+    quickfile = await quickfile_settings_service.get_status(db)
+    lunch_flow = await lunch_flow_settings_service.get_status(db)
+    connected = [
+        name
+        for name, seeded in (("QuickFile", quickfile_seeded), ("Lunch Flow", lunch_flow_seeded))
+        if seeded
+    ]
+    if connected:
+        message = f"Reconnected {' and '.join(connected)} from hosted environment keys."
+    else:
+        message = "No hosted QuickFile or Lunch Flow keys were available to reconnect."
+    return FinanceIntegrationsReconnectResult(
+        quickfile=quickfile,
+        lunch_flow=lunch_flow,
+        quickfile_seeded=quickfile_seeded,
+        lunch_flow_seeded=lunch_flow_seeded,
+        message=message,
+    )
 
 
 @router.get("/integrations/quickfile/reports", response_model=QuickFileReportsResponse)

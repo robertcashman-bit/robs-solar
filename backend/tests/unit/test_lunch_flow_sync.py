@@ -91,6 +91,7 @@ async def test_sync_imports_accounts_and_transactions() -> None:
             )
         )
         assert tx is not None
+        assert tx.scope == "personal"
         assert tx.amount_gbp == -15.0
         assert tx.merchant == "Tesco"
         assert tx.is_pending is False

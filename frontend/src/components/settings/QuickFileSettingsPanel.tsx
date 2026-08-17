@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import {
+  integrationConnectionLabel,
   quickFileConfigStatusSchema,
   quickFileSyncResultSchema,
   type QuickFileConfigStatus,
@@ -120,6 +121,8 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
   }
 
   const configured = status?.configured ?? false;
+  const connectionLabel = integrationConnectionLabel(status?.connection_state, configured);
+  const active = status?.connection_state === "active" || (configured && Boolean(status?.last_sync_at));
 
   return (
     <section className="solar-card space-y-4">
@@ -133,12 +136,14 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
         </div>
         <span
           className={`rounded-full px-3 py-1 text-xs font-medium ${
-            configured
+            active
               ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-              : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
+              : configured
+                ? "bg-sky-500/15 text-sky-800 dark:text-sky-200"
+                : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
           }`}
         >
-          {loadingStatus ? "Loading…" : configured ? "Configured" : "Not configured"}
+          {loadingStatus ? "Loading…" : connectionLabel}
         </span>
       </div>
 

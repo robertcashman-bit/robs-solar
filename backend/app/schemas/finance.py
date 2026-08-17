@@ -664,6 +664,22 @@ class FinanceReportsResponse(BaseModel):
     active_budget: ActiveBudgetSummary | None = None
 
 
+class IntegrationConnectionState(str, Enum):
+    ACTIVE = "active"
+    KEY_SAVED = "key_saved"
+    NOT_CONNECTED = "not_connected"
+
+
+def integration_connection_state(
+    configured: bool, last_sync_at: str | None
+) -> IntegrationConnectionState:
+    if not configured:
+        return IntegrationConnectionState.NOT_CONNECTED
+    if last_sync_at:
+        return IntegrationConnectionState.ACTIVE
+    return IntegrationConnectionState.KEY_SAVED
+
+
 class QuickFileConfig(BaseModel):
     account_number: str = ""
     api_key: str = ""
@@ -676,6 +692,7 @@ class QuickFileConfigStatus(BaseModel):
     application_id: str = ""
     configured: bool = False
     last_sync_at: str | None = None
+    connection_state: IntegrationConnectionState = IntegrationConnectionState.NOT_CONNECTED
 
 
 class QuickFileSyncResult(BaseModel):
@@ -693,11 +710,20 @@ class LunchFlowConfigStatus(BaseModel):
     api_key_set: bool = False
     configured: bool = False
     last_sync_at: str | None = None
+    connection_state: IntegrationConnectionState = IntegrationConnectionState.NOT_CONNECTED
 
 
 class LunchFlowSyncResult(BaseModel):
     accounts_synced: int
     transactions_synced: int = 0
+    message: str
+
+
+class FinanceIntegrationsReconnectResult(BaseModel):
+    quickfile: QuickFileConfigStatus
+    lunch_flow: LunchFlowConfigStatus
+    quickfile_seeded: bool = False
+    lunch_flow_seeded: bool = False
     message: str
 
 

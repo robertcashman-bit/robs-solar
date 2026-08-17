@@ -18,8 +18,8 @@ else
   VC="npx --yes vercel"
 fi
 
-# Ephemeral SQLite on Vercel serverless; use Render for persistent /data storage.
-$VC env add DATABASE_URL production --force <<< "sqlite+aiosqlite:////tmp/robs_solar.db" >/dev/null 2>&1 || true
+# Do not overwrite hosted DATABASE_URL. Local .env is file-backed SQLite; Vercel
+# already has Neon ROBS_FINANCE_* URLs and the API prefers those over /tmp SQLite.
 $VC env add APP_ENV production --force <<< "production" >/dev/null 2>&1 || true
 
 while IFS= read -r line || [[ -n "$line" ]]; do

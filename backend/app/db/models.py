@@ -314,6 +314,7 @@ class FinanceTransactionRow(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, default="personal")
     external_id: Mapped[str] = mapped_column(String(256), nullable=False)
     transaction_date: Mapped[str] = mapped_column(String(10), nullable=False)
     description: Mapped[str] = mapped_column(String(512), nullable=False, default="")

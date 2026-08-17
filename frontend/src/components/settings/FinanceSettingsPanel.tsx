@@ -1,9 +1,12 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 
+import { LunchFlowSettingsForm } from "@/components/finance/LunchFlowSettingsForm";
 import { OpenBankingSettingsPanel } from "@/components/settings/OpenBankingSettingsPanel";
 import { QuickFileSettingsPanel } from "@/components/settings/QuickFileSettingsPanel";
+import { apiClient } from "@/lib/api-client";
+import { financeIntegrationsReconnectResultSchema } from "@/lib/finance-schemas";
 
 const integrations = [
   { id: "manual", label: "Manual entry", status: "Active", detail: "Enter balances and transactions yourself." },
@@ -24,9 +27,62 @@ function OpenBankingSettingsPanelFallback() {
 }
 
 export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelProps) {
+  const [reconnectBusy, setReconnectBusy] = useState(false);
+  const [reconnectMessage, setReconnectMessage] = useState<string | null>(null);
+  const [reconnectError, setReconnectError] = useState<string | null>(null);
+  const [lunchFlowKey, setLunchFlowKey] = useState(0);
+  const [quickFileKey, setQuickFileKey] = useState(0);
+
+  async function reconnectFromHostedKeys() {
+    setReconnectBusy(true);
+    setReconnectMessage(null);
+    setReconnectError(null);
+    try {
+      const data = await apiClient.post<unknown>("/finance/integrations/reconnect");
+      const result = financeIntegrationsReconnectResultSchema.parse(data);
+      setReconnectMessage(result.message);
+      setQuickFileKey((value) => value + 1);
+      setLunchFlowKey((value) => value + 1);
+    } catch (err) {
+      setReconnectError(err instanceof Error ? err.message : "Reconnect failed");
+    } finally {
+      setReconnectBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <QuickFileSettingsPanel readOnly={readOnly} />
+      {!readOnly ? (
+        <section className="solar-card space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold">Hosted keys</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Reload QuickFile and Lunch Flow from the Vercel environment if Settings shows them as
+              disconnected after a deploy.
+            </p>
+          </div>
+          {reconnectError ? (
+            <p className="rounded-lg border border-red-300/40 bg-red-500/10 px-3 py-2 text-sm text-red-800 dark:text-red-200">
+              {reconnectError}
+            </p>
+          ) : null}
+          {reconnectMessage ? (
+            <p className="rounded-lg border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-900 dark:text-emerald-200">
+              {reconnectMessage}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="solar-btn-secondary"
+            disabled={reconnectBusy}
+            onClick={() => void reconnectFromHostedKeys()}
+          >
+            {reconnectBusy ? "Reconnecting…" : "Reconnect QuickFile & Lunch Flow"}
+          </button>
+        </section>
+      ) : null}
+      <QuickFileSettingsPanel key={quickFileKey} readOnly={readOnly} />
+      <LunchFlowSettingsForm key={lunchFlowKey} readOnly={readOnly} />
       <Suspense fallback={<OpenBankingSettingsPanelFallback />}>
         <OpenBankingSettingsPanel readOnly={readOnly} />
       </Suspense>

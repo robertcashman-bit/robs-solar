@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import {
+  integrationConnectionLabel,
   lunchFlowConfigStatusSchema,
   lunchFlowSyncResultSchema,
 } from "@/lib/finance-schemas";
@@ -23,6 +24,7 @@ export function LunchFlowSettingsForm({ onSaved, readOnly = false }: LunchFlowSe
 
   const [apiKey, setApiKey] = useState("");
   const [configured, setConfigured] = useState(false);
+  const [connectionState, setConnectionState] = useState<string | undefined>();
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -36,6 +38,7 @@ export function LunchFlowSettingsForm({ onSaved, readOnly = false }: LunchFlowSe
       const data = await apiClient.get<unknown>("/finance/integrations/lunch-flow/status");
       const status = lunchFlowConfigStatusSchema.parse(data);
       setConfigured(status.configured);
+      setConnectionState(status.connection_state);
       setLastSyncAt(status.last_sync_at ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load Lunch Flow settings");
@@ -58,6 +61,7 @@ export function LunchFlowSettingsForm({ onSaved, readOnly = false }: LunchFlowSe
       });
       const status = lunchFlowConfigStatusSchema.parse(data);
       setConfigured(status.configured);
+      setConnectionState(status.connection_state);
       setApiKey("");
       setMessage("Lunch Flow API key saved.");
       onSaved?.();
@@ -114,7 +118,20 @@ export function LunchFlowSettingsForm({ onSaved, readOnly = false }: LunchFlowSe
 
   return (
     <section className="rounded-xl border border-[var(--border)] bg-[var(--surface-sunken)]/30 p-5">
-      <h2 className="text-lg font-semibold">Lunch Flow — personal banks</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">Lunch Flow — personal banks</h2>
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-medium ${
+            connectionState === "active"
+              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+              : configured
+                ? "bg-sky-500/15 text-sky-800 dark:text-sky-200"
+                : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
+          }`}
+        >
+          {integrationConnectionLabel(connectionState, configured)}
+        </span>
+      </div>
       <p className="mt-2 text-sm text-[var(--muted)]">
         Authorise Lloyds, MBNA and Virgin Money in your browser at Lunch Flow, then sync balances
         here. Bank login happens on lunchflow.app (not in this app).

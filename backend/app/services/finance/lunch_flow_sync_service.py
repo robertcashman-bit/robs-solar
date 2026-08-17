@@ -99,6 +99,7 @@ def _transaction_record(
     is_pending = bool(tx.get("isPending") or tx.get("pending"))
     return {
         "account_id": account_row_id,
+        "scope": "personal",
         "external_id": f"lunchflow:{account_id}:{tx_id}",
         "transaction_date": str(tx.get("date") or synced_at.date().isoformat())[:10],
         "description": str(tx.get("description") or "")[:512],
@@ -175,18 +176,21 @@ class LunchFlowSyncService:
                     )
                 except LunchFlowError:
                     transactions = []
+                payloads = []
                 for tx in transactions:
                     tx_currency = str(tx.get("currency") or "").upper()
                     if tx_currency and tx_currency != "GBP":
                         continue
-                    payload = _transaction_record(
-                        tx,
-                        account_row_id=row.id,
-                        account_id=account_id,
-                        synced_at=now,
+                    payloads.append(
+                        _transaction_record(
+                            tx,
+                            account_row_id=row.id,
+                            account_id=account_id,
+                            synced_at=now,
+                        )
                     )
-                    if await self._upsert_transaction(db, payload):
-                        synced_transactions += 1
+                synced_transactions += await self._upsert_transactions(db, payloads)
+                await db.commit()
 
         # Accounts that vanished from the API (revoked Account Access, expired
         # bank link, etc.) leave a stale local balance — retire them.
@@ -257,7 +261,7 @@ class LunchFlowSyncService:
                 row.balance_gbp = balance
             row.is_active = True
             row.updated_at = now
-        await db.commit()
+        await db.flush()
         await db.refresh(row)
         return row
 
@@ -298,27 +302,33 @@ class LunchFlowSyncService:
             await db.commit()
         return retired
 
-    async def _upsert_transaction(self, db: AsyncSession, item: dict) -> bool:
-        existing = await db.scalar(
-            select(FinanceTransactionRow).where(
-                FinanceTransactionRow.external_id == item["external_id"]
+    async def _upsert_transactions(self, db: AsyncSession, items: list[dict]) -> int:
+        if not items:
+            return 0
+        existing_rows = (
+            await db.scalars(
+                select(FinanceTransactionRow).where(
+                    FinanceTransactionRow.external_id.in_([item["external_id"] for item in items])
+                )
             )
-        )
-        if existing is not None:
-            existing.description = item["description"]
-            existing.merchant = item["merchant"]
-            existing.amount_gbp = item["amount_gbp"]
-            existing.category = item["category"]
-            existing.reference = item["reference"]
-            existing.is_pending = item["is_pending"]
-            existing.transaction_date = item["transaction_date"]
-            existing.synced_at = item["synced_at"]
-            await db.commit()
-            return False
-
-        db.add(FinanceTransactionRow(**item))
-        await db.commit()
-        return True
+        ).all()
+        existing = {row.external_id: row for row in existing_rows}
+        imported = 0
+        for item in items:
+            row = existing.get(item["external_id"])
+            if row is not None:
+                row.description = item["description"]
+                row.merchant = item["merchant"]
+                row.amount_gbp = item["amount_gbp"]
+                row.category = item["category"]
+                row.reference = item["reference"]
+                row.is_pending = item["is_pending"]
+                row.transaction_date = item["transaction_date"]
+                row.synced_at = item["synced_at"]
+                continue
+            db.add(FinanceTransactionRow(**item))
+            imported += 1
+        return imported
 
     async def _retire_historic_personal_placeholders(self, db: AsyncSession) -> None:
         """Retire only historic CURRENT placeholders — never mortgages/pensions/property/debts."""

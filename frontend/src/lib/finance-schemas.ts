@@ -257,12 +257,29 @@ export const financeReportsSchema = z.object({
   active_budget: z.lazy(() => activeBudgetSummarySchema).nullable().optional(),
 });
 
+export const integrationConnectionStateSchema = z.enum([
+  "active",
+  "key_saved",
+  "not_connected",
+]);
+
+export function integrationConnectionLabel(
+  state?: string | null,
+  configured?: boolean,
+): string {
+  if (state === "active") return "Active";
+  if (state === "key_saved") return "Key saved";
+  if (state === "not_connected") return "Not connected";
+  return configured ? "Configured" : "Not configured";
+}
+
 export const quickFileConfigStatusSchema = z.object({
   account_number: z.string(),
   api_key_set: z.boolean(),
   application_id: z.string(),
   configured: z.boolean(),
   last_sync_at: z.string().nullable().optional(),
+  connection_state: integrationConnectionStateSchema.optional(),
 });
 
 export const quickFileSyncResultSchema = z.object({
@@ -276,6 +293,15 @@ export const lunchFlowConfigStatusSchema = z.object({
   api_key_set: z.boolean(),
   configured: z.boolean(),
   last_sync_at: z.string().nullable().optional(),
+  connection_state: integrationConnectionStateSchema.optional(),
+});
+
+export const financeIntegrationsReconnectResultSchema = z.object({
+  quickfile: quickFileConfigStatusSchema,
+  lunch_flow: lunchFlowConfigStatusSchema,
+  quickfile_seeded: z.boolean(),
+  lunch_flow_seeded: z.boolean(),
+  message: z.string(),
 });
 
 export const lunchFlowSyncResultSchema = z.object({

@@ -12,6 +12,8 @@ async def test_health_endpoint(client: AsyncClient) -> None:
     assert body["status"] == "ok"
     assert body["adapter_mode"] == "simulator"
     assert body["read_only"] is True
+    assert body["database"] == "sqlite"
+    assert body["database_persistent"] is True
 
 
 @pytest.mark.asyncio

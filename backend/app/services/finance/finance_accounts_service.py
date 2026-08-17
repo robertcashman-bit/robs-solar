@@ -24,6 +24,9 @@ _LIVE_SOURCES = {
     FinanceAccountSource.OPEN_BANKING,
     FinanceAccountSource.QUICKFILE,
 }
+_SOURCE_ALIASES = {
+    "lunchflow": FinanceAccountSource.LUNCH_FLOW.value,
+}
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -45,8 +48,12 @@ def _account_confidence(
     return "manual"
 
 
+def _normalize_source(value: str) -> FinanceAccountSource:
+    return FinanceAccountSource(_SOURCE_ALIASES.get(value, value))
+
+
 def _to_schema(row: FinanceAccountRow) -> FinanceAccount:
-    source = FinanceAccountSource(row.source)
+    source = _normalize_source(row.source)
     historic = account_is_historic(source)
     return FinanceAccount(
         id=row.id,
