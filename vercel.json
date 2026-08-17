@@ -28,6 +28,10 @@
   },
   "crons": [
     {
+      "path": "/backend/health",
+      "schedule": "*/10 * * * *"
+    },
+    {
       "path": "/backend/finance/cron/daily-sync",
       "schedule": "0 6 * * *"
     },

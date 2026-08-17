@@ -38,6 +38,12 @@ def _frontend_redirect(path: str = "/") -> str:
 
 
 def _set_session_cookie(response: Response, username: str, role) -> str:
+    """Attach the host-only session cookie for same-origin /backend traffic.
+
+    Flags are intentional for https://robs-solar.vercel.app multi-service:
+    Path=/, HttpOnly, SameSite=Lax, Secure in production/Vercel, and no Domain
+    attribute (a Domain on vercel.app would be dropped by browsers).
+    """
     token, csrf_token = session_manager.create_session_token(username, role)
     response.set_cookie(
         key=SESSION_COOKIE,
@@ -47,7 +53,10 @@ def _set_session_cookie(response: Response, username: str, role) -> str:
         secure=settings.cookie_secure,
         max_age=60 * 60 * 12,
         path="/",
+        # domain intentionally omitted — host-only cookie for this apex host
     )
+    # Auth cookie responses must never be cached at the edge.
+    response.headers["Cache-Control"] = "private, no-store"
     return csrf_token
 
 

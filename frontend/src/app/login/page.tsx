@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { WalletIcon } from "@/components/shared/icons";
 import { ShortcutInstallCard } from "@/components/shared/ShortcutInstallCard";
-import { ApiError } from "@/lib/api-client";
+import { ApiError, apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { ROBS_FINANCE_OWNER_EMAIL } from "@/lib/hosted";
 
@@ -83,6 +83,12 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [sendingLink, setSendingLink] = useState(false);
   const consumedToken = useRef<string | null>(null);
+
+  // Warm the FastAPI service before the user submits a code so a Vercel
+  // Python cold start does not race the session cookie bootstrap.
+  useEffect(() => {
+    void apiClient.get("/health").catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!loading && user) {

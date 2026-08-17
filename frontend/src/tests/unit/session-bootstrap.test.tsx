@@ -8,6 +8,7 @@ const replace = vi.fn();
 let authState = {
   user: null as null | { username: string; role: "admin" | "viewer" },
   loading: true,
+  authResolved: false,
 };
 
 vi.mock("next/navigation", () => ({
@@ -29,7 +30,7 @@ function GateProbe() {
 describe("session bootstrap gate", () => {
   beforeEach(() => {
     replace.mockReset();
-    authState = { user: null, loading: true };
+    authState = { user: null, loading: true, authResolved: false };
     vi.stubGlobal("location", {
       ...window.location,
       pathname: "/",
@@ -43,11 +44,26 @@ describe("session bootstrap gate", () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
+  it("does not redirect while /auth/me is still slow after the loading fail-safe", async () => {
+    const { rerender } = render(<GateProbe />);
+
+    // Fail-safe may stop the spinner flag, but auth is not resolved yet.
+    authState = { user: null, loading: false, authResolved: false };
+    rerender(<GateProbe />);
+
+    expect(screen.getByRole("status", { name: "Loading session" })).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 1600));
+    });
+    expect(window.location.replace).not.toHaveBeenCalled();
+  });
+
   it("leaves Loading session and redirects when there is no session", async () => {
     const { rerender } = render(<GateProbe />);
     expect(screen.getByRole("status", { name: "Loading session" })).toBeInTheDocument();
 
-    authState = { user: null, loading: false };
+    authState = { user: null, loading: false, authResolved: true };
     rerender(<GateProbe />);
 
     expect(screen.getByRole("status", { name: "Redirecting to sign in" })).toBeInTheDocument();
@@ -61,7 +77,11 @@ describe("session bootstrap gate", () => {
   });
 
   it("shows the dashboard once a session exists", () => {
-    authState = { user: { username: "rob", role: "admin" }, loading: false };
+    authState = {
+      user: { username: "rob", role: "admin" },
+      loading: false,
+      authResolved: true,
+    };
     render(<GateProbe />);
     expect(screen.getByText("dashboard")).toBeInTheDocument();
     expect(replace).not.toHaveBeenCalled();

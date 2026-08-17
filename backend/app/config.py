@@ -227,7 +227,14 @@ class Settings(BaseSettings):
 
     @property
     def cookie_secure(self) -> bool:
-        return self.is_production
+        # Hosted HTTPS (Vercel) must set Secure even if APP_ENV was left as development.
+        # Never set Domain — vercel.app is on the public suffix list and host-only
+        # cookies are what survive same-host /backend rewrites.
+        if self.is_production:
+            return True
+        if os.environ.get("VERCEL", "").strip() == "1":
+            return True
+        return False
 
     @property
     def oidc_admin_email_list(self) -> list[str]:
