@@ -31,9 +31,21 @@ def is_stale(timestamp: str | None, *, max_age: timedelta = STALE_AFTER) -> bool
 
 
 class FinanceLiveRefreshService:
-    async def ensure_fresh(self, db: AsyncSession) -> None:
+    async def ensure_fresh(
+        self,
+        db: AsyncSession,
+        *,
+        include_transactions: bool = False,
+    ) -> None:
+        """Update live balances (and optionally transactions) when stale.
+
+        Dashboard background refresh uses balances only so pages stay fast.
+        Full transaction import is reserved for explicit Refresh / Connect sync.
+        """
+        # Same AsyncSession cannot be used concurrently — keep these sequential
+        # but each path is balances-only so the whole call stays short.
         await self._refresh_quickfile(db)
-        await self._refresh_lunchflow(db)
+        await self._refresh_lunchflow(db, include_transactions=include_transactions)
         await self._refresh_quickfile_reports(db)
         try:
             await finance_liabilities_service.ensure_from_accounts(db)
@@ -59,11 +71,15 @@ class FinanceLiveRefreshService:
             return
         try:
             config = await quickfile_settings_service.get_config(db)
-            await quickfile_sync_service.sync(db, config)
+            await quickfile_sync_service.sync(
+                db, config, include_reports=False, backup=False
+            )
         except Exception:
             logger.warning("Live QuickFile account refresh failed", exc_info=True)
 
-    async def _refresh_lunchflow(self, db: AsyncSession) -> None:
+    async def _refresh_lunchflow(
+        self, db: AsyncSession, *, include_transactions: bool
+    ) -> None:
         status = await lunchflow_settings_service.get_status(db)
         if not status.configured:
             return
@@ -71,7 +87,10 @@ class FinanceLiveRefreshService:
             return
         try:
             config = await lunchflow_settings_service.get_config(db)
-            await lunchflow_sync_service.sync(db, config)
+            if include_transactions:
+                await lunchflow_sync_service.sync(db, config)
+            else:
+                await lunchflow_sync_service.sync_balances(db, config)
         except Exception:
             logger.warning("Live Lunch Flow account refresh failed", exc_info=True)
 

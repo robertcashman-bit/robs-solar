@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
@@ -12,6 +13,8 @@ import { useAuth } from "@/lib/auth-context";
 import { notifyFinanceChanged } from "@/lib/finance-events";
 import { formatGbp } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
+import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
+import { useFinanceReload } from "@/lib/use-finance-reload";
 
 type Txn = {
   id: number;
@@ -50,6 +53,7 @@ export default function TransactionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setError(null);
@@ -61,20 +65,21 @@ export default function TransactionsPage() {
         params.set("filter", filter);
       }
       if (q.trim()) params.set("q", q.trim());
-      const data = await apiClient.get<Txn[]>(`/finance/transactions?${params}`);
+      const [data, cats] = await Promise.all([
+        apiClient.get<Txn[]>(`/finance/transactions?${params}`),
+        apiClient.get<Array<{ parent: string }>>("/finance/categories"),
+      ]);
       setRows(data);
-      const cats = await apiClient.get<Array<{ parent: string }>>("/finance/categories");
       setCategories([...new Set(cats.map((item) => item.parent).filter(Boolean))]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load transactions");
+    } finally {
+      setLoading(false);
     }
   }, [filter, q]);
 
-  useEffect(() => {
-    if (authLoading || !user) return;
-    const timer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timer);
-  }, [authLoading, user, load]);
+  useFinanceReload(load, Boolean(user) && !authLoading);
+  const { refreshing } = useFinanceBackgroundLiveRefresh(user);
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -121,6 +126,7 @@ export default function TransactionsPage() {
       <div className="mt-6 space-y-4">
         {error ? <ErrorBanner message={error} /> : null}
         {message ? <SuccessBanner message={message} /> : null}
+        <SavedFiguresBanner refreshing={refreshing} />
         <div className="flex flex-wrap gap-2">
           {FILTERS.map((item) => (
             <button
@@ -203,7 +209,13 @@ export default function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {loading && rows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6 text-[var(--muted)]">
+                    Loading transactions…
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-3 py-6 text-[var(--muted)]">
                     No transaction history available

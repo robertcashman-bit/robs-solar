@@ -21,6 +21,7 @@ const navItems = [
   { href: "/finance/transactions", label: "Transactions", icon: ChartIcon },
   { href: "/finance/debts", label: "Debts", icon: WalletIcon },
   { href: "/finance/cash-flow", label: "Cash Flow", icon: ChartIcon },
+  { href: "/finance/upcoming", label: "Upcoming", icon: ChartIcon },
   { href: "/finance/budget", label: "Budget", icon: ChartIcon },
   { href: "/finance/data-quality", label: "Data quality", icon: ChartIcon },
   { href: "/finance/onboarding", label: "Setup", icon: SettingsIcon },

@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { BankImportCard } from "@/components/finance/BankImportCard";
+import { FinanceAiAnalystCard } from "@/components/finance/FinanceAiAnalystCard";
 import { FinanceOverviewView } from "@/components/finance/FinanceOverviewView";
+import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
@@ -44,25 +46,22 @@ export default function FinanceOverviewPage() {
       />
       {error ? <div className="mt-4"><ErrorBanner message={error} /></div> : null}
       {status ? <div className="mt-4"><SuccessBanner message={status} /></div> : null}
-      <div className="mt-4">
+      <div className="mt-4 space-y-4">
         <BankImportCard
           readOnly={!canWrite(user)}
-          autoImport={canWrite(user)}
+          autoImport={false}
           onImported={(text) => {
             setStatus(text);
             void refresh();
           }}
         />
+        <FinanceAiAnalystCard user={user} />
       </div>
       {loading && !overview ? (
         <p className="mt-8 text-sm text-[var(--muted)]">Loading finance overview…</p>
       ) : overview ? (
         <div className="mt-6">
-          {refreshing ? (
-            <p className="mb-3 text-sm text-[var(--muted)]">
-              Showing saved figures — pulling latest from QuickFile and Lunch Flow…
-            </p>
-          ) : null}
+          <SavedFiguresBanner refreshing={refreshing} />
           <FinanceOverviewView
             overview={overview}
             onDismissInsight={

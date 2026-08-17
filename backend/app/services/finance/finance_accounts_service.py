@@ -46,8 +46,10 @@ class FinanceAccountsService:
         *,
         scope: FinanceScope | None = None,
         active_only: bool = True,
-        refresh_live: bool = True,
+        refresh_live: bool = False,
     ) -> list[FinanceAccount]:
+        # Default reads Neon only so Personal / Business / Reports paint instantly.
+        # Live QuickFile / Lunch Flow sync is opt-in via refresh_live=True.
         if refresh_live:
             from app.services.finance.finance_live_refresh_service import (
                 finance_live_refresh_service,

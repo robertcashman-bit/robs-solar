@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { BankImportCard } from "@/components/finance/BankImportCard";
+import { CategoryRulesPanel } from "@/components/finance/CategoryRulesPanel";
+import { FinanceExportPanel } from "@/components/finance/FinanceExportPanel";
 import { FinanceHealthPanel } from "@/components/finance/FinanceHealthPanel";
 import { AppShortcutPanel } from "@/components/settings/AppShortcutPanel";
 import { FundingCircleSettingsPanel } from "@/components/settings/FundingCircleSettingsPanel";
@@ -181,6 +183,8 @@ export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelP
           </li>
         </ul>
       </section>
+      <CategoryRulesPanel canEdit={!readOnly} />
+      <FinanceExportPanel />
     </div>
   );
 }

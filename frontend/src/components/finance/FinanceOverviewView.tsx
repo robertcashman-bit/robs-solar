@@ -346,8 +346,8 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
         <section>
           <div className="flex items-center justify-between gap-3">
             <h2 className="solar-section-title">Due in the next 14 days</h2>
-            <Link href="/finance/debts" className="solar-btn-ghost text-sm">
-              All debts
+            <Link href="/finance/upcoming" className="solar-btn-ghost text-sm">
+              Full calendar
             </Link>
           </div>
           <ul className="mt-4 space-y-2">

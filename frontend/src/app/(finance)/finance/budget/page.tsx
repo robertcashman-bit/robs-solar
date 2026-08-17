@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { BudgetStudio } from "@/components/finance/BudgetStudio";
 import { FinanceIntegrityPanel } from "@/components/finance/FinanceIntegrityPanel";
+import { HistoryStatsPanel } from "@/components/finance/HistoryStatsPanel";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -31,6 +32,7 @@ export default function BudgetPage() {
       <div className="mt-6 space-y-8">
         <FinanceIntegrityPanel canEdit={canWrite(user)} />
         <BudgetStudio user={user} />
+        <HistoryStatsPanel />
       </div>
     </AppShell>
   );

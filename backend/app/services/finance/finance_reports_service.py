@@ -28,11 +28,15 @@ class FinanceReportsService:
     ) -> FinanceReportsResponse:
         if month is None:
             month = datetime.now(timezone.utc).strftime("%Y-%m")
-        overview = await finance_overview_service.get_overview(db, month=month)
+        overview = await finance_overview_service.get_overview(
+            db, month=month, refresh_live=False
+        )
         personal = await finance_overview_service.personal_snapshot_for_month(db, month)
         business = await finance_overview_service.business_snapshot_for_month(db, month)
-        accounts = await finance_accounts_service.list_accounts(db)
-        liabilities = await finance_liabilities_service.list_liabilities(db)
+        accounts = await finance_accounts_service.list_accounts(db, refresh_live=False)
+        liabilities = await finance_liabilities_service.list_liabilities(
+            db, sync_accounts=False
+        )
         totals = compute_totals(
             accounts_from_schema(accounts),
             liabilities_from_schema(liabilities),
@@ -78,7 +82,7 @@ class FinanceReportsService:
                 surplus_gbp=snap.surplus_deficit_gbp,
             )
         history = await finance_position_service.list_history(db)
-        qf_reports = await quickfile_reports_service.get_or_refresh_reports(db)
+        qf_reports = await quickfile_reports_service.get_stored_reports(db)
         business_snaps = await finance_overview_service.list_business_snapshots(db, limit=24)
         pl_by_month: dict[str, PlHistoryPoint] = {}
         for snap in reversed(business_snaps):

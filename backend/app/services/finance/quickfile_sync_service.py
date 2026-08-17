@@ -24,7 +24,14 @@ logger = logging.getLogger(__name__)
 
 
 class QuickFileSyncService:
-    async def sync(self, db: AsyncSession, config: QuickFileConfig) -> QuickFileSyncResult:
+    async def sync(
+        self,
+        db: AsyncSession,
+        config: QuickFileConfig,
+        *,
+        include_reports: bool = True,
+        backup: bool = True,
+    ) -> QuickFileSyncResult:
         provider = QuickFileProvider(config)
         try:
             accounts = await provider.sync_accounts()
@@ -63,14 +70,16 @@ class QuickFileSyncService:
         message += f"; debtors control {debtors_gbp:.2f} GBP"
 
         reports_synced = False
-        try:
-            await quickfile_reports_service.sync_reports(db, config)
-            reports_synced = True
-            message += "; P&L and balance sheet synced"
-        except Exception:
-            logger.warning("QuickFile reports sync failed after account sync", exc_info=True)
+        if include_reports:
+            try:
+                await quickfile_reports_service.sync_reports(db, config)
+                reports_synced = True
+                message += "; P&L and balance sheet synced"
+            except Exception:
+                logger.warning("QuickFile reports sync failed after account sync", exc_info=True)
 
-        await _safe_backup(db, trigger="quickfile_sync")
+        if backup:
+            await _safe_backup(db, trigger="quickfile_sync")
         return QuickFileSyncResult(
             accounts_synced=synced,
             debtors_gbp=debtors_gbp,

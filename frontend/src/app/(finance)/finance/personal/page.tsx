@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { AccountManager } from "@/components/finance/AccountManager";
 import { MetricTile } from "@/components/finance/MetricTile";
+import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
@@ -18,6 +19,7 @@ import {
   type FinanceAccount,
   type PersonalFinanceSnapshot,
 } from "@/lib/finance-schemas";
+import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
 import { useFinanceReload } from "@/lib/use-finance-reload";
 import { currentMonthKey, isCurrentMonthSnapshot, parseGbp } from "@/lib/money";
 import { notifyFinanceChanged } from "@/lib/finance-events";
@@ -78,6 +80,7 @@ export default function PersonalFinancePage() {
   }, [authLoading, user, router]);
 
   useFinanceReload(load, Boolean(user));
+  const { refreshing } = useFinanceBackgroundLiveRefresh(user);
 
   async function saveSnapshot(event: React.FormEvent) {
     event.preventDefault();
@@ -127,6 +130,9 @@ export default function PersonalFinancePage() {
       />
       {error ? <div className="mt-4"><ErrorBanner message={error} /></div> : null}
       {status ? <div className="mt-4"><SuccessBanner message={status} /></div> : null}
+      <div className="mt-4">
+        <SavedFiguresBanner refreshing={refreshing} />
+      </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <MetricTile label="Personal cash" value={cash} hint="Positive current accounts only" />
         <MetricTile

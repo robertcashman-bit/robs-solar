@@ -127,6 +127,7 @@ async def get_overview(
 @router.post("/live-refresh")
 async def finance_live_refresh(
     request: Request,
+    full: bool = Query(default=False),
     session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
@@ -135,17 +136,25 @@ async def finance_live_refresh(
         finance_live_refresh_service,
     )
 
-    await finance_live_refresh_service.ensure_fresh(db)
-    return {"ok": True, "message": "Live connections refreshed"}
+    # Default: balances + reports only. Full=True also pulls Lunch Flow txs.
+    await finance_live_refresh_service.ensure_fresh(db, include_transactions=full)
+    return {
+        "ok": True,
+        "message": "Live connections refreshed",
+        "include_transactions": full,
+    }
 
 
 @router.get("/accounts", response_model=list[FinanceAccount])
 async def list_accounts(
     scope: FinanceScope | None = None,
+    live: bool = Query(default=False),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> list[FinanceAccount]:
-    return await finance_accounts_service.list_accounts(db, scope=scope)
+    return await finance_accounts_service.list_accounts(
+        db, scope=scope, refresh_live=live
+    )
 
 
 @router.post("/accounts", response_model=FinanceAccount, status_code=status.HTTP_201_CREATED)
@@ -193,11 +202,12 @@ async def delete_account(
 @router.get("/liabilities", response_model=list[FinanceLiability])
 async def list_liabilities(
     scope: FinanceScope | None = None,
+    live: bool = Query(default=False),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> list[FinanceLiability]:
     return await finance_liabilities_service.list_liabilities(
-        db, scope=scope, sync_accounts=True
+        db, scope=scope, sync_accounts=live
     )
 
 
@@ -244,7 +254,9 @@ async def get_debt_strategy(
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ):
-    liabilities = await finance_liabilities_service.list_liabilities(db, sync_accounts=True)
+    liabilities = await finance_liabilities_service.list_liabilities(
+        db, sync_accounts=False
+    )
     return recommend_debt_strategy(liabilities)
 
 
@@ -255,7 +267,9 @@ async def get_debt_scenarios(
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> list[DebtScenarioResult]:
-    liabilities = await finance_liabilities_service.list_liabilities(db, sync_accounts=True)
+    liabilities = await finance_liabilities_service.list_liabilities(
+        db, sync_accounts=False
+    )
     amounts = [0.0, 100.0, 250.0, 500.0]
     if extras:
         parsed = []
@@ -753,10 +767,14 @@ async def quickfile_test_connection(
 
 @router.get("/integrations/quickfile/reports", response_model=QuickFileReportsResponse)
 async def quickfile_reports(
+    live: bool = Query(default=False),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> QuickFileReportsResponse:
-    reports = await quickfile_reports_service.get_or_refresh_reports(db)
+    if live:
+        reports = await quickfile_reports_service.get_or_refresh_reports(db)
+    else:
+        reports = await quickfile_reports_service.get_stored_reports(db)
     if reports is None:
         return QuickFileReportsResponse()
     return reports
@@ -1447,6 +1465,16 @@ async def list_finance_categories(
     from app.services.finance.category_registry import list_categories
 
     return await list_categories(db, scope=scope.value if scope else None)
+
+
+@router.get("/category-rules")
+async def list_category_rules(
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    from app.services.finance.category_registry import list_confirmed_rules
+
+    return await list_confirmed_rules(db)
 
 
 @router.post("/categories")

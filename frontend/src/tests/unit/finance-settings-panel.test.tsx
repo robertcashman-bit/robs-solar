@@ -59,7 +59,18 @@ describe("FinanceSettingsPanel", () => {
       if (path === "/auth/oidc/status") {
         return { enabled: false };
       }
-      return {};
+      if (path === "/finance/category-rules") return [];
+      if (path === "/finance/categories") {
+        return [{ parent: "Food", subcategory: "", scope: "personal" }];
+      }
+      if (path === "/finance/health") {
+        return {
+          needs_review: false,
+          last_backup: null,
+          web_backup_configured: false,
+        };
+      }
+      return [];
     });
   });
 
@@ -96,7 +107,18 @@ describe("FinanceSettingsPanel", () => {
       if (path === "/auth/oidc/status") {
         return { enabled: false };
       }
-      return {};
+      if (path === "/finance/category-rules") return [];
+      if (path === "/finance/categories") {
+        return [{ parent: "Food", subcategory: "", scope: "personal" }];
+      }
+      if (path === "/finance/health") {
+        return {
+          needs_review: false,
+          last_backup: null,
+          web_backup_configured: false,
+        };
+      }
+      return [];
     });
     render(<FinanceSettingsPanel />);
     await waitFor(() => {

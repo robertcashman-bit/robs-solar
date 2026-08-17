@@ -20,3 +20,27 @@ export function toCsv(rows: Array<Record<string, string | number | boolean | nul
   };
   return [headers.join(","), ...rows.map((row) => headers.map((key) => escape(row[key])).join(","))].join("\n");
 }
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend";
+
+/** Download a credentialed backend file (e.g. /finance/export/transactions.csv). */
+export async function downloadAuthenticatedExport(
+  path: string,
+  filename: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Export failed (${response.status})`);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}

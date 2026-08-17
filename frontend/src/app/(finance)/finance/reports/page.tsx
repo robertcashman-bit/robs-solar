@@ -10,6 +10,7 @@ import { FinanceHistoryCharts } from "@/components/finance/FinanceHistoryCharts"
 import { MetricTile } from "@/components/finance/MetricTile";
 import { PlHistoryChart } from "@/components/finance/PlHistoryChart";
 import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
+import { FinanceExportPanel } from "@/components/finance/FinanceExportPanel";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
@@ -276,6 +277,7 @@ export default function ReportsPage() {
               Export JSON
             </button>
           </div>
+          <FinanceExportPanel />
         </div>
       ) : (
         error ? null : <p className="mt-8 text-sm text-[var(--muted)]">Loading reports…</p>

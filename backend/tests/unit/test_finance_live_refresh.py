@@ -83,6 +83,10 @@ async def test_ensure_fresh_skips_recent_syncs(monkeypatch: pytest.MonkeyPatch) 
         fail_sync,
     )
     monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.lunchflow_sync_service.sync_balances",
+        fail_sync,
+    )
+    monkeypatch.setattr(
         "app.services.finance.finance_live_refresh_service.finance_liabilities_service.ensure_from_accounts",
         mark_debts,
     )
@@ -111,7 +115,7 @@ async def test_ensure_fresh_syncs_when_stale(monkeypatch: pytest.MonkeyPatch) ->
     async def fake_config(_db):
         return object()
 
-    async def fake_qf(_db, _config):
+    async def fake_qf(_db, _config, **_kwargs):
         called["qf"] = True
         return QuickFileSyncResult(accounts_synced=2, debtors_gbp=1, message="qf")
 
@@ -143,6 +147,10 @@ async def test_ensure_fresh_syncs_when_stale(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(
         "app.services.finance.finance_live_refresh_service.quickfile_sync_service.sync",
         fake_qf,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.lunchflow_sync_service.sync_balances",
+        fake_lf,
     )
     monkeypatch.setattr(
         "app.services.finance.finance_live_refresh_service.lunchflow_sync_service.sync",

@@ -196,7 +196,8 @@ class FinanceBudgetPlanService:
             finance_live_refresh_service,
         )
 
-        await finance_live_refresh_service.ensure_fresh(db)
+        # Balances only — never wait on a year of Lunch Flow transactions here.
+        await finance_live_refresh_service.ensure_fresh(db, include_transactions=False)
         bundle = suggest_budgets(*(await self._load_inputs(db)))
         return BudgetSuggestionsResponse(
             income_gbp=bundle.income_gbp,

@@ -16,6 +16,28 @@ from app.services.lunchflow_settings_service import lunchflow_settings_service
 
 
 class LunchFlowSyncService:
+    async def sync_balances(
+        self, db: AsyncSession, config: LunchFlowConfig
+    ) -> LunchFlowSyncResult:
+        """Update account balances only — no year-long transaction import."""
+        provider = LunchFlowProvider(config)
+        records = await provider.sync_accounts()
+        try:
+            for item in records:
+                await self._upsert_account(db, item)
+            await db.flush()
+        except Exception:
+            await db.rollback()
+            raise
+        await lunchflow_settings_service.mark_synced(db)
+        return LunchFlowSyncResult(
+            accounts_synced=len(records),
+            imported=0,
+            duplicates=0,
+            rejected=0,
+            message=f"Synced balances for {len(records)} Lunch Flow account(s)",
+        )
+
     async def sync(self, db: AsyncSession, config: LunchFlowConfig) -> LunchFlowSyncResult:
         provider = LunchFlowProvider(config)
         records = await provider.sync_accounts()
@@ -23,7 +45,8 @@ class LunchFlowSyncService:
             for item in records:
                 await self._upsert_account(db, item)
             await db.flush()
-            since = (datetime.now(timezone.utc) - timedelta(days=365)).date().isoformat()
+            # Incremental: last 90 days is enough for dashboard freshness.
+            since = (datetime.now(timezone.utc) - timedelta(days=90)).date().isoformat()
             raw_txs = await provider.sync_transactions(since=since)
             imported = await finance_import_service.commit(
                 db,

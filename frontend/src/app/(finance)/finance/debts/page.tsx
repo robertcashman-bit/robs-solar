@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { z } from "zod";
 
 import { BankImportCard } from "@/components/finance/BankImportCard";
+import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
@@ -20,6 +21,7 @@ import {
   type FinanceLiability,
 } from "@/lib/finance-schemas";
 import { notifyFinanceChanged } from "@/lib/finance-events";
+import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
 import { useFinanceReload } from "@/lib/use-finance-reload";
 import { debtUsesCreditLimit, optionalMoney, requiredMoney } from "@/lib/finance-form";
 import { formatGbp, formatPercent } from "@/lib/money";
@@ -77,6 +79,7 @@ export default function DebtsPage() {
   }, [authLoading, user, router]);
 
   useFinanceReload(load, Boolean(user));
+  const { refreshing } = useFinanceBackgroundLiveRefresh(user);
 
   const analysisById = useMemo(() => {
     const map = new Map<number, NonNullable<DebtStrategy["analysis"]>[number]>();
@@ -208,6 +211,9 @@ export default function DebtsPage() {
       />
       {error ? <div className="mt-4"><ErrorBanner message={error} /></div> : null}
       {status ? <div className="mt-4"><SuccessBanner message={status} /></div> : null}
+      <div className="mt-4">
+        <SavedFiguresBanner refreshing={refreshing} />
+      </div>
       <p className="mt-4 text-sm text-[var(--muted)]">
         Personal {formatGbp(personalTotal)} · Business {formatGbp(businessTotal)}
         {companyOwesDirector > 0 ? ` · Company owes you ${formatGbp(companyOwesDirector)}` : ""}

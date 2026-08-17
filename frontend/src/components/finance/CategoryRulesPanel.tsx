@@ -1,0 +1,155 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+
+import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
+import { apiClient } from "@/lib/api-client";
+import { useFinanceReload } from "@/lib/use-finance-reload";
+
+type Rule = {
+  pattern?: string;
+  category?: string;
+  scope?: string;
+  match_type?: string;
+  priority?: number;
+};
+
+type CategoryOption = { parent: string; scope: string };
+
+type CategoryRulesPanelProps = {
+  canEdit?: boolean;
+};
+
+export function CategoryRulesPanel({ canEdit = false }: CategoryRulesPanelProps) {
+  const [rules, setRules] = useState<Rule[]>([]);
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    pattern: "",
+    category: "Food",
+    scope: "personal",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [ruleData, catData] = await Promise.all([
+        apiClient.get<Rule[]>("/finance/category-rules"),
+        apiClient.get<CategoryOption[]>("/finance/categories"),
+      ]);
+      setRules(Array.isArray(ruleData) ? ruleData : []);
+      setCategories(Array.isArray(catData) ? catData : []);
+      const first = Array.isArray(catData) ? catData[0]?.parent : undefined;
+      if (first) {
+        setForm((prev) => ({ ...prev, category: prev.category || first }));
+      }
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load category rules");
+    }
+  }, []);
+
+  useFinanceReload(load, true);
+
+  useEffect(() => {
+    const parents = categories
+      .filter((item) => item.scope === form.scope)
+      .map((item) => item.parent);
+    if (parents.length && !parents.includes(form.category)) {
+      setForm((prev) => ({ ...prev, category: parents[0] }));
+    }
+  }, [categories, form.scope, form.category]);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (!canEdit || saving) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      await apiClient.post("/finance/category-rules", form);
+      setStatus("Rule saved — future imports will use this category.");
+      setForm((prev) => ({ ...prev, pattern: "" }));
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save rule");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const scopedCategories = [
+    ...new Set(
+      categories
+        .filter((item) => item.scope === form.scope)
+        .map((item) => item.parent)
+        .filter(Boolean),
+    ),
+  ];
+
+  return (
+    <section className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div>
+        <h2 className="text-lg font-semibold">Categorisation rules</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Confirmed merchant patterns. Manual corrections on Transactions can also create these.
+        </p>
+      </div>
+      {error ? <ErrorBanner message={error} /> : null}
+      {status ? <SuccessBanner message={status} /> : null}
+      {canEdit ? (
+        <form onSubmit={(event) => void save(event)} className="grid gap-3 sm:grid-cols-4">
+          <input
+            className="solar-input sm:col-span-2"
+            placeholder="Pattern (e.g. TESLA FINANCE)"
+            value={form.pattern}
+            onChange={(event) => setForm({ ...form, pattern: event.target.value })}
+            required
+          />
+          <select
+            className="solar-input"
+            value={form.scope}
+            onChange={(event) => setForm({ ...form, scope: event.target.value })}
+          >
+            <option value="personal">Personal</option>
+            <option value="business">Business</option>
+          </select>
+          <select
+            className="solar-input"
+            value={form.category}
+            onChange={(event) => setForm({ ...form, category: event.target.value })}
+          >
+            {scopedCategories.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className="solar-btn-primary sm:col-span-4" disabled={saving}>
+            {saving ? "Saving…" : "Add contains rule"}
+          </button>
+        </form>
+      ) : null}
+      <ul className="space-y-2 text-sm">
+        {rules.length === 0 ? (
+          <li className="text-[var(--muted)]">No confirmed rules yet.</li>
+        ) : (
+          rules.map((rule) => (
+            <li
+              key={`${rule.scope}-${rule.pattern}-${rule.category}`}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border)] px-3 py-2"
+            >
+              <span>
+                <span className="font-medium">{rule.pattern}</span>
+                <span className="text-[var(--muted)]">
+                  {" "}
+                  → {rule.category} · {rule.scope} · {rule.match_type || "CONTAINS"}
+                </span>
+              </span>
+            </li>
+          ))
+        )}
+      </ul>
+    </section>
+  );
+}
