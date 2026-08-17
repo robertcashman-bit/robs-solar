@@ -145,14 +145,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    try {
-      await apiClient.post("/auth/logout");
-    } catch {
-      // Clear the local session even if the server is unreachable.
-    }
+    // Clear caches and drop the session before the network round-trip so
+    // in-flight finance writers cannot repopulate last-known figures, and so
+    // hooks stop starting new fetches while logout is still awaiting.
     clearFinanceLocalCaches();
     setUser(null);
     setCsrfToken(null);
+    try {
+      await apiClient.post("/auth/logout");
+    } catch {
+      // Local session already cleared even if the server is unreachable.
+    }
   }, []);
 
   const value = useMemo(

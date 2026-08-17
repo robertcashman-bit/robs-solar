@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
-import { FINANCE_LAST_OVERVIEW_KEY } from "@/lib/finance-local-cache";
+import {
+  FINANCE_LAST_OVERVIEW_KEY,
+  financeCacheWriteEpoch,
+  isFinanceCacheWriteCurrent,
+} from "@/lib/finance-local-cache";
 import { FINANCE_CHANGED_EVENT, notifyFinanceOverviewReady } from "@/lib/finance-events";
 import { financeOverviewSchema, type FinanceOverview } from "@/lib/finance-schemas";
 import { currentMonthKey } from "@/lib/money";
@@ -48,6 +52,7 @@ export function useFinanceOverview(user: UserInfo | null | undefined) {
       if (!enabled) {
         return;
       }
+      const cacheEpoch = financeCacheWriteEpoch();
       const live = Boolean(opts?.live);
       const fresh = Boolean(opts?.fresh);
       if (live) {
@@ -63,6 +68,9 @@ export function useFinanceOverview(user: UserInfo | null | undefined) {
         if (fresh) params.set("fresh", "1");
         const data = await apiClient.get<unknown>(`/finance/overview?${params.toString()}`);
         const parsed = financeOverviewSchema.parse(data);
+        if (!isFinanceCacheWriteCurrent(cacheEpoch)) {
+          return;
+        }
         overviewRef.current = parsed;
         setOverview(parsed);
         writeLastOverview(parsed);

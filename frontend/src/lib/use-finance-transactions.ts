@@ -3,7 +3,11 @@
 import { useCallback, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
-import { FINANCE_LAST_TRANSACTIONS_KEY } from "@/lib/finance-local-cache";
+import {
+  FINANCE_LAST_TRANSACTIONS_KEY,
+  financeCacheWriteEpoch,
+  isFinanceCacheWriteCurrent,
+} from "@/lib/finance-local-cache";
 import { notifyFinanceOverviewReady } from "@/lib/finance-events";
 import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
 import { useFinanceReload } from "@/lib/use-finance-reload";
@@ -92,6 +96,7 @@ export function useFinanceTransactions(
   const load = useCallback(
     async (append = false) => {
       if (!enabled) return;
+      const cacheEpoch = financeCacheWriteEpoch();
       setError(null);
       try {
         const params = new URLSearchParams();
@@ -108,6 +113,9 @@ export function useFinanceTransactions(
           apiClient.get<FinanceTxn[]>(`/finance/transactions?${params}`),
           apiClient.get<Array<{ parent: string }>>("/finance/categories"),
         ]);
+        if (!isFinanceCacheWriteCurrent(cacheEpoch)) {
+          return;
+        }
         const nextCategories = [...new Set(cats.map((item) => item.parent).filter(Boolean))];
         const nextHasMore = data.length === FINANCE_TXN_PAGE_SIZE;
         const nextRows =
