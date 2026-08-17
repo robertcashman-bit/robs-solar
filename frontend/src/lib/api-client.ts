@@ -1,5 +1,21 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend";
 
+/** Default GET timeout for ordinary finance reads. */
+export const DEFAULT_GET_TIMEOUT_MS = 12_000;
+/** POST/PUT/PATCH/DELETE — allow slower writes. */
+export const MUTATION_TIMEOUT_MS = 45_000;
+/**
+ * Auth bootstrap and health warmup must outlast a Vercel Python cold start
+ * (~20–30s). A short abort looks like “logged out” and kicks the user to /login.
+ */
+export const COLD_START_GET_TIMEOUT_MS = 45_000;
+
+const COLD_START_GET_PATHS = new Set([
+  "/auth/me",
+  "/health",
+  "/auth/magic-code/status",
+]);
+
 export class ApiError extends Error {
   status: number;
 
@@ -19,6 +35,16 @@ export function getCsrfToken() {
   return csrfToken;
 }
 
+export function resolveTimeoutMs(path: string, method?: string): number {
+  if (method && method !== "GET") {
+    return MUTATION_TIMEOUT_MS;
+  }
+  if (COLD_START_GET_PATHS.has(path)) {
+    return COLD_START_GET_TIMEOUT_MS;
+  }
+  return DEFAULT_GET_TIMEOUT_MS;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
   if (!headers.has("Content-Type") && init?.body) {
@@ -28,7 +54,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set("X-CSRF-Token", csrfToken);
   }
 
-  const timeoutMs = init?.method && init.method !== "GET" ? 45000 : 12000;
+  const timeoutMs = resolveTimeoutMs(path, init?.method);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;

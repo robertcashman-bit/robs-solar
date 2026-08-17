@@ -10,11 +10,13 @@ const requestMagicCode = vi.fn(async () => ({
   expiresInSeconds: 600,
 }));
 const consumeMagicLink = vi.fn();
+const apiGet = vi.fn(async (_path: string) => ({ status: "ok" }));
 
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({
     user: null,
     loading: false,
+    authResolved: true,
     magicCodeEnabled: true,
     magicCodeDevDelivery: false,
     login,
@@ -23,6 +25,16 @@ vi.mock("@/lib/auth-context", () => ({
     consumeMagicLink,
   }),
 }));
+
+vi.mock("@/lib/api-client", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api-client")>("@/lib/api-client");
+  return {
+    ...actual,
+    apiClient: {
+      get: (path: string) => apiGet(path),
+    },
+  };
+});
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn() }),
@@ -36,6 +48,15 @@ describe("LoginPage", () => {
     login.mockReset();
     requestMagicCode.mockClear();
     consumeMagicLink.mockReset();
+    apiGet.mockClear();
+    apiGet.mockResolvedValue({ status: "ok" });
+  });
+
+  it("warms the API with a health ping on mount", async () => {
+    render(<LoginPage />);
+    await waitFor(() => {
+      expect(apiGet).toHaveBeenCalledWith("/health");
+    });
   });
 
   it("prefills the owner email and offers a Desktop shortcut", () => {

@@ -12,6 +12,9 @@ const HARD_REDIRECT_MS = 1500;
  * Gate protected finance pages. Soft-navigates to /login when there is no
  * session, with a hard location fallback so a stuck App Router RSC navigation
  * cannot leave the UI on “Loading session…” forever.
+ *
+ * Only redirects after auth is *resolved* unauthenticated. A slow /auth/me
+ * (cold start) must not look like logout.
  */
 export function useRequireAuth(): {
   user: UserInfo | null;
@@ -21,8 +24,9 @@ export function useRequireAuth(): {
   redirecting: boolean;
 } {
   const router = useRouter();
-  const { user, loading } = useAuth();
-  const redirecting = !loading && !user;
+  const { user, loading, authResolved } = useAuth();
+  const redirecting = authResolved && !user;
+  const gated = !user;
 
   useEffect(() => {
     if (!redirecting) {
@@ -40,7 +44,7 @@ export function useRequireAuth(): {
   return {
     user,
     loading,
-    gated: loading || !user,
+    gated: gated || loading || !authResolved,
     redirecting,
   };
 }
