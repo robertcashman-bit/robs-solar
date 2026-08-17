@@ -68,7 +68,8 @@ async def test_weighted_windows_and_insufficient() -> None:
         food = next(item for item in preview["lines"] if item["category"] == "Food")
         assert food["insufficient_data"] is False
         assert food["amount_gbp"] > 0
-        assert "weighted_average" in food["basis_json"] or "annual" in food["basis_json"] or "median" in food["basis_json"]
+        basis = food["basis_json"]
+        assert "weighted_average" in basis or "annual" in basis or "median" in basis
         assert preview["uncategorised_count"] == 1
         empty = await history_budget_service.preview(db, "business")
         assert empty["lines"] == []

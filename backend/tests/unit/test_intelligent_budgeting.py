@@ -21,7 +21,11 @@ from app.services.finance.statement_parsers import (
 
 
 def test_csv_column_guess_and_parse() -> None:
-    text = "Transaction Date,Narrative,Paid out,Paid in\n01/02/2024,TESCO STORES,45.20,\n02/02/2024,SALARY,,2500.00\n"
+    text = (
+        "Transaction Date,Narrative,Paid out,Paid in\n"
+        "01/02/2024,TESCO STORES,45.20,\n"
+        "02/02/2024,SALARY,,2500.00\n"
+    )
     mapping = guess_column_mapping(["Transaction Date", "Narrative", "Paid out", "Paid in"])
     assert mapping["posted_on"] == "Transaction Date"
     parsed = parse_csv_text(text, account_name="Current", scope="personal")
