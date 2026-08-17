@@ -25,10 +25,10 @@ export async function loginAsAdmin(page: Page) {
   const email = process.env.E2E_ADMIN_EMAIL ?? "admin";
   const password = process.env.E2E_ADMIN_PASSWORD ?? "change-me-admin";
   await page.goto("/login");
-  await expect(page.getByLabel("Email")).toBeVisible({ timeout: PAGE_TIMEOUT });
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in with password" }).click();
+  await expect(page.locator("#login-email")).toBeVisible({ timeout: PAGE_TIMEOUT });
+  await page.locator("#login-email").fill(email);
+  await page.locator("#current-password").fill(password);
+  await page.getByRole("button", { name: /Sign in/ }).click();
   await expectFinanceOverviewAfterLogin(page);
 }
 
@@ -36,10 +36,10 @@ export async function loginAsViewer(page: Page) {
   const email = process.env.E2E_VIEWER_EMAIL ?? "viewer";
   const password = process.env.E2E_VIEWER_PASSWORD ?? "change-me-viewer";
   await page.goto("/login");
-  await expect(page.getByLabel("Email")).toBeVisible({ timeout: PAGE_TIMEOUT });
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in with password" }).click();
+  await expect(page.locator("#login-email")).toBeVisible({ timeout: PAGE_TIMEOUT });
+  await page.locator("#login-email").fill(email);
+  await page.locator("#current-password").fill(password);
+  await page.getByRole("button", { name: /Sign in/ }).click();
   await expectFinanceOverviewAfterLogin(page);
 }
 

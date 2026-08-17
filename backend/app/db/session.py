@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -15,6 +17,12 @@ from app.db.database_url import (
     resolve_database_url,
 )
 from app.db.models import Base
+
+logger = logging.getLogger(__name__)
+
+# Serialize create_all / column migrations across concurrent serverless cold starts.
+_SCHEMA_ADVISORY_LOCK_KEY = 872_014_001
+_INIT_DB_ATTEMPTS = 6
 
 __all__ = [
     "SessionLocal",
@@ -197,11 +205,56 @@ def _compat_legacy_not_null_columns(connection) -> None:
             )
 
 
+def _is_retryable_schema_error(exc: BaseException) -> bool:
+    """True when concurrent create_all races should be retried, not fatal."""
+    text_blob = f"{exc.__class__.__name__}: {exc}".lower()
+    markers = (
+        "deadlock",
+        "uniqueviolation",
+        "duplicate key",
+        "already exists",
+        "pg_type_typname_nsp_index",
+    )
+    return any(marker in text_blob for marker in markers)
+
+
 async def init_db() -> None:
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(_migrate_missing_columns)
-        await conn.run_sync(_compat_legacy_not_null_columns)
+    """Create/migrate schema safely under serverless concurrency.
+
+    Multiple Vercel Python instances often cold-start together. Parallel
+    ``create_all`` against Neon deadlocks or races on new table types
+    (seen with ``finance_overview_cache``). Take a transaction-scoped
+    advisory lock on Postgres and retry transient DDL races.
+    """
+    dialect = engine.dialect.name
+    last_error: BaseException | None = None
+    for attempt in range(1, _INIT_DB_ATTEMPTS + 1):
+        try:
+            async with engine.begin() as conn:
+                if dialect == "postgresql":
+                    await conn.execute(
+                        text("SELECT pg_advisory_xact_lock(:key)"),
+                        {"key": _SCHEMA_ADVISORY_LOCK_KEY},
+                    )
+                await conn.run_sync(Base.metadata.create_all)
+                await conn.run_sync(_migrate_missing_columns)
+                await conn.run_sync(_compat_legacy_not_null_columns)
+            return
+        except Exception as exc:  # noqa: BLE001 — retry then re-raise
+            last_error = exc
+            if not _is_retryable_schema_error(exc) or attempt >= _INIT_DB_ATTEMPTS:
+                raise
+            delay = min(0.35 * attempt, 2.0)
+            logger.warning(
+                "init_db race on attempt %s/%s (%s); retrying in %.2fs",
+                attempt,
+                _INIT_DB_ATTEMPTS,
+                exc.__class__.__name__,
+                delay,
+            )
+            await asyncio.sleep(delay)
+    if last_error is not None:
+        raise last_error
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
