@@ -12,6 +12,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from app.adapters.sunsynk_auth import SunsynkVerificationRequired
 from app.adapters.sunsynk_connect import SunsynkConnectAdapter
 from app.config import settings
 from app.schemas.domain import (
@@ -68,6 +69,7 @@ def _configure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "sunsynk_inverter_sn", "INV123")
     monkeypatch.setattr(settings, "enable_live_writes", False)
     monkeypatch.setattr(settings, "sunsynk_enable_unverified_writes", False)
+    monkeypatch.setattr(settings, "sunsynk_verification_code", "")
 
 
 def _ok_handler(request: httpx.Request) -> httpx.Response:
@@ -109,7 +111,6 @@ LOW_LOAD_FLOW_RESPONSE = {
         "existsMeter": False,
     },
 }
-
 
 def _low_load_handler(request: httpx.Request) -> httpx.Response:
     path = request.url.path
@@ -319,7 +320,9 @@ async def test_set_tou_bands_writes_both_grid_flags(monkeypatch: pytest.MonkeyPa
 async def test_set_tou_bands_blocked_without_flags() -> None:
     adapter = SunsynkConnectAdapter(client=_client(_ok_handler))
     with pytest.raises(UnsupportedWriteError):
-        await adapter.set_tou_bands(TouBandsRequest(bands=[TouBandWrite(slot=1, start="00:00")]))
+        await adapter.set_tou_bands(
+            TouBandsRequest(bands=[TouBandWrite(slot=1, start="00:00")])
+        )
 
 
 @pytest.mark.asyncio
@@ -414,7 +417,9 @@ async def test_set_battery_control_does_not_apply_grid_charge_current(
     monkeypatch.setattr(settings, "enable_live_writes", True)
     monkeypatch.setattr(settings, "sunsynk_enable_unverified_writes", True)
     adapter = SunsynkConnectAdapter(client=_client(handler))
-    result = await adapter.set_battery_control(BatteryControlRequest(grid_charge_current_a=30))
+    result = await adapter.set_battery_control(
+        BatteryControlRequest(grid_charge_current_a=30)
+    )
     assert result["grid_charge_current_a_applied"] is False
     assert "gridChargeCurrent" not in captured
 
@@ -443,3 +448,121 @@ async def test_request_refreshes_token_on_401(monkeypatch: pytest.MonkeyPatch) -
     assert result["export_limit_w"] == 3000
     assert state["set_calls"] == 2
     assert state["token_calls"] >= 1
+
+
+LOCKOUT_MSG = "Too many login failures, please enter the verification code!"
+
+
+def _lockout_handler(request: httpx.Request) -> httpx.Response:
+    path = request.url.path
+    if path == "/anonymous/publicKey":
+        return httpx.Response(200, json={"success": True, "data": TEST_PUBLIC_KEY_PEM})
+    if path == "/oauth/token/new":
+        return httpx.Response(200, json={"success": False, "msg": LOCKOUT_MSG})
+    return httpx.Response(404, json={"success": False})
+
+
+@pytest.mark.asyncio
+async def test_lockout_raises_and_is_not_retried() -> None:
+    token_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal token_calls
+        if request.url.path == "/oauth/token/new":
+            token_calls += 1
+        return _lockout_handler(request)
+
+    adapter = SunsynkConnectAdapter(client=_client(handler))
+    with pytest.raises(SunsynkVerificationRequired, match="verification code"):
+        await adapter.get_live_metrics()
+    assert token_calls == 1
+    with pytest.raises(SunsynkVerificationRequired, match="verification code"):
+        await adapter.get_live_metrics()
+    assert token_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_later_login_without_code_stays_blocked() -> None:
+    token_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal token_calls
+        if request.url.path == "/oauth/token/new":
+            token_calls += 1
+        return _lockout_handler(request)
+
+    adapter = SunsynkConnectAdapter(client=_client(handler))
+    with pytest.raises(SunsynkVerificationRequired):
+        await adapter._authenticate()
+    with pytest.raises(SunsynkVerificationRequired):
+        await adapter._authenticate()
+    assert token_calls == 1
+    assert adapter.verification_required() is True
+
+
+@pytest.mark.asyncio
+async def test_get_connectivity_after_lockout_does_not_call_login() -> None:
+    token_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal token_calls
+        if request.url.path == "/oauth/token/new":
+            token_calls += 1
+        return _lockout_handler(request)
+
+    adapter = SunsynkConnectAdapter(client=_client(handler))
+    with pytest.raises(SunsynkVerificationRequired):
+        await adapter._authenticate()
+    assert token_calls == 1
+    status = await adapter.get_connectivity()
+    assert status.adapter_connected is False
+    assert status.degraded_reason
+    assert "verification code" in status.degraded_reason.lower()
+    assert token_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_verify_code_is_sent_and_clears_lockout() -> None:
+    captured: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/anonymous/publicKey":
+            return httpx.Response(200, json={"success": True, "data": TEST_PUBLIC_KEY_PEM})
+        if path == "/oauth/token/new":
+            body = __import__("json").loads(request.content.decode())
+            captured.append(body)
+            if body.get("verifyCode") == "482913":
+                return httpx.Response(200, json=TOKEN_RESPONSE)
+            return httpx.Response(200, json={"success": False, "msg": LOCKOUT_MSG})
+        return _ok_handler(request)
+
+    adapter = SunsynkConnectAdapter(client=_client(handler))
+    with pytest.raises(SunsynkVerificationRequired):
+        await adapter._authenticate()
+    status = await adapter.submit_verification_code("482913")
+    assert status["verification_required"] is False
+    assert captured[-1]["verifyCode"] == "482913"
+    assert adapter.verification_required() is False
+
+
+@pytest.mark.asyncio
+async def test_env_verification_code_is_one_shot(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/anonymous/publicKey":
+            return httpx.Response(200, json={"success": True, "data": TEST_PUBLIC_KEY_PEM})
+        if request.url.path == "/oauth/token/new":
+            captured.append(__import__("json").loads(request.content.decode()))
+            return httpx.Response(200, json={"success": False, "msg": LOCKOUT_MSG})
+        return httpx.Response(404)
+
+    monkeypatch.setattr(settings, "sunsynk_verification_code", "111222")
+    adapter = SunsynkConnectAdapter(client=_client(handler))
+    with pytest.raises(SunsynkVerificationRequired):
+        await adapter._authenticate()
+    assert captured[0]["verifyCode"] == "111222"
+    with pytest.raises(SunsynkVerificationRequired):
+        await adapter._authenticate()
+    assert len(captured) == 1

@@ -5,27 +5,23 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import {
-  AlertIcon,
   ChartIcon,
   GaugeIcon,
   SettingsIcon,
   WalletIcon,
 } from "@/components/shared/icons";
 import { useAuth } from "@/lib/auth-context";
-import { canWrite } from "@/lib/permissions";
 import { InstallAppBanner } from "@/components/shared/InstallAppBanner";
 
 const navItems = [
   { href: "/", label: "Overview", icon: GaugeIcon },
-  { href: "/finance/connect", label: "Connect banks", icon: WalletIcon, highlight: true },
   { href: "/finance/personal", label: "Personal", icon: WalletIcon },
   { href: "/finance/business", label: "Business", icon: WalletIcon },
   { href: "/finance/debts", label: "Debts", icon: WalletIcon },
   { href: "/finance/cash-flow", label: "Cash Flow", icon: ChartIcon },
   { href: "/finance/budget", label: "Budget", icon: ChartIcon },
   { href: "/finance/reports", label: "Reports", icon: ChartIcon },
-  { href: "/finance/assistant", label: "AI assistant", icon: ChartIcon },
-  { href: "/audit", label: "Audit", icon: AlertIcon, adminOnly: true },
+  { href: "/finance/connect", label: "Connect banks", icon: WalletIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -41,24 +37,13 @@ function isNavActive(pathname: string, href: string): boolean {
   if (href === "/") {
     return pathname === "/";
   }
-  if (href === "/finance/connect") {
-    return (
-      pathname === href ||
-      pathname.startsWith(`${href}/`) ||
-      pathname.startsWith("/finance/open-banking")
-    );
-  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { user, logout, loading } = useAuth();
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
-
-  useEffect(() => {
-    setTheme(readStoredTheme());
-  }, []);
+  const [theme, setTheme] = useState<"dark" | "light">(readStoredTheme);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -86,12 +71,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col text-[var(--foreground)]">
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-[var(--surface-solid)] focus:px-4 focus:py-2 focus:shadow-lg"
-      >
-        Skip to main content
-      </a>
       <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface-elevated)]/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="group flex items-center gap-3">
@@ -102,9 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400">
                 Rob&apos;s Finance
               </p>
-              <p className="text-sm font-semibold leading-tight tracking-tight">
-                Finance Dashboard
-              </p>
+              <h1 className="text-sm font-semibold leading-tight tracking-tight">Finance Dashboard</h1>
             </div>
           </Link>
 
@@ -114,13 +91,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 aria-label="Main navigation"
                 className="flex max-w-[min(100vw-2rem,52rem)] flex-wrap gap-0.5 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 shadow-sm"
               >
-                {(canWrite(user)
-                  ? navItems
-                  : navItems.filter((item) => !("adminOnly" in item && item.adminOnly))
-                ).map((item) => {
+                {navItems.map((item) => {
                   const active = isNavActive(pathname, item.href);
                   const Icon = item.icon;
-                  const highlight = "highlight" in item && item.highlight;
                   return (
                     <Link
                       key={item.href}
@@ -129,9 +102,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                       className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all sm:px-3 ${
                         active
                           ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm"
-                          : highlight
-                            ? "text-emerald-800 ring-1 ring-emerald-500/40 dark:text-emerald-200 hover:bg-[var(--surface-elevated)]"
-                            : "text-[var(--muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--foreground)]"
+                          : "text-[var(--muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--foreground)]"
                       }`}
                     >
                       <Icon size={15} className={active ? "opacity-95" : "opacity-70"} />
@@ -141,15 +112,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                   );
                 })}
               </nav>
-
-              <Link
-                href="/alerts"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)]"
-                aria-label="View alerts"
-              >
-                <AlertIcon size={16} />
-                <span className="hidden sm:inline">Alerts</span>
-              </Link>
 
               <span className="hidden items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium shadow-sm md:inline-flex">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
@@ -168,14 +130,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">
         {user ? <InstallAppBanner /> : null}
         {children}
       </main>
 
       <footer className="border-t border-[var(--border)] py-5 text-center">
         <p className="text-xs text-[var(--muted)]">
-          Rob&apos;s Finance — personal and business tracking
+          Rob&apos;s Finance — personal &amp; business tracking
         </p>
       </footer>
     </div>

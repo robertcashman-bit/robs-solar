@@ -26,6 +26,8 @@ frontend/out/
 # Testing
 frontend/coverage/
 .pytest_cache/
+.ruff_cache/
+.deploy-stamp
 htmlcov/
 frontend/playwright-report/
 frontend/test-results/

@@ -22,9 +22,16 @@ def test_current_data_source_simulator() -> None:
         assert not is_live_mode()
 
 
-def test_current_data_source_live() -> None:
+def test_current_data_source_sunsynk_is_treated_as_simulated() -> None:
     with patch("app.services.data_source.settings") as mock_settings:
         mock_settings.adapter_mode = "sunsynk_connect"
+        assert current_data_source() == DATA_SOURCE_SIMULATED
+        assert not is_live_mode()
+
+
+def test_current_data_source_live() -> None:
+    with patch("app.services.data_source.settings") as mock_settings:
+        mock_settings.adapter_mode = "modbus_tcp"
         assert current_data_source() == DATA_SOURCE_LIVE
         assert is_live_mode()
 

@@ -6,7 +6,8 @@ cd "$ROOT"
 
 echo "==> Setting up Rob's Solar backend..."
 cd backend
-if [ ! -d .venv ]; then
+if [ ! -x .venv/bin/python ]; then
+  rm -rf .venv
   python3 -m venv .venv
 fi
 source .venv/bin/activate

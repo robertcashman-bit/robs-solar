@@ -29,17 +29,11 @@ export function ActiveBudgetCard({ budget }: ActiveBudgetCardProps) {
 
   const surplus = budget.surplus_gbp;
   const surplusLabel =
-    surplus == null
-      ? budget.incomplete_reason || "Surplus unavailable"
-      : surplus < 0
-        ? `Projected monthly shortfall: ${formatGbp(Math.abs(surplus))}`
-        : `Projected monthly surplus: ${formatGbp(surplus)}`;
+    surplus < 0
+      ? `Projected monthly shortfall: ${formatGbp(Math.abs(surplus))}`
+      : `Projected monthly surplus: ${formatGbp(surplus)}`;
   const surplusClass =
-    surplus == null
-      ? "text-[var(--muted)]"
-      : surplus < 0
-        ? "text-red-600 dark:text-red-400"
-        : "text-emerald-600 dark:text-emerald-400";
+    surplus < 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400";
 
   return (
     <section
@@ -55,7 +49,7 @@ export function ActiveBudgetCard({ budget }: ActiveBudgetCardProps) {
             </span>
           </div>
           <p className="mt-0.5 text-sm text-[var(--muted)]">
-            {budget.name} · {budget.strategy.replace("_", " ")}
+            {budget.name} · {budget.style.replaceAll("_", " ")}. A plan, not actual cashflow.
           </p>
         </div>
         <Link href="/finance/budget" className="solar-btn-secondary text-sm">
@@ -69,7 +63,9 @@ export function ActiveBudgetCard({ budget }: ActiveBudgetCardProps) {
         </div>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-sunken)]/40 px-3 py-2">
           <dt className="text-xs uppercase tracking-wide text-[var(--muted)]">Planned expenditure</dt>
-          <dd className="mt-1 text-lg font-semibold tabular-nums">{formatGbp(budget.allocated_gbp)}</dd>
+          <dd className="mt-1 text-lg font-semibold tabular-nums">
+            {formatGbp(budget.monthly_total_gbp)}
+          </dd>
         </div>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-sunken)]/40 px-3 py-2">
           <dt className="text-xs uppercase tracking-wide text-[var(--muted)]">Debt overpayment</dt>

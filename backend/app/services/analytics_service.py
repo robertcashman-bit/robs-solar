@@ -80,7 +80,9 @@ async def _summary_from_rows(
 
     tariff = await tariff_service.get_tariff(db)
 
-    cheap_import, peak_import = _split_import_kwh(rows, tariff.off_peak_start, tariff.off_peak_end)
+    cheap_import, peak_import = _split_import_kwh(
+        rows, tariff.off_peak_start, tariff.off_peak_end
+    )
     battery_charge = rows[-1].daily_battery_charge_kwh if rows else 0.0
     battery_discharge = rows[-1].daily_battery_discharge_kwh if rows else 0.0
     battery_charge = battery_charge or 0.0
@@ -119,7 +121,6 @@ async def _summary_from_rows(
         currency=tariff.currency,
         standing_charge=result.standing_charge,
         breakdown=result.breakdown,
-        data_available=bool(rows),
     )
 
 
@@ -185,7 +186,6 @@ async def enrich_day_summary_with_live(
             "savings": result.savings,
             "standing_charge": result.standing_charge,
             "breakdown": result.breakdown,
-            "data_available": True,
         }
     )
 
@@ -252,13 +252,6 @@ class AnalyticsService:
         range_name: HistoryRange,
     ) -> MetricSummaryResponse:
         summary = await self.get_summary(db, range_name)
-        if not summary.data_available:
-            return summary.model_copy(
-                update={
-                    "optimisation_score": None,
-                    "system_status": "Energy data unavailable.",
-                }
-            )
         warnings_resp = await system_warnings_service.evaluate(db)
         score = compute_optimisation_score(
             import_kwh=summary.import_kwh,

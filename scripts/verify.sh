@@ -27,9 +27,9 @@ echo "==> Frontend: e2e tests"
 # E2e starts its own backend on :8000 — stop the launchd service if running.
 UID_NUM="$(id -u)"
 launchctl bootout "gui/${UID_NUM}/com.robssolar.backend" 2>/dev/null || true
-for _port in 8000 3000; do
-  lsof -ti "tcp:${_port}" 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-done
+# lsof misses IPv6 Next listeners on some Linux agents and can match Chrome
+# client sockets. Only stop processes that own a LISTEN socket.
+python3 "$ROOT/scripts/free-dev-ports.py" 8000 3000
 sleep 1
 CI=true npm run test:e2e
 echo "==> Frontend: npm audit"

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta, timezone
 
 from app.adapters.base import InverterAdapter
@@ -15,8 +14,6 @@ from app.services.iog_schedule import (
 )
 from app.services.octopus_client import octopus_client
 from app.services.tariff_clock import to_tariff
-
-logger = logging.getLogger(__name__)
 
 _IMPORT_THRESHOLD_W = 50.0
 _DISCHARGE_THRESHOLD_W = 100.0
@@ -107,7 +104,10 @@ def _peak_import_message(
     if next_cheap_start is not None:
         local = to_tariff(next_cheap_start)
         label = "off-peak" if next_cheap_source == "off-peak" else "smart-charge"
-        next_hint = f" Next cheap {label} window from {local.strftime('%H:%M')}."
+        next_hint = (
+            f" Next cheap {label} window from "
+            f"{local.strftime('%H:%M')}."
+        )
 
     if holding:
         return (
@@ -180,7 +180,9 @@ def evaluate_charge_window(
     window_end = active_band.end if active_band else ""
     target_soc = active_band.target_soc_pct if active_band else None
 
-    next_start, next_source = next_cheap_window_start(now, offpeak_start, offpeak_end, planned)
+    next_start, next_source = next_cheap_window_start(
+        now, offpeak_start, offpeak_end, planned
+    )
     next_cheap_start = next_start.isoformat() if next_start else None
 
     base = dict(
@@ -199,17 +201,17 @@ def evaluate_charge_window(
     if cheap_now and importing:
         label = "overnight off-peak" if cheap_source == "off-peak" else "smart-charge"
         cap_text = f"{target_soc}%" if target_soc is not None else "its reserve"
-        end_label = (
-            offpeak_end
-            if cheap_source == "off-peak"
-            else (
-                next(
-                    (to_tariff(w.end).strftime("%H:%M") for w in planned if w.start <= now < w.end),
-                    None,
-                )
-                or window_end
-                or "the window end"
+        end_label = offpeak_end if cheap_source == "off-peak" else (
+            next(
+                (
+                    to_tariff(w.end).strftime("%H:%M")
+                    for w in planned
+                    if w.start <= now < w.end
+                ),
+                None,
             )
+            or window_end
+            or "the window end"
         )
         message = (
             f"Importing {grid_import_w / 1000:.1f} kW from the grid on cheap power "
@@ -265,20 +267,20 @@ class ChargeWindowService:
                 offpeak_end = dispatches.off_peak_window.end
                 planned = list(dispatches.planned)
         except Exception:  # noqa: BLE001
-            logger.warning("Charge window: failed to load Octopus dispatches", exc_info=True)
+            pass
 
         metrics = None
         active_band = None
         try:
             metrics = await adapter.get_live_metrics()
         except Exception:  # noqa: BLE001 — dashboard must not break
-            logger.warning("Charge window: failed to load live metrics", exc_info=True)
+            pass
 
         try:
             settings_payload = await adapter.get_inverter_settings()
             active_band = settings_payload.active_band if settings_payload else None
         except Exception:  # noqa: BLE001
-            logger.warning("Charge window: failed to load inverter settings", exc_info=True)
+            pass
 
         if metrics is None:
             return ChargeWindowStatus(

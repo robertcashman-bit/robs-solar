@@ -1,39 +1,47 @@
 import Link from "next/link";
 
-import { buildAccountItems, buildLiabilityItems } from "@/components/finance/account-item-list";
-import { FinanceAmount } from "@/components/finance/FinanceAmount";
-import { FinanceItemList } from "@/components/finance/FinanceItemList";
-import { filterZeroFinanceItems } from "@/components/finance/finance-item-utils";
 import type { FinanceAccount, FinanceLiability, FinanceOverview } from "@/lib/finance-schemas";
-import { formatFinanceGbp, formatGbp } from "@/lib/money";
+import { formatGbp } from "@/lib/money";
 
 type AccountStatementsProps = {
-  overview: FinanceOverview;
+  overview?: Pick<FinanceOverview, "property_gbp" | "mortgage_balance_gbp"> | null;
   accounts: FinanceAccount[];
-  liabilities?: FinanceLiability[];
-  showMonthly?: boolean;
-  scope?: FinanceAccount["scope"];
+  liabilities: FinanceLiability[];
 };
 
-function isHistoric(overview: FinanceOverview, field: string) {
-  return overview.historic_fields.includes(field);
+function isSandboxAccount(account: FinanceAccount): boolean {
+  const provider = (account.provider || "").trim().toLowerCase();
+  const name = account.name.trim().toLowerCase();
+  if (name.includes("mock aspsp") || provider.includes("mock aspsp")) {
+    return true;
+  }
+  return account.source === "open_banking" && provider.includes("sandbox");
 }
 
-export function AccountStatements({
-  overview,
-  accounts,
-  liabilities = [],
-  showMonthly = true,
-  scope = "personal",
-}: AccountStatementsProps) {
-  const propertyMissing = overview.property_value_gbp <= 0 && overview.mortgage_balance_gbp > 0;
-  const accountItems = buildAccountItems(accounts, scope);
-  const liabilityItems = buildLiabilityItems(liabilities, scope);
-  const totalDebt = Math.abs(overview.total_debt_gbp);
+function keepZeroBalance(account: FinanceAccount): boolean {
+  return account.name.toLowerCase().includes("mbna") && account.account_type === "credit_card";
+}
 
-  const assets = formatFinanceGbp(overview.total_assets_gbp, "asset");
-  const debtDisplay = formatGbp(totalDebt);
-  const net = formatFinanceGbp(overview.net_worth_estimate_gbp, "signed");
+function visibleAccounts(accounts: FinanceAccount[]): FinanceAccount[] {
+  return accounts.filter((account) => {
+    if (!account.is_active || isSandboxAccount(account)) {
+      return false;
+    }
+    return Math.abs(account.balance_gbp) >= 0.005 || keepZeroBalance(account);
+  });
+}
+
+export function AccountStatements({ overview, accounts, liabilities }: AccountStatementsProps) {
+  const propertyMissing =
+    overview != null && overview.property_gbp <= 0 && overview.mortgage_balance_gbp > 0;
+  const shownAccounts = visibleAccounts(accounts);
+  const shownDebts = liabilities.filter(
+    (item) => item.is_active && Math.abs(item.balance_gbp) >= 0.005,
+  );
+
+  if (!propertyMissing && shownAccounts.length === 0 && shownDebts.length === 0) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
@@ -48,95 +56,53 @@ export function AccountStatements({
         </p>
       ) : null}
 
-      {accountItems.length > 0 ? (
-        <FinanceItemList
-          title="Personal accounts"
-          subtitle="Each account on its own line — zero balances hidden"
-          items={accountItems}
-        />
-      ) : null}
-
-      {liabilityItems.length > 0 ? (
-        <FinanceItemList
-          title="Debts"
-          subtitle="Each loan, mortgage, and credit card debt — one line per item"
-          items={liabilityItems}
-        />
-      ) : null}
-
-      <FinanceItemList
-        title="Net worth"
-        subtitle="Total assets minus total debts"
-        items={[
-          {
-            key: "total-assets",
-            label: "Total assets",
-            amount: overview.total_assets_gbp,
-            role: "asset",
-          },
-          {
-            key: "total-debt",
-            label: "Total debts",
-            amount: totalDebt,
-            role: "debt",
-          },
-          {
-            key: "net-worth",
-            label: "Net worth",
-            amount: overview.net_worth_estimate_gbp,
-            role: "signed",
-            total: true,
-          },
-        ]}
-        footer={
-          <p className="tabular-nums text-[var(--muted)]">
-            <span className={assets.className}>{assets.text}</span> −{" "}
-            <span className="text-red-600 dark:text-red-400">{debtDisplay}</span> ={" "}
-            <span className={net.className}>{net.text}</span>
-            {overview.home_equity_gbp > 0 ? (
-              <>
-                {" "}
-                · home equity{" "}
-                <FinanceAmount
-                  value={overview.home_equity_gbp}
-                  role="signed"
-                  className="inline font-medium"
-                />
-              </>
-            ) : null}
+      {shownAccounts.length > 0 ? (
+        <section>
+          <h3 className="text-sm font-semibold">Accounts</h3>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            One line per account. Zero balances and sandbox accounts are hidden.
           </p>
-        }
-      />
+          <ul className="mt-3 space-y-2">
+            {shownAccounts.map((account) => (
+              <li
+                key={account.id}
+                className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm"
+              >
+                <span>
+                  {account.name}
+                  <span className="ml-2 text-[var(--muted)]">
+                    {account.scope} · {account.account_type.replaceAll("_", " ")}
+                  </span>
+                </span>
+                <span className="font-semibold tabular-nums">{formatGbp(account.balance_gbp)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
-      {showMonthly ? (
-        <FinanceItemList
-          title="Personal monthly cash flow"
-          subtitle="Typical monthly income and spending"
-          items={filterZeroFinanceItems([
-            {
-              key: "income",
-              label: "Income",
-              amount: overview.personal_monthly_income_gbp || overview.monthly_income_gbp,
-              role: "inflow",
-              historic: isHistoric(overview, "personal_monthly_income_gbp"),
-            },
-            {
-              key: "spending",
-              label: "Spending",
-              amount: overview.monthly_spending_gbp,
-              role: "outflow",
-              historic: isHistoric(overview, "monthly_spending_gbp"),
-            },
-            {
-              key: "surplus",
-              label: "Surplus / (deficit)",
-              amount: overview.monthly_surplus_gbp,
-              role: "signed",
-              historic: isHistoric(overview, "monthly_surplus_gbp"),
-              total: true,
-            },
-          ])}
-        />
+      {shownDebts.length > 0 ? (
+        <section>
+          <h3 className="text-sm font-semibold">Debts</h3>
+          <p className="mt-1 text-xs text-[var(--muted)]">One line per active liability.</p>
+          <ul className="mt-3 space-y-2">
+            {shownDebts.map((debt) => (
+              <li
+                key={debt.id}
+                className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm"
+              >
+                <span>
+                  {debt.name}
+                  <span className="ml-2 text-[var(--muted)]">
+                    {debt.scope} · {debt.debt_type.replaceAll("_", " ")}
+                    {debt.interest_rate_known === false ? " · APR unknown" : ""}
+                  </span>
+                </span>
+                <span className="font-semibold tabular-nums">{formatGbp(debt.balance_gbp)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
     </div>
   );

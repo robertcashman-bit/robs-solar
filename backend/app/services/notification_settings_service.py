@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +14,6 @@ from app.schemas.domain import (
     NotificationSettings,
     NotificationSettingsStatus,
 )
-from app.services.settings_crypto import open_json, seal_json
 
 _KEY = "notification_settings"
 
@@ -30,7 +31,7 @@ class NotificationSettingsService:
         row = await db.scalar(select(AppSettingRow).where(AppSettingRow.key == _KEY))
         if row is None:
             return self._defaults()
-        return NotificationSettings.model_validate(open_json(row.value))
+        return NotificationSettings.model_validate(json.loads(row.value))
 
     async def get_status(self, db: AsyncSession) -> NotificationSettingsStatus:
         config = await self.get_settings(db)
@@ -48,7 +49,7 @@ class NotificationSettingsService:
         current = await self.get_settings(db)
         if not incoming.smtp_password:
             incoming.smtp_password = current.smtp_password
-        payload = seal_json(incoming.model_dump())
+        payload = json.dumps(incoming.model_dump())
         row = await db.scalar(select(AppSettingRow).where(AppSettingRow.key == _KEY))
         if row is None:
             db.add(AppSettingRow(key=_KEY, value=payload))
@@ -57,7 +58,9 @@ class NotificationSettingsService:
         await db.commit()
         return await self.get_status(db)
 
-    def category_enabled(self, config: NotificationSettings, category: str) -> bool:
+    def category_enabled(
+        self, config: NotificationSettings, category: str
+    ) -> bool:
         toggles = config.categories.model_dump()
         return bool(toggles.get(category, True))
 

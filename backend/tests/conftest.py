@@ -1,30 +1,142 @@
 import os
+import tempfile
+import uuid
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-os.environ.setdefault("SECRET_KEY", "test-secret-key")
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./data/test_robs_solar.db")
-os.environ.setdefault("READ_ONLY", "true")
-os.environ.setdefault("ENABLE_LIVE_WRITES", "false")
-os.environ.setdefault("SUNSYNK_ENABLE_UNVERIFIED_WRITES", "false")
-os.environ.setdefault("ADAPTER_MODE", "simulator")
-os.environ.setdefault("ADMIN_USERNAME", "admin")
-os.environ.setdefault("ADMIN_PASSWORD", "admin-pass")
-os.environ.setdefault("VIEWER_USERNAME", "viewer")
-os.environ.setdefault("VIEWER_PASSWORD", "viewer-pass")
-os.environ.setdefault("METRICS_SAMPLER_ENABLED", "false")
-os.environ.setdefault("FINANCE_DAILY_SYNC_ENABLED", "false")
-os.environ.setdefault("AI_ENABLED", "false")
+_TEST_DB_PATH = Path(tempfile.gettempdir()) / f"robs_solar_pytest_{uuid.uuid4().hex}.db"
 
-from app.db.session import init_db
-from app.main import app
+os.environ.setdefault("SECRET_KEY", "test-secret-key")
+os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TEST_DB_PATH}"
+os.environ["FINANCE_KEEP_SQLITE"] = "true"
+os.environ.setdefault("APP_ENV", "test")
+os.environ["READ_ONLY"] = "true"
+os.environ["ENABLE_LIVE_WRITES"] = "false"
+os.environ["SUNSYNK_ENABLE_UNVERIFIED_WRITES"] = "false"
+os.environ["ADAPTER_MODE"] = "simulator"
+os.environ["ADMIN_USERNAME"] = "admin"
+os.environ["ADMIN_PASSWORD"] = "admin-pass"
+os.environ["VIEWER_USERNAME"] = "viewer"
+os.environ["VIEWER_PASSWORD"] = "viewer-pass"
+os.environ.setdefault("METRICS_SAMPLER_ENABLED", "false")
+os.environ.setdefault("AI_ENABLED", "false")
+os.environ["QUICKFILE_ACCOUNT_NUMBER"] = ""
+os.environ["QUICKFILE_API_KEY"] = ""
+os.environ["QUICKFILE_APPLICATION_ID"] = ""
+os.environ["TRUELAYER_CLIENT_ID"] = ""
+os.environ["TRUELAYER_CLIENT_SECRET"] = ""
+os.environ["LUNCHFLOW_API_KEY"] = ""
+os.environ["LUNCH_FLOW_API_KEY"] = ""
+os.environ["CRON_SECRET"] = ""
+os.environ["TESLA_REFRESH_TOKEN"] = ""
+os.environ["OIDC_ENABLED"] = "false"
+
+from app.db.session import init_db  # noqa: E402
+from app.main import app  # noqa: E402
+
+
+def pytest_sessionfinish(session, exitstatus) -> None:  # noqa: ARG001
+    for suffix in ("", "-wal", "-shm"):
+        path = Path(str(_TEST_DB_PATH) + suffix)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_db() -> AsyncGenerator[None, None]:
     await init_db()
+    yield
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def reset_finance_rows(setup_db: None) -> AsyncGenerator[None, None]:
+    from sqlalchemy import delete
+
+    from app.db.models import (
+        BusinessFinanceSnapshotRow,
+        CashflowForecastRow,
+        FinanceAccountRow,
+        FinanceBackupSnapshotRow,
+        FinanceBudgetPlanLineRow,
+        FinanceBudgetPlanRow,
+        FinanceChangeAuditRow,
+        FinanceHealthEventRow,
+        FinanceImportBatchRow,
+        FinanceInsightRow,
+        FinanceLiabilityRow,
+        FinancePositionSnapshotRow,
+        FinanceRecurringRuleRow,
+        FinanceSinkingFundRow,
+        FinanceTransactionRow,
+        MonthlyBudgetRow,
+        PersonalFinanceSnapshotRow,
+    )
+    from app.db.session import SessionLocal
+
+    async with SessionLocal() as db:
+        for model in (
+            FinanceInsightRow,
+            CashflowForecastRow,
+            MonthlyBudgetRow,
+            FinanceBudgetPlanLineRow,
+            FinanceBudgetPlanRow,
+            FinanceTransactionRow,
+            FinanceImportBatchRow,
+            FinanceChangeAuditRow,
+            FinanceBackupSnapshotRow,
+            FinanceSinkingFundRow,
+            FinanceRecurringRuleRow,
+            FinanceHealthEventRow,
+            FinancePositionSnapshotRow,
+            FinanceLiabilityRow,
+            FinanceAccountRow,
+            PersonalFinanceSnapshotRow,
+            BusinessFinanceSnapshotRow,
+        ):
+            await db.execute(delete(model))
+        await db.commit()
+    yield
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def reset_integration_settings(setup_db: None) -> AsyncGenerator[None, None]:
+    from sqlalchemy import delete
+
+    from app.db.models import AppSettingRow
+    from app.db.session import SessionLocal
+
+    async with SessionLocal() as db:
+        await db.execute(
+            delete(AppSettingRow).where(
+                AppSettingRow.key.in_(
+                    [
+                        "quickfile",
+                        "quickfile_last_sync_at",
+                        "truelayer",
+                        "truelayer_tokens",
+                        "truelayer_last_sync_at",
+                        "truelayer_monthly_flow",
+                        "lunchflow",
+                        "lunchflow_last_sync_at",
+                        "lunchflow_last_test_at",
+                        "lunchflow_monthly_flow",
+                        "funding_circle",
+                        "funding_circle_last_sync_at",
+                        "tesla",
+                        "tesla_last_sync_at",
+                    ]
+                )
+            )
+        )
+        await db.execute(
+            delete(AppSettingRow).where(AppSettingRow.key.like("auth.magic.%"))
+        )
+        await db.commit()
     yield
 
 
@@ -49,12 +161,9 @@ async def reset_safety_settings(setup_db: None) -> AsyncGenerator[None, None]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def reset_write_rate_limiter() -> AsyncGenerator[None, None]:
-    # The limiter is a process-wide singleton; clear it so write/login counts from
-    # one test don't bleed into the next and trip a spurious 429.
-    from app.middleware.rate_limit import login_rate_limiter, write_rate_limiter
+    from app.middleware.rate_limit import write_rate_limiter
 
     write_rate_limiter._events.clear()
-    login_rate_limiter._events.clear()
     yield
 
 

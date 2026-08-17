@@ -2,62 +2,64 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { BudgetVsActualPanel } from "@/components/finance/BudgetVsActualPanel";
-import type { ActiveBudgetSummary, BudgetVariance } from "@/lib/finance-schemas";
+import type { ActiveBudgetSummary, BudgetVsActual } from "@/lib/finance-schemas";
 
-const active = {
+const active: ActiveBudgetSummary = {
   id: 1,
-  name: "Live walkthrough Balanced",
-  strategy: "balanced",
-  period: "monthly",
-  income_gbp: 7529.59,
-  allocated_gbp: 8057.09,
-  surplus_gbp: -527.5,
-  debt_overpayment_gbp: 850.94,
-  has_missing_inputs: true,
-  is_deficit: true,
-  income_complete: true,
-  incomplete_reason: "",
-} as ActiveBudgetSummary;
+  name: "Balanced",
+  style: "balanced",
+  monthly_total_gbp: 2800,
+  surplus_gbp: 400,
+  debt_overpayment_gbp: 150,
+  buffer_target_gbp: 300,
+  income_gbp: 3200,
+};
 
 describe("BudgetVsActualPanel", () => {
   it("does not treat unmatched budget lines as zero actuals", () => {
-    const variance: BudgetVariance = {
+    const variance: BudgetVsActual = {
+      month: "2026-08",
+      plan_id: 1,
+      plan_name: "Balanced",
+      has_actuals: true,
       available: true,
       reason: "",
-      month: "2026-08",
-      view: "consolidated",
+      budgeted_total_gbp: 700,
+      actual_total_gbp: 359.47,
+      variance_total_gbp: 340.53,
       lines: [
         {
-          category: "Household bills",
-          kind: "essential",
           scope: "personal",
-          budgeted_gbp: 700,
+          category: "Household bills",
+          budget_gbp: 700,
           actual_gbp: null,
           variance_gbp: null,
-          is_missing: false,
-          matched: false,
+          percent_used: null,
+          missing_actual: true,
+          actual_source: "",
+          transaction_count: 0,
         },
       ],
       unbudgeted_actuals: [
         {
-          category: "tesla",
-          kind: "other",
           scope: "personal",
-          budgeted_gbp: null,
+          category: "tesla",
+          budget_gbp: 0,
           actual_gbp: 359.47,
           variance_gbp: null,
-          is_missing: true,
-          matched: true,
+          percent_used: null,
+          missing_actual: false,
+          actual_source: "transactions",
+          transaction_count: 1,
         },
       ],
-      budgeted_total_gbp: 700,
-      actual_total_gbp: 359.47,
     };
 
     render(<BudgetVsActualPanel variance={variance} activeBudget={active} />);
-    expect(screen.getByText("No matching transactions")).toBeInTheDocument();
+    expect(screen.getByText("Missing")).toBeInTheDocument();
     expect(screen.getByText("Allocation total")).toBeInTheDocument();
     expect(screen.getByText(/do not match a budget category/i)).toBeInTheDocument();
     expect(screen.getByText("tesla")).toBeInTheDocument();
+    expect(screen.queryByText("£0.00")).not.toBeInTheDocument();
   });
 });

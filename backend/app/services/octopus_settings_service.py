@@ -7,6 +7,7 @@ and have it apply live (via octopus_client.update_credentials) without editing
 
 from __future__ import annotations
 
+import json
 import logging
 
 from sqlalchemy import select
@@ -16,7 +17,6 @@ from app.config import settings
 from app.db.models import AppSettingRow
 from app.schemas.domain import OctopusConfig, OctopusConfigStatus
 from app.services.octopus_client import OctopusCredentials, octopus_client
-from app.services.settings_crypto import open_json, seal_json
 
 _OCTOPUS_KEY = "octopus"
 logger = logging.getLogger(__name__)
@@ -34,14 +34,16 @@ class OctopusSettingsService:
         )
 
     async def _get_row(self, db: AsyncSession) -> AppSettingRow | None:
-        result = await db.execute(select(AppSettingRow).where(AppSettingRow.key == _OCTOPUS_KEY))
+        result = await db.execute(
+            select(AppSettingRow).where(AppSettingRow.key == _OCTOPUS_KEY)
+        )
         return result.scalar_one_or_none()
 
     async def get_config(self, db: AsyncSession) -> OctopusConfig:
         row = await self._get_row(db)
         if row is None:
             return self._env_config()
-        return OctopusConfig.model_validate(open_json(row.value))
+        return OctopusConfig.model_validate(json.loads(row.value))
 
     @staticmethod
     def _merge_env(config: OctopusConfig, env: OctopusConfig) -> OctopusConfig:
@@ -58,7 +60,7 @@ class OctopusSettingsService:
 
     async def _save_config(self, db: AsyncSession, config: OctopusConfig) -> None:
         row = await self._get_row(db)
-        payload = seal_json(config.model_dump())
+        payload = json.dumps(config.model_dump())
         if row is None:
             db.add(AppSettingRow(key=_OCTOPUS_KEY, value=payload))
         else:
@@ -70,12 +72,17 @@ class OctopusSettingsService:
             return config
         if not (config.mpan and config.meter_serial):
             try:
-                discovered = await octopus_client.discover(config.api_key, config.account_number)
+                discovered = await octopus_client.discover(
+                    config.api_key, config.account_number
+                )
                 config = config.model_copy(
                     update={
                         "mpan": config.mpan or discovered.get("mpan", ""),
-                        "meter_serial": config.meter_serial or discovered.get("meter_serial", ""),
-                        "region": (discovered.get("region") or config.region or "C").upper(),
+                        "meter_serial": config.meter_serial
+                        or discovered.get("meter_serial", ""),
+                        "region": (
+                            discovered.get("region") or config.region or "C"
+                        ).upper(),
                     }
                 )
             except Exception as exc:
@@ -87,7 +94,9 @@ class OctopusSettingsService:
             try:
                 devices = await octopus_client.get_smart_device_ids()
                 if devices.get("electricity"):
-                    config = config.model_copy(update={"device_id": devices["electricity"]})
+                    config = config.model_copy(
+                        update={"device_id": devices["electricity"]}
+                    )
             except Exception as exc:
                 logger.warning("Octopus Home Mini discovery failed: %s", exc)
         return config

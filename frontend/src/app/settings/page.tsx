@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { AppShortcutPanel } from "@/components/settings/AppShortcutPanel";
+import { BANK_IMPORT_SESSION_KEY } from "@/components/finance/BankImportCard";
 import { FinanceSettingsPanel } from "@/components/settings/FinanceSettingsPanel";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
+import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ShieldIcon } from "@/components/shared/icons";
 import { useAuth } from "@/lib/auth-context";
@@ -15,12 +16,35 @@ import { canWrite } from "@/lib/permissions";
 export default function SettingsPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
       router.replace("/login");
     }
   }, [loading, user, router]);
+
+  useEffect(() => {
+    const imported = new URLSearchParams(window.location.search).get("imported");
+    if (imported !== "1" && imported !== "error") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (imported === "1") {
+        window.sessionStorage.setItem(BANK_IMPORT_SESSION_KEY, "1");
+        setImportNotice(
+          "Bank login complete. Accounts, cards, and Funding Circle payments have been pulled in.",
+        );
+      } else {
+        setImportError(
+          "Bank login was saved, but the import did not finish. Use Pull latest from your bank.",
+        );
+      }
+      window.history.replaceState({}, "", "/settings");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   if (loading) {
     return <AuthLoadingShell />;
@@ -39,8 +63,9 @@ export default function SettingsPage() {
           title="Settings"
           description="Finance integrations, banking connections, and account preferences."
         />
+        {importNotice ? <SuccessBanner message={importNotice} /> : null}
+        {importError ? <ErrorBanner message={importError} /> : null}
         <FinanceSettingsPanel readOnly={!canWrite(user)} />
-        <AppShortcutPanel />
       </div>
     </AppShell>
   );

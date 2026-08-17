@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ============================================================
-   Rob's Finance — Design System
+   Rob's Solar — Design System
    Layered surfaces, elevation, aurora backdrop, motion tokens.
    ============================================================ */
 
@@ -377,6 +377,34 @@ body {
   cursor: not-allowed;
 }
 
+.solar-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-elevated);
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+  box-shadow: var(--shadow-sm);
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.solar-btn-secondary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: var(--surface);
+  border-color: var(--accent, #10b981);
+}
+.solar-btn-secondary:active:not(:disabled) {
+  transform: translateY(0);
+}
+.solar-btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .solar-btn-ghost {
   display: inline-flex;
   align-items: center;
@@ -396,42 +424,6 @@ body {
 }
 .solar-btn-ghost:active {
   transform: translateY(0);
-}
-
-.solar-btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-strong);
-  background: var(--surface-elevated);
-  padding: 0.625rem 1.25rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--foreground);
-  box-shadow: var(--shadow-sm);
-  transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
-}
-.solar-btn-secondary:hover:not(:disabled) {
-  background: var(--surface-solid);
-  border-color: var(--solar);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-.solar-btn-secondary:active:not(:disabled) {
-  transform: translateY(0);
-}
-.solar-btn-secondary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* --------------------------- Page layout --------------------------- */
-.solar-page {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
 }
 
 /* --------------------------- Status --------------------------- */
@@ -487,33 +479,6 @@ body {
   animation: shimmer 1.6s infinite;
 }
 
-/* --------------------------- Energy flow --------------------------- */
-@keyframes energy-flow {
-  from {
-    stroke-dashoffset: 24;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-.energy-flow-line {
-  stroke-dasharray: 7 7;
-  animation: energy-flow 0.9s linear infinite;
-}
-
-.energy-flow-reverse {
-  animation-direction: reverse;
-}
-
-.hero-kpi {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.hero-kpi:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
-
 /* Collapsible details marker */
 details summary::-webkit-details-marker {
   display: none;
@@ -527,21 +492,4 @@ details summary::-webkit-details-marker {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
-}
-
-/* QuickFile report — table layout matching their P&L / balance sheet reports */
-.quickfile-report-document {
-  font-feature-settings: "tnum" 1;
-}
-
-.quickfile-report .quickfile-report-line td:first-child {
-  font-weight: 400;
-}
-
-.quickfile-report .quickfile-report-total td {
-  border-top-width: 1px;
-}
-
-.quickfile-report .quickfile-report-section td {
-  padding-top: 1rem;
 }

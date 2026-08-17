@@ -1,11 +1,11 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import { FinanceOverviewView } from "@/components/finance/FinanceOverviewView";
-import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
-import type { FinanceAccount, FinanceOverview, QuickFileReports } from "@/lib/finance-schemas";
+import { financeOverviewSchema, type FinanceOverview } from "@/lib/finance-schemas";
 
-const overview: FinanceOverview = {
+const overview: FinanceOverview = financeOverviewSchema.parse({
   personal_bank_balance_gbp: 2500,
   business_bank_balance_gbp: 8000,
   total_personal_debt_gbp: 1200,
@@ -22,104 +22,115 @@ const overview: FinanceOverview = {
   mortgage_balance_gbp: 150000,
   pension_value_gbp: 50000,
   directors_loan_gbp: 0,
-  liquid_assets_gbp: 10500,
-  long_term_assets_gbp: 475000,
-  property_value_gbp: 425000,
-  debtors_gbp: 8883,
-  total_assets_gbp: 485500,
-  short_term_debt_gbp: 1200,
-  long_term_debt_gbp: 150000,
-  total_debt_gbp: 151200,
-  home_equity_gbp: 275000,
-  personal_short_term_debt_gbp: 1200,
-  personal_long_term_debt_gbp: 150000,
-  business_short_term_debt_gbp: 0,
-  business_long_term_debt_gbp: 0,
-  net_worth_estimate_gbp: 334300,
+  net_worth_estimate_gbp: 100000,
   monthly_surplus_gbp: 1500,
-  personal_monthly_income_gbp: 4000,
-  business_monthly_turnover_gbp: 12000,
-  business_monthly_expenses_gbp: 4500,
-  business_monthly_net_profit_gbp: 7500,
-  business_ytd_turnover_gbp: 72000,
-  business_ytd_net_profit_gbp: 42000,
-  business_income_from_quickfile: true,
-  historic_fields: ["personal_bank_balance_gbp", "monthly_income_gbp"],
-  insights: [],
-  active_budget: null,
-};
-
-const accounts: FinanceAccount[] = [
-  {
+  available_cash_gbp: 10500,
+  available_credit_gbp: 1200,
+  credit_limit_gbp: 2000,
+  personal_overdraft_gbp: 0,
+  business_overdraft_gbp: 0,
+  total_assets_gbp: 60500,
+  property_gbp: 0,
+  month_budgeted_gbp: 2800,
+  month_actual_gbp: 400,
+  active_budget: {
     id: 1,
-    scope: "personal",
-    account_type: "current",
-    name: "Main current",
-    provider: "Bank",
-    balance_gbp: 2500,
-    notes: "",
-    source: "manual",
-    is_active: true,
-    is_historic: true,
-    data_confidence: "historic",
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",
+    name: "Balanced",
+    style: "balanced",
+    monthly_total_gbp: 2800,
+    surplus_gbp: 400,
+    debt_overpayment_gbp: 150,
+    buffer_target_gbp: 300,
+    income_gbp: 4000,
   },
-];
-
-const quickfileReports: QuickFileReports = {
-  synced_at: "2026-01-15T10:00:00Z",
-  profit_and_loss_month: {
-    from_date: "2026-01-01",
-    to_date: "2026-01-31",
-    turnover_gbp: 12000,
-    cost_of_sales_gbp: 2000,
-    expenses_gbp: 6500,
-    net_profit_gbp: 7500,
-    sections: [],
-  },
-  profit_and_loss_ytd: {
-    from_date: "2026-04-01",
-    to_date: "2026-01-31",
-    turnover_gbp: 72000,
-    cost_of_sales_gbp: 12000,
-    expenses_gbp: 38000,
-    net_profit_gbp: 42000,
-    sections: [],
-  },
-  balance_sheet: {
-    to_date: "2026-01-31",
-    fixed_assets_gbp: 5000,
-    current_assets_gbp: 15000,
-    current_liabilities_gbp: 3000,
-    long_term_liabilities_gbp: 8000,
-    capital_and_reserves_gbp: 9000,
-    debtors_gbp: 8883,
-    creditors_gbp: 1200,
-    vat_liability_gbp: 500,
-    sections: [],
-  },
-};
-
-describe("FinanceOverviewView", () => {
-  it("shows personal and business as two side-by-side panels", () => {
-    render(<FinanceOverviewView overview={overview} accounts={accounts} />);
-    expect(screen.getByRole("region", { name: "Personal finances" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Business finances" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Personal" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Business" })).toBeInTheDocument();
-    expect(screen.getByText("Main current")).toBeInTheDocument();
-  });
+  insights: [],
 });
 
-describe("QuickFileStatements", () => {
-  it("renders P&L account then balance sheet in document mode", () => {
-    render(<QuickFileStatements reports={quickfileReports} variant="document" />);
-    expect(screen.getByText("Profit & Loss Account")).toBeInTheDocument();
-    expect(screen.getByText("Balance Sheet")).toBeInTheDocument();
-    expect(screen.getByText("Turnover")).toBeInTheDocument();
-    expect(screen.getByText("Less: Cost of sales")).toBeInTheDocument();
-    expect(screen.getByText("Net profit")).toBeInTheDocument();
-    expect(screen.getByText("Fixed assets")).toBeInTheDocument();
+describe("FinanceOverviewView", () => {
+  it("keeps a genuine zero external debt instead of falling back to total debt", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          external_debt_gbp: 0,
+          total_personal_debt_gbp: 0,
+          total_business_debt_gbp: 0,
+          directors_loan_gbp: 1200,
+          total_debt_gbp: 1200,
+        }}
+      />,
+    );
+    const tile = screen.getByText("External debt").closest("div");
+    expect(tile).toHaveTextContent("£0.00");
+    expect(tile).not.toHaveTextContent("£1,200.00");
+  });
+
+  it("renders balance tiles", () => {
+    render(<FinanceOverviewView overview={overview} />);
+    expect(screen.getByText("Combined net worth")).toBeInTheDocument();
+    expect(screen.getByText("Personal net worth")).toBeInTheDocument();
+    expect(screen.getByText("Company position")).toBeInTheDocument();
+    expect(screen.getByText("Pension")).toBeInTheDocument();
+    expect(screen.getByText("Property")).toBeInTheDocument();
+    expect(screen.getByText("Director's loan")).toBeInTheDocument();
+    expect(screen.getByText("Cash available")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Active Budget" })).toBeInTheDocument();
+    expect(screen.getByText(/Balanced · balanced/i)).toBeInTheDocument();
+    expect(screen.getByText("Planned expenditure")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Property value is not set but a mortgage is recorded/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Connect banks" })).toHaveAttribute(
+      "href",
+      "/finance/connect",
+    );
+  });
+
+  it("wires dismiss on insights when a handler is provided", async () => {
+    const onDismissInsight = vi.fn();
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          insights: [
+            {
+              id: 9,
+              category: "cashflow",
+              severity: "warning",
+              title: "Personal cash may be tight after expected bills",
+              message: "After household bills, about 200 GBP remains.",
+              status: "active",
+              created_at: "2026-08-01T00:00:00Z",
+            },
+          ],
+        }}
+        onDismissInsight={onDismissInsight}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(onDismissInsight).toHaveBeenCalledWith(9);
+  });
+
+  it("hides leftover energy insights", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          insights: [
+            {
+              id: 11,
+              category: "energy",
+              severity: "info",
+              title: "Solar savings this month are below forecast",
+              message: "Latest daily saving is below the 7-day average.",
+              status: "active",
+              created_at: "2026-08-01T00:00:00Z",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.queryByText("Solar savings this month are below forecast")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Open energy/i)).not.toBeInTheDocument();
   });
 });

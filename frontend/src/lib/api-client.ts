@@ -2,12 +2,10 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend";
 
 export class ApiError extends Error {
   status: number;
-  code?: string;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number) {
     super(message);
     this.status = status;
-    this.code = code;
   }
 }
 
@@ -38,22 +36,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     let detail = response.statusText;
-    let code: string | undefined;
     try {
       const body = await response.json();
-      const rawDetail = body.detail;
-      if (typeof rawDetail === "object" && rawDetail !== null && "message" in rawDetail) {
-        detail = String(rawDetail.message);
-        if ("status" in rawDetail && rawDetail.status) {
-          code = String(rawDetail.status);
-        }
-      } else if (rawDetail !== undefined) {
-        detail = String(rawDetail);
+      const raw = body.detail ?? detail;
+      if (typeof raw === "string") {
+        detail = raw;
+      } else if (Array.isArray(raw)) {
+        detail = raw
+          .map((item) => {
+            if (typeof item === "string") return item;
+            if (item && typeof item === "object" && "msg" in item) {
+              return String((item as { msg: unknown }).msg);
+            }
+            return JSON.stringify(item);
+          })
+          .join("; ");
+      } else if (raw != null) {
+        detail = String(raw);
       }
     } catch {
       // ignore parse errors
     }
-    throw new ApiError(String(detail), response.status, code);
+    throw new ApiError(String(detail), response.status);
   }
 
   if (response.status === 204) {

@@ -49,7 +49,9 @@ class AutoScheduleService:
     _MODE_FIX_COOLDOWN = timedelta(minutes=30)
 
     async def _load_config(self, db: AsyncSession) -> dict[str, Any]:
-        row = await db.scalar(select(AppSettingRow).where(AppSettingRow.key == _AUTO_SCHEDULE_KEY))
+        row = await db.scalar(
+            select(AppSettingRow).where(AppSettingRow.key == _AUTO_SCHEDULE_KEY)
+        )
         if row:
             try:
                 return json.loads(row.value)
@@ -62,7 +64,9 @@ class AutoScheduleService:
 
     async def _save_config(self, db: AsyncSession, payload: dict[str, Any]) -> None:
         encoded = json.dumps(payload)
-        row = await db.scalar(select(AppSettingRow).where(AppSettingRow.key == _AUTO_SCHEDULE_KEY))
+        row = await db.scalar(
+            select(AppSettingRow).where(AppSettingRow.key == _AUTO_SCHEDULE_KEY)
+        )
         if row:
             row.value = encoded
         else:
@@ -100,7 +104,9 @@ class AutoScheduleService:
         config = await self._load_config(db)
         soc_floor = int(config.get("soc_floor_pct", settings.auto_schedule_soc_floor_pct))
         overnight_target = int(
-            config.get("overnight_target_pct", settings.auto_schedule_overnight_target_pct)
+            config.get(
+                "overnight_target_pct", settings.auto_schedule_overnight_target_pct
+            )
         )
         dispatches = await octopus_client.get_dispatches()
         self._next_cheap_windows = list(dispatches.planned)
@@ -154,7 +160,7 @@ class AutoScheduleService:
                 offpeak_end = dispatches.off_peak_window.end
                 planned = list(dispatches.planned)
         except Exception:  # noqa: BLE001
-            logger.warning("Auto schedule: failed to load Octopus dispatches", exc_info=True)
+            pass
 
         window = evaluate_charge_window(
             grid_import_w=metrics.grid_import_w,
@@ -202,19 +208,15 @@ class AutoScheduleService:
             return await self.get_status(db)
 
         if (
-            settings.is_production
-            or safety_settings_service.effective_read_only()
+            safety_settings_service.effective_read_only()
             or not safety_settings_service.effective_enable_live_writes()
         ):
-            self._last_run_message = (
-                "Writes disabled (production display-only, read-only, or live writes off)"
-            )
+            self._last_run_message = "Writes disabled (read-only or live writes off)"
             # This is the most common reason a correct schedule is never applied,
             # so log it at WARNING rather than letting it fail silently.
             logger.warning(
                 "Auto-align computed a schedule but did not write it: live writes are "
-                "disabled (production=%s, read_only=%s, enable_live_writes=%s).",
-                settings.is_production,
+                "disabled (read_only=%s, enable_live_writes=%s).",
                 safety_settings_service.effective_read_only(),
                 safety_settings_service.effective_enable_live_writes(),
             )

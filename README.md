@@ -1,6 +1,6 @@
-# Rob's Solar
+# Rob's Finance
 
-Secure, mobile-friendly browser application for live monitoring and safe control of a Sunsynk 8kW inverter system via a backend control bridge.
+Secure, mobile-friendly browser application for personal and business finance tracking.
 
 **Important:** The browser never talks directly to RS485/Modbus hardware. All reads and writes go through the FastAPI backend and adapter layer.
 
@@ -55,33 +55,38 @@ Key backend settings:
 | `PEAK_IMPORT_GUARD_ENABLED` | `true` | Auto-correct peak grid import at high SOC |
 | `SECRET_KEY` | (required) | Session signing key |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | admin | Admin user credentials |
+| `ADMIN_EMAIL` | `robertdavidcashman@gmail.com` | Extra admin login alias (not a secret) |
+| `LUNCHFLOW_API_KEY` | (empty) | Lunch Flow Destinations → API key |
 | `VIEWER_USERNAME` / `VIEWER_PASSWORD` | viewer | Read-only user credentials |
 
 
 ## Pages
 
+### Finance (default)
+
 | Route | Description |
 |-------|-------------|
-| `/` | Finance overview (balances, debts, cash flow, alerts) |
-| `/finance/connect` | Connect banks (Lunch Flow / Open Banking) and QuickFile |
-| `/finance/personal` | Personal accounts and balances |
-| `/finance/business` | Business accounts (QuickFile) |
-| `/finance/debts` | Liabilities and payoff strategy |
-| `/finance/cash-flow` | 30/60/90-day cash-flow forecast |
-| `/finance/budget` | Monthly budget lines |
-| `/finance/reports` | Monthly finance + energy savings report |
-| `/finance/assistant` | Finance AI assistant (admin) |
-| `/energy` | Live energy dashboard (WebSocket with polling fallback) |
-| `/energy/analytics` | Historical charts and savings summary |
-| `/energy/octopus` | Agile half-hourly prices (requires `OCTOPUS_API_KEY`) |
-| `/energy/forecast` | 3-day solar generation forecast (Open-Meteo) |
-| `/energy/scheduler` | TOU strategy previews (display-only) |
-| `/energy/controls` | Live inverter settings view (display-only) |
-| `/energy/assistant` | Energy AI assistant (admin) |
-| `/energy/diagnostics` | Load / house CT diagnostics |
-| `/alerts` | SOC, import, pricing, and connectivity alerts |
-| `/audit` | Control write audit log (admin) |
-| `/settings` | Safety flags, hardware info, tariff, integrations |
+| `/` | Finance overview — income, spending, debts, cash flow |
+| `/finance/personal` | Personal accounts and snapshots |
+| `/finance/business` | Business accounts (QuickFile sync) |
+| `/finance/debts` | Debt tracking |
+| `/finance/cash-flow` | Cash flow forecast |
+| `/finance/budget` | Budget vs actual |
+| `/finance/reports` | Reports and exports |
+| `/settings` | Banking integrations and app shortcut |
+
+Solar / Energy is not part of this app. `/energy` and the old energy paths redirect to the finance overview.
+
+## Connect personal finance
+
+Overview stays on manual accounts until a live source is connected. Nothing in git invents bank or QuickFile balances.
+
+1. **QuickFile** — if Custody Note already has it, run `bash robs-solar/scripts/connect-personal-finance.sh` on the Mac. Otherwise paste Account number / API key / Application ID in Settings.
+2. **Lunch Flow** — in Lunch Flow open Destinations → API, copy the key, then Settings → Lunch Flow → Save / Test / Sync.
+3. **TrueLayer** — paste Client ID, secret, and redirect URI in Settings → Open Banking, then Log in to your bank.
+4. **Funding Circle** — enter the outstanding loan in Settings, or pull it after a TrueLayer sync.
+
+Hosted Render/Vercel also need `ADMIN_EMAIL`, `LUNCHFLOW_API_KEY`, and the TrueLayer keys in the dashboard (or `scripts/push-render-secrets.sh` / `scripts/push-vercel-env.sh`). The only stated figure this app seeds itself is the pension pot on a live `robs_solar.db`.
 
 ## Modbus TCP discovery
 
@@ -190,9 +195,9 @@ SUNSYNK_ENABLE_UNVERIFIED_WRITES=true
 ```
 
 If any flag is missing, write attempts fail fast with a clear error and are still
-recorded in the audit log. Schedule and operating-mode writes remain unsupported
-for the Sunsynk adapter (mappings unverified); export limit is the only inferred
-write path.
+recorded in the audit log. Sunsynk write paths (export limit, schedule, operating
+mode, TOU bands, battery control) are community-inferred and marked unverified —
+double-gated by `SUNSYNK_ENABLE_UNVERIFIED_WRITES`.
 
 ## Home Assistant read path (secondary/optional)
 
@@ -218,11 +223,10 @@ shows read-only mode and live-write flags so you can confirm safety before enabl
 
 ## Limitations (v1)
 
-- Sunsynk schedule and operating-mode writes remain unverified (export limit only)
-- Modbus register mappings are not hardcoded — use a local HTTP Modbus bridge sidecar
-- Python 3.9.6 supported (upgrade to 3.12+ recommended for production)
-- Local username/password auth (designed to be replaceable with SSO later)
-- Schedule and operating mode UI/backend endpoints exist; simulator adapter supports them; HA/Modbus writes remain unverified
+- Sunsynk writes are community-inferred and unverified (gated by feature flags)
+- Modbus TCP register mappings are not hardcoded — use a local HTTP Modbus bridge sidecar
+- Python 3.11+ in production (Docker/CI); local dev supports 3.9+
+- OIDC SSO is optional alongside local username/password auth
 
 ## Python upgrade path
 
@@ -249,23 +253,35 @@ robs-solar/
   scripts/verify.sh       # Full CI-style verification
 ```
 
-## Hosted deployment (Vercel + Render)
+## Hosted deployment (Vercel multi-service — recommended)
 
-The browser app runs on **Vercel**; the FastAPI API runs on **Render** (always-on Docker + persistent SQLite disk). The frontend proxies `/backend/*` to the hosted API via `BACKEND_URL`, so login cookies stay same-origin.
+The browser app and FastAPI API both run on **one Vercel project** (`robs-solar/vercel.json` routes `/backend/*` to the API). No separate Render service required for the app to work.
 
 ```bash
-# 1. Backend — one-time Render blueprint (connect GitHub repo)
-open "https://dashboard.render.com/blueprint/new?repo=https://github.com/robertcashman-bit/robs-solar"
+# Automatic repair + deploy (Cloud Agent or local)
+VERCEL_TOKEN=xxx bash scripts/repair-hosted.sh
 
-# 2. After Render gives you a URL (e.g. https://robs-solar-api.onrender.com):
-export BACKEND_URL=https://robs-solar-api.onrender.com
-bash scripts/push-render-secrets.sh   # needs RENDER_API_KEY + RENDER_SERVICE_ID
-
-# 3. Frontend — Vercel production deploy
-bash scripts/deploy-hosted.sh
+# Or from repo root (all sites)
+VERCEL_TOKEN=xxx bash scripts/vercel-deploy-all.sh
 ```
 
-Set `APP_ENV=production` on Render (in `render.yaml`). Change default passwords before going public.
+GitHub Actions also deploys on push to `main` when `VERCEL_TOKEN` is set as a repository secret.
+
+### Optional: Render backend (persistent SQLite)
+
+For always-on background sampling with persistent storage, use Render instead of Vercel serverless API:
+
+```bash
+open "https://dashboard.render.com/blueprint/new?repo=https://github.com/robertdavidcashman-droid/All"
+# Blueprint path: robs-solar/render.yaml
+
+export BACKEND_URL=https://robs-solar-api.onrender.com
+export RENDER_API_KEY=... RENDER_SERVICE_ID=srv-...
+bash scripts/push-render-secrets.sh
+VERCEL_TOKEN=... DEPLOY_MODE=render-external bash scripts/repair-hosted.sh
+```
+
+If the live site shows "Loading session…", run `bash scripts/repair-hosted.sh` (removes broken `BACKEND_URL` localhost proxy and redeploys).
 
 **AI assistant:** sign in as the **admin** user (not viewer) to see **Assistant** in the nav and the dashboard AI card. The backend needs `AI_ENABLED=true` and `OPENAI_API_KEY` — sync from local `.env` with `bash scripts/push-render-secrets.sh` or set in the Vercel/Render dashboard, then redeploy.
 

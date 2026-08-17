@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
+import { notifyFinanceChanged } from "@/lib/finance-events";
 import { useAuth } from "@/lib/auth-context";
 import {
-  integrationConnectionLabel,
   quickFileConfigStatusSchema,
   quickFileSyncResultSchema,
   type QuickFileConfigStatus,
@@ -56,8 +56,40 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
     if (authLoading) {
       return;
     }
-    void load();
-  }, [authLoading, load]);
+    if (!user) {
+      queueMicrotask(() => setLoadingStatus(false));
+      return;
+    }
+    let active = true;
+    void (async () => {
+      setLoadingStatus(true);
+      setError(null);
+      try {
+        const data = await apiClient.get<unknown>("/finance/integrations/quickfile/status");
+        if (!active) return;
+        const parsed = quickFileConfigStatusSchema.parse(data);
+        setStatus(parsed);
+        setAccountNumber(parsed.account_number);
+        setApplicationId(parsed.application_id);
+        setKeyAlreadySet(parsed.api_key_set);
+      } catch (err) {
+        if (!active) return;
+        setStatus(null);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load QuickFile status. Restart the backend if you recently updated the app.",
+        );
+      } finally {
+        if (active) {
+          setLoadingStatus(false);
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [authLoading, user]);
 
   async function saveSettings() {
     setError(null);
@@ -112,6 +144,7 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
       const data = await apiClient.post<unknown>("/finance/integrations/quickfile/sync");
       const result = quickFileSyncResultSchema.parse(data);
       setMessage(result.message);
+      notifyFinanceChanged();
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed");
@@ -121,8 +154,6 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
   }
 
   const configured = status?.configured ?? false;
-  const connectionLabel = integrationConnectionLabel(status?.connection_state, configured);
-  const active = status?.connection_state === "active" || (configured && Boolean(status?.last_sync_at));
 
   return (
     <section className="solar-card space-y-4">
@@ -136,14 +167,12 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
         </div>
         <span
           className={`rounded-full px-3 py-1 text-xs font-medium ${
-            active
+            configured
               ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-              : configured
-                ? "bg-sky-500/15 text-sky-800 dark:text-sky-200"
-                : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
+              : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
           }`}
         >
-          {loadingStatus ? "Loading…" : connectionLabel}
+          {loadingStatus ? "Loading…" : configured ? "Configured" : "Not configured"}
         </span>
       </div>
 

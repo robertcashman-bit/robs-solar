@@ -14,8 +14,6 @@ IMPORTANT SAFETY / HONESTY NOTES:
 """
 
 import asyncio
-import json
-import logging
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -23,6 +21,10 @@ from typing import Any, Optional
 import httpx
 
 from app.adapters.base import InverterAdapter
+from app.adapters.sunsynk_auth import (
+    SunsynkVerificationRequired,
+    is_verification_lockout_message,
+)
 from app.adapters.sunsynk_auth import login as sunsynk_login
 from app.adapters.sunsynk_tou import (
     active_band_index,
@@ -56,27 +58,10 @@ from app.services.effective_load import finalize_live_metrics
 from app.services.effective_load import resolve_house_load as _resolve_house_load_shared
 from app.services.tariff_clock import tariff_now, tariff_zone
 
-logger = logging.getLogger(__name__)
-
 _PLANTS_PATH = "/api/v1/plants"
 _MODE = "sunsynk_connect"
 # The Sunsynk /flow endpoint may include etoday* daily counters; day series fills gaps.
 _DAILY_TOTALS_TTL_SECONDS = 300.0
-# Raw /flow keys captured for diagnostics (task: "log the raw payload received
-# from the inverter/cloud before any transformation"). Kept separate from the
-# candidate load keys below so we can tell "field missing entirely" apart from
-# "field present but 0" without changing LiveMetrics' typed (non-nullable) contract.
-_FLOW_DIAGNOSTIC_KEYS = (
-    "pvPower",
-    "loadOrEpsPower",
-    "homeLoadPower",
-    "upsLoadPower",
-    "gridOrMeterPower",
-    "battPower",
-    "existsMeter",
-    "soc",
-)
-_LOAD_CANDIDATE_KEYS = ("loadOrEpsPower", "homeLoadPower", "upsLoadPower")
 
 
 class SunsynkConnectAdapter(InverterAdapter):
@@ -96,17 +81,64 @@ class SunsynkConnectAdapter(InverterAdapter):
         # active token per account, so parallel logins would invalidate each
         # other and produce spurious "authentication failed" errors.
         self._auth_lock = asyncio.Lock()
+        # Process-level lockout: after Sunsynk asks for a verification code,
+        # further password logins are skipped until a one-shot code is supplied.
+        self._verification_lockout: Optional[str] = None
+        self._pending_verify_code: Optional[str] = None
+        self._consumed_env_verify_code = False
         # (monotonic_expiry, local_date, totals, latest_load_w, latest_load_at)
         self._daily_cache: Optional[
             tuple[float, str, dict[str, float], float, Optional[datetime]]
         ] = None
-        # Most recent raw /flow payload + field-presence audit, for the
-        # diagnostics endpoint. Populated on every successful _parse_flow call;
-        # never used to influence LiveMetrics itself.
-        self._last_flow_diagnostics: Optional[dict[str, Any]] = None
-        # Avoids re-logging the same "missing load field" warning on every poll
-        # (live poll runs every ~10s) once the condition has already been flagged.
-        self._warned_missing_load_fields = False
+
+    def verification_required(self) -> bool:
+        return bool(self._verification_lockout)
+
+    def verification_message(self) -> Optional[str]:
+        return self._verification_lockout
+
+    def auth_status(self) -> dict[str, Any]:
+        return {
+            "verification_required": self.verification_required(),
+            "message": self._verification_lockout,
+        }
+
+    def _has_verify_code(self) -> bool:
+        if (self._pending_verify_code or "").strip():
+            return True
+        env_code = (settings.sunsynk_verification_code or "").strip()
+        return bool(env_code) and not self._consumed_env_verify_code
+
+    def _take_verify_code(self) -> Optional[str]:
+        pending = (self._pending_verify_code or "").strip()
+        if pending:
+            self._pending_verify_code = None
+            return pending
+        env_code = (settings.sunsynk_verification_code or "").strip()
+        if env_code and not self._consumed_env_verify_code:
+            self._consumed_env_verify_code = True
+            return env_code
+        return None
+
+    def _set_verification_lockout(self, message: str) -> SunsynkVerificationRequired:
+        wrapped = (
+            message
+            if message.startswith("Sunsynk authentication failed:")
+            else f"Sunsynk authentication failed: {message}"
+        )
+        self._verification_lockout = wrapped
+        return SunsynkVerificationRequired(wrapped)
+
+    def _clear_verification_lockout(self) -> None:
+        self._verification_lockout = None
+
+    async def submit_verification_code(self, code: str) -> dict[str, Any]:
+        cleaned = (code or "").strip()
+        if not cleaned:
+            raise AdapterError("Verification code is required")
+        self._pending_verify_code = cleaned
+        await self._authenticate()
+        return self.auth_status()
 
     async def _request(
         self, method: str, url: str, *, _auth_retry: bool = True, **kwargs: Any
@@ -132,39 +164,44 @@ class SunsynkConnectAdapter(InverterAdapter):
                 continue
             except httpx.HTTPError as exc:
                 raise AdapterError(f"Sunsynk request failed: {exc}") from exc
-        raise AdapterError(f"Sunsynk request timed out after {attempts} attempt(s)") from last_exc
+        raise AdapterError(
+            f"Sunsynk request timed out after {attempts} attempt(s)"
+        ) from last_exc
 
     def _token_valid(self) -> bool:
         return bool(self._token) and time.monotonic() < self._token_expiry
-
-    def clear_auth(self) -> None:
-        """Drop cached token so the next request re-authenticates."""
-        self._token = None
-        self._token_expiry = 0.0
-        self._client.headers.pop("Authorization", None)
 
     async def _authenticate(self) -> str:
         if not settings.sunsynk_username or not settings.sunsynk_password:
             raise AdapterError("Sunsynk credentials not configured")
         if self._token_valid():
             return self._token  # type: ignore[return-value]
+        if self._verification_lockout and not self._has_verify_code():
+            raise SunsynkVerificationRequired(self._verification_lockout)
         async with self._auth_lock:
             # Re-check inside the lock: another coroutine may have logged in while
             # we waited, so we reuse its token instead of logging in again.
             if self._token_valid():
                 return self._token  # type: ignore[return-value]
+            if self._verification_lockout and not self._has_verify_code():
+                raise SunsynkVerificationRequired(self._verification_lockout)
+            verify_code = self._take_verify_code()
             try:
                 data = await sunsynk_login(
                     self._client,
                     username=settings.sunsynk_username,
                     plain_password=settings.sunsynk_password,
+                    verify_code=verify_code,
                 )
+            except SunsynkVerificationRequired as exc:
+                raise self._set_verification_lockout(str(exc)) from exc
             except (httpx.HTTPError, ValueError) as exc:
-                self.clear_auth()
+                message = str(exc)
+                if is_verification_lockout_message(message):
+                    raise self._set_verification_lockout(message) from exc
                 raise AdapterError(f"Sunsynk authentication failed: {exc}") from exc
             token = data.get("access_token")
             if not token:
-                self.clear_auth()
                 raise AdapterError("Sunsynk authentication returned no access token")
             try:
                 expires_in = float(data.get("expires_in") or 0)
@@ -176,6 +213,7 @@ class SunsynkConnectAdapter(InverterAdapter):
             self._token = token
             self._token_expiry = time.monotonic() + lifetime
             self._client.headers["Authorization"] = f"Bearer {token}"
+            self._clear_verification_lockout()
             return token
 
     async def _plant_id(self) -> str:
@@ -367,51 +405,8 @@ class SunsynkConnectAdapter(InverterAdapter):
             return 0.0, abs(grid)
         return (grid if grid > 0 else 0.0, -grid if grid < 0 else 0.0)
 
-    def _track_flow_diagnostics(self, data: dict[str, Any]) -> None:
-        """Record the raw /flow payload and field presence before any transformation.
-
-        Distinguishes a key being entirely absent from the JSON body (which
-        ``num()`` below silently treats as 0) from a key being present with an
-        explicit 0/null value -- so the diagnostics endpoint can report
-        "unknown" rather than silently implying "measured and zero".
-        """
-        presence = {key: key in data for key in _FLOW_DIAGNOSTIC_KEYS}
-        raw_values = {key: data.get(key) for key in _FLOW_DIAGNOSTIC_KEYS}
-        missing_load_fields = [key for key in _LOAD_CANDIDATE_KEYS if not presence[key]]
-        try:
-            raw_json = json.dumps(data, default=str)
-        except (TypeError, ValueError):
-            raw_json = repr(data)
-        logger.debug(
-            "Sunsynk /flow raw payload captured (missing_load_fields=%s): %s",
-            missing_load_fields,
-            raw_json,
-        )
-        if missing_load_fields:
-            if not self._warned_missing_load_fields:
-                logger.warning(
-                    "Sunsynk /flow payload is missing load field(s) %s entirely "
-                    "(key absent, not just 0) -- diagnostics will report these as "
-                    "unknown rather than silently showing 0 W.",
-                    missing_load_fields,
-                )
-                self._warned_missing_load_fields = True
-        else:
-            self._warned_missing_load_fields = False
-        self._last_flow_diagnostics = {
-            "raw_payload": dict(data),
-            "captured_at": datetime.now(timezone.utc),
-            "field_presence": presence,
-            "field_raw_values": raw_values,
-        }
-
-    def get_load_diagnostics(self) -> Optional[dict[str, Any]]:
-        """Last raw /flow payload + field-presence audit, or None if never fetched."""
-        return self._last_flow_diagnostics
-
     def _parse_flow(self, payload: dict[str, Any]) -> LiveMetrics:
         data = payload.get("data") or {}
-        self._track_flow_diagnostics(data)
 
         def num(key: str) -> float:
             value = data.get(key, 0)
@@ -645,7 +640,9 @@ class SunsynkConnectAdapter(InverterAdapter):
             )
             if is_live_mode():
                 stmt = stmt.where(MetricSampleRow.data_source == DATA_SOURCE_LIVE)
-            result = await db.execute(stmt.order_by(MetricSampleRow.timestamp.desc()).limit(120))
+            result = await db.execute(
+                stmt.order_by(MetricSampleRow.timestamp.desc()).limit(120)
+            )
             rows = result.all()
         if len(rows) < 3:
             return None
@@ -716,6 +713,13 @@ class SunsynkConnectAdapter(InverterAdapter):
                 adapter_mode=_MODE,
                 adapter_connected=False,
                 degraded_reason="Sunsynk credentials not configured",
+            )
+        if self._verification_lockout:
+            return ConnectivityStatus(
+                backend_healthy=True,
+                adapter_mode=_MODE,
+                adapter_connected=False,
+                degraded_reason=self._verification_lockout,
             )
         try:
             await self._authenticate()

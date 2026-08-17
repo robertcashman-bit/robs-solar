@@ -107,7 +107,9 @@ def _handler(request: httpx.Request) -> httpx.Response:
 
 def _make_client() -> OctopusClient:
     client = OctopusClient()
-    client.update_credentials(OctopusCredentials(api_key="k", account_number="A-TEST", region="J"))
+    client.update_credentials(
+        OctopusCredentials(api_key="k", account_number="A-TEST", region="J")
+    )
     client._client = httpx.AsyncClient(
         base_url="https://api.test",
         transport=httpx.MockTransport(_handler),

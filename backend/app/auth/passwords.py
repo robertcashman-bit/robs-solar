@@ -26,19 +26,29 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), password_hash.encode("utf-8"))
 
 
+def _login_key(value: str) -> str:
+    return value.strip().lower()
+
+
 def get_seed_users() -> dict[str, StoredUser]:
-    return {
-        settings.admin_username: StoredUser(
-            username=settings.admin_username,
-            role=UserRole.ADMIN,
-            password_hash=hash_password(settings.admin_password),
-        ),
-        settings.viewer_username: StoredUser(
-            username=settings.viewer_username,
-            role=UserRole.VIEWER,
-            password_hash=hash_password(settings.viewer_password),
-        ),
+    admin = StoredUser(
+        username=settings.admin_username,
+        role=UserRole.ADMIN,
+        password_hash=hash_password(settings.admin_password),
+    )
+    viewer = StoredUser(
+        username=settings.viewer_username,
+        role=UserRole.VIEWER,
+        password_hash=hash_password(settings.viewer_password),
+    )
+    users = {
+        _login_key(settings.admin_username): admin,
+        _login_key(settings.viewer_username): viewer,
     }
+    admin_email = _login_key(settings.admin_email)
+    if admin_email:
+        users[admin_email] = admin
+    return users
 
 
 def uses_default_passwords() -> bool:
@@ -53,35 +63,4 @@ def warn_if_default_passwords() -> None:
         logger.warning(
             "Default admin/viewer passwords detected — change ADMIN_PASSWORD and "
             "VIEWER_PASSWORD in backend/.env before exposing this service to a network."
-        )
-
-
-def assert_production_passwords() -> None:
-    """Refuse to start in production with known default admin/viewer passwords."""
-    if not settings.is_production:
-        return
-    if uses_default_passwords():
-        raise RuntimeError(
-            "APP_ENV=production requires non-default ADMIN_PASSWORD and VIEWER_PASSWORD. "
-            "Set unique passwords in the environment before starting."
-        )
-
-
-_DEFAULT_SECRET_KEYS = frozenset(
-    {
-        "change-me",
-        "change-me-to-a-long-random-secret-key",
-    }
-)
-
-
-def assert_production_secret_key() -> None:
-    """Refuse to start in production with a known default session signing key."""
-    if not settings.is_production:
-        return
-    key = (settings.secret_key or "").strip()
-    if not key or key in _DEFAULT_SECRET_KEYS:
-        raise RuntimeError(
-            "APP_ENV=production requires a non-default SECRET_KEY. "
-            "Set SECRET_KEY in the environment to a long random value."
         )

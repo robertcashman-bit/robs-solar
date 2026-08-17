@@ -1,0 +1,46 @@
+#!/bin/bash
+# Rob's Finance.app entry point. Prefer the baked project path, then search.
+set -uo pipefail
+export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+
+BUNDLE="$(cd "$(dirname "$0")/../.." && pwd)"
+BAKED="$BUNDLE/Contents/Resources/project-root"
+ROOT=""
+if [[ -f "$BAKED" ]]; then
+  ROOT="$(tr -d '\r' <"$BAKED" | head -n 1)"
+fi
+if [[ -z "$ROOT" || ! -x "$ROOT/scripts/mac-launch.sh" ]]; then
+  home="${HOME:-/Users/robertcashman}"
+  for candidate in \
+    "$home/All/robs-solar" \
+    "$home/src/All/robs-solar" \
+    "$home/Developer/All/robs-solar" \
+    "$home/Documents/All/robs-solar" \
+    "$home/code/All/robs-solar" \
+    "$home/Projects/All/robs-solar" \
+    "$home/repos/All/robs-solar" \
+    "$home/GitHub/All/robs-solar" \
+    "$home/robertdavidcashman-droid/All/robs-solar" \
+    "$home/workspace/robs-solar" \
+    "$home/robs-solar"
+  do
+    if [[ -x "$candidate/scripts/mac-launch.sh" && -d "$candidate/backend" && ! -d "$candidate/frontend/src/app/(energy)" ]]; then
+      ROOT="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$ROOT" || ! -x "$ROOT/scripts/mac-launch.sh" ]]; then
+  if command -v open >/dev/null 2>&1; then
+    exec open "https://robs-solar.vercel.app/login?send=1"
+  fi
+  if [[ -x /usr/bin/osascript ]]; then
+    /usr/bin/osascript -e 'display alert "Rob'\''s Finance could not start" message "The project folder was not found. Open https://robs-solar.vercel.app or install from that site."' 2>/dev/null || true
+  fi
+  exit 1
+fi
+
+export ROBS_SOLAR_ROOT="$ROOT"
+export ROBS_FINANCE_APP_BUNDLE="$BUNDLE"
+exec /bin/bash "$ROOT/scripts/mac-launch.sh"

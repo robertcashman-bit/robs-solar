@@ -13,6 +13,35 @@ const nextConfig: NextConfig = {
           { key: "Service-Worker-Allowed", value: "/" },
         ],
       },
+      {
+        source: "/install-mac-shortcut.sh",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Type", value: "text/plain; charset=utf-8" },
+        ],
+      },
+      {
+        source: "/pin-rob-finance-dock.py",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Type", value: "text/plain; charset=utf-8" },
+        ],
+      },
+      {
+        source: "/install-windows-shortcut.ps1",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Type", value: "text/plain; charset=utf-8" },
+        ],
+      },
+      {
+        source: "/RobsFinance.url",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Type", value: "application/internet-shortcut" },
+          { key: "Content-Disposition", value: "attachment; filename=\"Robs Finance.url\"" },
+        ],
+      },
     ];
   },
   async redirects() {
@@ -25,6 +54,8 @@ const nextConfig: NextConfig = {
       { source: "/scheduler", destination: "/", permanent: false },
       { source: "/controls", destination: "/", permanent: false },
       { source: "/assistant", destination: "/", permanent: false },
+      { source: "/alerts", destination: "/", permanent: false },
+      { source: "/audit", destination: "/", permanent: false },
     ];
   },
   async rewrites() {

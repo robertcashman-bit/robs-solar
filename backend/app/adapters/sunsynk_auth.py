@@ -16,10 +16,29 @@ import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
+from app.schemas.domain import AdapterError
+
 SOURCE = "sunsynk"
 PUBLIC_KEY_PATH = "/anonymous/publicKey"
 TOKEN_PATH = "/oauth/token/new"
 PUBLIC_KEY_SIGN_SALT = "POWER_VIEW"
+DEFAULT_VERIFICATION_MESSAGE = (
+    "Too many login failures, please enter the verification code!"
+)
+
+
+class SunsynkVerificationRequired(AdapterError):
+    """Sunsynk has locked password login until a verification code is entered."""
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(message or DEFAULT_VERIFICATION_MESSAGE)
+
+
+def is_verification_lockout_message(message: str | None) -> bool:
+    if not message:
+        return False
+    lowered = message.lower()
+    return "verification code" in lowered or "too many login failures" in lowered
 
 
 def md5_hex(value: str) -> str:
@@ -72,6 +91,7 @@ async def login(
     username: str,
     plain_password: str,
     source: str = SOURCE,
+    verify_code: str | None = None,
 ) -> dict[str, Any]:
     public_key = await fetch_public_key(client, source)
     nonce = _nonce_ms()
@@ -87,11 +107,17 @@ async def login(
         "source": source,
         "areaCode": source,
     }
+    code = (verify_code or "").strip()
+    if code:
+        payload["verifyCode"] = code
     response = await client.post(TOKEN_PATH, json=payload)
     response.raise_for_status()
     body = response.json()
     if not body.get("success"):
-        raise ValueError(body.get("msg") or "Sunsynk login failed")
+        msg = body.get("msg") or "Sunsynk login failed"
+        if is_verification_lockout_message(str(msg)):
+            raise SunsynkVerificationRequired(str(msg))
+        raise ValueError(msg)
     data = body.get("data") or {}
     token = data.get("access_token")
     if not token:

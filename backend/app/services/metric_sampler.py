@@ -88,10 +88,12 @@ async def prune_old_samples() -> None:
 async def _sampler_loop() -> None:
     prune_counter = 0
     savings_counter = 0
+    settings_watch_counter = 0
     while True:
         await sample_once()
         prune_counter += 1
         savings_counter += 1
+        settings_watch_counter += 1
         if prune_counter >= 60:
             await prune_old_samples()
             prune_counter = 0
@@ -104,6 +106,17 @@ async def _sampler_loop() -> None:
             except Exception as exc:
                 logger.warning("Daily savings rollup failed: %s", exc)
             savings_counter = 0
+        every_n = max(1, settings.settings_watch_every_n_samples)
+        if settings.settings_watch_enabled and settings_watch_counter >= every_n:
+            settings_watch_counter = 0
+            try:
+                from app.services.settings_watch_service import settings_watch_service
+
+                await settings_watch_service.poll_once()
+                async with SessionLocal() as db:
+                    await settings_watch_service.prune_old(db)
+            except Exception as exc:
+                logger.warning("Settings watch poll failed: %s", exc)
         await asyncio.sleep(settings.metrics_sample_interval_seconds)
 
 

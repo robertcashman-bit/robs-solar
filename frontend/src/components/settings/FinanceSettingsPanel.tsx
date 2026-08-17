@@ -1,94 +1,139 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
-import { LunchFlowSettingsForm } from "@/components/finance/LunchFlowSettingsForm";
+import { BankImportCard } from "@/components/finance/BankImportCard";
+import { FinanceHealthPanel } from "@/components/finance/FinanceHealthPanel";
+import { AppShortcutPanel } from "@/components/settings/AppShortcutPanel";
+import { FundingCircleSettingsPanel } from "@/components/settings/FundingCircleSettingsPanel";
+import { LunchFlowSettingsPanel } from "@/components/settings/LunchFlowSettingsPanel";
 import { OpenBankingSettingsPanel } from "@/components/settings/OpenBankingSettingsPanel";
 import { QuickFileSettingsPanel } from "@/components/settings/QuickFileSettingsPanel";
 import { apiClient } from "@/lib/api-client";
-import { financeIntegrationsReconnectResultSchema } from "@/lib/finance-schemas";
+import { useAuth } from "@/lib/auth-context";
+import { financeIntegrationSchema, oidcStatusSchema, type FinanceIntegration } from "@/lib/finance-schemas";
 
-const integrations = [
-  { id: "manual", label: "Manual entry", status: "Active", detail: "Enter balances and transactions yourself." },
+const STATIC_INTEGRATIONS: FinanceIntegration[] = [
+  { id: "manual", label: "Manual entry", status: "active" },
 ];
 
 type FinanceSettingsPanelProps = {
   readOnly?: boolean;
 };
 
-function OpenBankingSettingsPanelFallback() {
-  return (
-    <section className="solar-card">
-      <p className="text-sm text-[var(--muted)]">Loading Open Banking settings…</p>
-    </section>
-  );
+function statusLabel(status: string): string {
+  if (status === "active") return "Active";
+  if (status === "inactive") return "Not connected";
+  return status;
+}
+
+function isActive(
+  byId: Record<string, FinanceIntegration | undefined>,
+  id: string,
+): boolean {
+  return byId[id]?.status === "active";
 }
 
 export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelProps) {
-  const [reconnectBusy, setReconnectBusy] = useState(false);
-  const [reconnectMessage, setReconnectMessage] = useState<string | null>(null);
-  const [reconnectError, setReconnectError] = useState<string | null>(null);
-  const [lunchFlowKey, setLunchFlowKey] = useState(0);
-  const [quickFileKey, setQuickFileKey] = useState(0);
+  const { user } = useAuth();
+  const [integrations, setIntegrations] = useState<FinanceIntegration[]>(STATIC_INTEGRATIONS);
+  const [oidcEnabled, setOidcEnabled] = useState(false);
 
-  async function reconnectFromHostedKeys() {
-    setReconnectBusy(true);
-    setReconnectMessage(null);
-    setReconnectError(null);
-    try {
-      const data = await apiClient.post<unknown>("/finance/integrations/reconnect");
-      const result = financeIntegrationsReconnectResultSchema.parse(data);
-      setReconnectMessage(result.message);
-      setQuickFileKey((value) => value + 1);
-      setLunchFlowKey((value) => value + 1);
-    } catch (err) {
-      setReconnectError(err instanceof Error ? err.message : "Reconnect failed");
-    } finally {
-      setReconnectBusy(false);
-    }
-  }
+  useEffect(() => {
+    if (!user) return;
+    void (async () => {
+      try {
+        const [providerData, oidcData] = await Promise.all([
+          apiClient.get<unknown>("/finance/integrations"),
+          apiClient.get<unknown>("/auth/oidc/status"),
+        ]);
+        const providers = financeIntegrationSchema
+          .array()
+          .parse(providerData)
+          .filter((item) => !["octopus", "sunsynk", "tesla"].includes(item.id));
+        setIntegrations([
+          ...providers,
+          ...STATIC_INTEGRATIONS.filter((s) => !providers.some((p) => p.id === s.id)),
+        ]);
+        setOidcEnabled(oidcStatusSchema.parse(oidcData).enabled);
+      } catch {
+        setIntegrations(STATIC_INTEGRATIONS);
+      }
+    })();
+  }, [user]);
+
+  const byId = Object.fromEntries(integrations.map((item) => [item.id, item]));
+  const liveBits = [
+    "App login and manual finance accounts",
+    isActive(byId, "quickfile") ? "QuickFile" : null,
+    isActive(byId, "lunchflow") ? "Lunch Flow" : null,
+    isActive(byId, "open_banking") ? "Open Banking" : null,
+    isActive(byId, "funding_circle") ? "Funding Circle" : null,
+  ].filter((item): item is string => Boolean(item));
+  const missing = [
+    isActive(byId, "quickfile") ? null : "QuickFile",
+    isActive(byId, "lunchflow") ? null : "Lunch Flow",
+    isActive(byId, "open_banking") ? null : "TrueLayer Open Banking",
+    isActive(byId, "funding_circle") ? null : "Funding Circle",
+  ].filter((item): item is string => Boolean(item));
 
   return (
     <div className="space-y-6">
-      {!readOnly ? (
-        <section className="solar-card space-y-3">
-          <div>
-            <h2 className="text-lg font-semibold">Hosted keys</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              Reload QuickFile and Lunch Flow from the Vercel environment if Settings shows them as
-              disconnected after a deploy.
-            </p>
-          </div>
-          {reconnectError ? (
-            <p className="rounded-lg border border-red-300/40 bg-red-500/10 px-3 py-2 text-sm text-red-800 dark:text-red-200">
-              {reconnectError}
-            </p>
-          ) : null}
-          {reconnectMessage ? (
-            <p className="rounded-lg border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-900 dark:text-emerald-200">
-              {reconnectMessage}
-            </p>
-          ) : null}
-          <button
-            type="button"
-            className="solar-btn-secondary"
-            disabled={reconnectBusy}
-            onClick={() => void reconnectFromHostedKeys()}
-          >
-            {reconnectBusy ? "Reconnecting…" : "Reconnect QuickFile & Lunch Flow"}
-          </button>
-        </section>
-      ) : null}
-      <QuickFileSettingsPanel key={quickFileKey} readOnly={readOnly} />
-      <LunchFlowSettingsForm key={lunchFlowKey} readOnly={readOnly} />
-      <Suspense fallback={<OpenBankingSettingsPanelFallback />}>
-        <OpenBankingSettingsPanel readOnly={readOnly} />
-      </Suspense>
+      <section className="solar-card space-y-3">
+        <h2 className="text-lg font-semibold">What&apos;s connected</h2>
+        <p className="text-sm text-[var(--muted)]">
+          Honest status for this Finance app. Overview balances stay manual until
+          QuickFile, Lunch Flow, or TrueLayer is connected. The same setup also lives on{" "}
+          <Link href="/finance/connect" className="underline underline-offset-2">
+            Connect banks
+          </Link>
+          .
+        </p>
+        <ul className="space-y-2 text-sm">
+          <li>
+            <span className="font-medium text-emerald-600 dark:text-emerald-400">Live — </span>
+            {liveBits.join(", ")}.
+          </li>
+          <li>
+            <span className="font-medium text-amber-600 dark:text-amber-400">Not connected — </span>
+            {missing.join(", ") || "nothing in this list"}.
+          </li>
+        </ul>
+        <ol className="list-decimal space-y-2 pl-5 text-sm">
+          <li>
+            <span className="font-medium">QuickFile</span> — business bank and unpaid invoices.
+            If Custody Note already has QuickFile, double-click{" "}
+            <strong>Connect Personal Finance</strong> on this Mac, or paste the three
+            fields below.
+          </li>
+          <li>
+            <span className="font-medium">Lunch Flow</span> — paste the Lunch Flow Destinations
+            → API key below, then Test / Sync. Banks stay connected in Lunch Flow; this app
+            only needs the key.
+          </li>
+          <li>
+            <span className="font-medium">TrueLayer</span> — one-time Client ID, secret, and
+            redirect URI, then Log in to your bank.
+          </li>
+          <li>
+            <span className="font-medium">Funding Circle</span> — enter the outstanding loan
+            below, or pull it after a TrueLayer sync.
+          </li>
+        </ol>
+      </section>
+      <FinanceHealthPanel canEdit={!readOnly} />
+      <AppShortcutPanel />
+      <BankImportCard readOnly={readOnly} showSettingsLink={false} />
+      <OpenBankingSettingsPanel readOnly={readOnly} />
+      <LunchFlowSettingsPanel readOnly={readOnly} />
+      <FundingCircleSettingsPanel readOnly={readOnly} />
+      <QuickFileSettingsPanel readOnly={readOnly} />
       <section className="solar-card space-y-4">
         <div>
-          <h2 className="text-lg font-semibold">Other integrations</h2>
+          <h2 className="text-lg font-semibold">Integration overview</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Additional providers will appear here as they are enabled.
+            Provider status from the backend. Configure credentials in the panels above.
           </p>
         </div>
         <ul className="grid gap-3 sm:grid-cols-2">
@@ -96,11 +141,31 @@ export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelP
             <li key={item.id} className="rounded-xl border border-[var(--border)] p-4">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium">{item.label}</span>
-                <span className="text-xs uppercase tracking-wide text-[var(--muted)]">{item.status}</span>
+                <span
+                  className={`text-xs uppercase tracking-wide ${
+                    item.status === "active"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-[var(--muted)]"
+                  }`}
+                >
+                  {statusLabel(item.status)}
+                </span>
               </div>
-              <p className="mt-2 text-sm text-[var(--muted)]">{item.detail}</p>
             </li>
           ))}
+          <li className="rounded-xl border border-[var(--border)] p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium">SSO (OIDC)</span>
+              <span className="text-xs uppercase tracking-wide text-[var(--muted)]">
+                {oidcEnabled ? "Active" : "Off"}
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              {oidcEnabled
+                ? "Sign in via your identity provider at /backend/auth/oidc/login"
+                : "Set OIDC_* env vars on the backend to enable."}
+            </p>
+          </li>
         </ul>
       </section>
     </div>

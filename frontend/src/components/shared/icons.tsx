@@ -17,59 +17,6 @@ function baseProps({ size = 20, className, ...rest }: IconProps) {
   };
 }
 
-export function SunIcon(props: IconProps) {
-  return (
-    <svg {...baseProps(props)}>
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-    </svg>
-  );
-}
-
-export function BoltIcon(props: IconProps) {
-  return (
-    <svg {...baseProps(props)}>
-      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-    </svg>
-  );
-}
-
-export function BatteryIcon(props: IconProps) {
-  return (
-    <svg {...baseProps(props)}>
-      <rect x="2" y="7" width="18" height="10" rx="2" />
-      <path d="M22 11v2" />
-      <path d="M6 11h4M6 14h6" />
-    </svg>
-  );
-}
-
-export function HomeIcon(props: IconProps) {
-  return (
-    <svg {...baseProps(props)}>
-      <path d="M3 10.5L12 3l9 7.5" />
-      <path d="M5 9.5V20h14V9.5" />
-      <path d="M9 20v-6h6v6" />
-    </svg>
-  );
-}
-
-export function ArrowDownIcon(props: IconProps) {
-  return (
-    <svg {...baseProps(props)}>
-      <path d="M12 5v14M5 12l7 7 7-7" />
-    </svg>
-  );
-}
-
-export function ArrowUpIcon(props: IconProps) {
-  return (
-    <svg {...baseProps(props)}>
-      <path d="M12 19V5M5 12l7-7 7 7" />
-    </svg>
-  );
-}
-
 export function GaugeIcon(props: IconProps) {
   return (
     <svg {...baseProps(props)}>
@@ -84,25 +31,6 @@ export function ShieldIcon(props: IconProps) {
   return (
     <svg {...baseProps(props)}>
       <path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z" />
-    </svg>
-  );
-}
-
-export function RefreshIcon(props: IconProps) {
-  return (
-    <svg {...baseProps(props)}>
-      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-      <path d="M21 3v5h-5" />
-      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-      <path d="M3 21v-5h5" />
-    </svg>
-  );
-}
-
-export function CheckIcon(props: IconProps) {
-  return (
-    <svg {...baseProps(props)}>
-      <path d="M20 6L9 17l-5-5" />
     </svg>
   );
 }

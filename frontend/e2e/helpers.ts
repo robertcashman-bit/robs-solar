@@ -8,39 +8,39 @@ export async function expectFinanceOverviewAfterLogin(page: Page) {
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible({
     timeout: LOGIN_TIMEOUT,
   });
-  await expect(page.getByRole("heading", { name: "Personal" })).toBeVisible({
-    timeout: LOGIN_TIMEOUT,
-  });
-  await expect(page.getByRole("heading", { name: "Business" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Balances" })).toBeVisible({
     timeout: LOGIN_TIMEOUT,
   });
 }
 
-/** Energy dashboard is ready when live metrics or the simulator block panel is visible. */
-export async function expectEnergyDashboard(page: Page) {
-  await expect(
-    page
-      .getByLabel("Live power now")
-      .or(page.getByRole("heading", { name: "Live inverter data required" })),
-  ).toBeVisible({ timeout: LOGIN_TIMEOUT });
+/** Solar/Energy is not part of the finance app. */
+export async function expectEnergyRemoved(page: Page) {
+  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Energy" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Energy / Solar" })).toHaveCount(0);
+  await expect(page.getByText("Energy savings")).toHaveCount(0);
 }
 
 /** Full login flow — use only when testing sign-in itself. */
-async function loginWithPassword(page: Page, username: string, password: string) {
+export async function loginAsAdmin(page: Page) {
+  const email = process.env.E2E_ADMIN_EMAIL ?? "admin";
+  const password = process.env.E2E_ADMIN_PASSWORD ?? "change-me-admin";
   await page.goto("/login");
-  await page.getByRole("button", { name: "Use password instead" }).click();
-  await page.getByLabel("Username").fill(username);
+  await expect(page.getByLabel("Email")).toBeVisible({ timeout: PAGE_TIMEOUT });
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByRole("button", { name: "Sign in with password" }).click();
   await expectFinanceOverviewAfterLogin(page);
 }
 
-export async function loginAsAdmin(page: Page) {
-  await loginWithPassword(page, "admin", "change-me-admin");
-}
-
 export async function loginAsViewer(page: Page) {
-  await loginWithPassword(page, "viewer", "change-me-viewer");
+  const email = process.env.E2E_VIEWER_EMAIL ?? "viewer";
+  const password = process.env.E2E_VIEWER_PASSWORD ?? "change-me-viewer";
+  await page.goto("/login");
+  await expect(page.getByLabel("Email")).toBeVisible({ timeout: PAGE_TIMEOUT });
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in with password" }).click();
+  await expectFinanceOverviewAfterLogin(page);
 }
 
 /** Navigate to a protected route (admin session is preloaded via storageState). */
@@ -56,14 +56,11 @@ export async function openFinanceOverview(page: Page) {
   await expectFinanceOverviewAfterLogin(page);
 }
 
-/** Open settings on the Energy / Solar tab. */
-export async function openEnergySettings(page: Page) {
+/** Open finance settings. Energy / Solar is no longer a settings tab. */
+export async function openFinanceSettings(page: Page) {
   await gotoWhenAuthed(page, "/settings");
-  await page.getByRole("tab", { name: "Energy / Solar" }).click();
-}
-
-/** Open the energy dashboard with a pre-authenticated admin session. */
-export async function openEnergyDashboard(page: Page) {
-  await gotoWhenAuthed(page, "/energy");
-  await expectEnergyDashboard(page);
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible({
+    timeout: PAGE_TIMEOUT,
+  });
+  await expect(page.getByRole("button", { name: "Energy / Solar" })).toHaveCount(0);
 }

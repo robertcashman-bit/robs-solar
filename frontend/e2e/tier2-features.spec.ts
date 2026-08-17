@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { gotoWhenAuthed, openEnergySettings } from "./helpers";
+import { gotoWhenAuthed, openFinanceSettings } from "./helpers";
 
 test("PWA manifest is served", async ({ request }) => {
   const response = await request.get("/manifest.json");
@@ -14,26 +14,25 @@ test("PWA manifest is served", async ({ request }) => {
   }
 });
 
-test("admin sees display-only inverter settings page", async ({ page }) => {
-  await gotoWhenAuthed(page, "/energy/controls");
-  await expect(page.getByRole("heading", { name: "Inverter settings" })).toBeVisible();
-  await expect(page.getByText(/Display only/i)).toBeVisible();
-  await expect(page.getByText("Automation rules")).toHaveCount(0);
+test("energy routes redirect to the finance overview", async ({ page }) => {
+  await gotoWhenAuthed(page, "/energy");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Energy" }),
+  ).toHaveCount(0);
 });
 
-test("analytics shows bill reconciliation section", async ({ page }) => {
-  await gotoWhenAuthed(page, "/energy/analytics");
-  await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
-  const simulated = page.getByRole("heading", { name: "Live inverter data required" });
-  const liveCharts = page.getByText("Savings & cost");
-  await expect(simulated.or(liveCharts)).toBeVisible({ timeout: 30_000 });
-  if (await simulated.isVisible()) {
-    await expect(page.getByRole("heading", { name: "Bill reconciliation" })).not.toBeVisible();
+test("leftover energy pages redirect home", async ({ page }) => {
+  for (const path of ["/alerts", "/audit", "/energy/analytics", "/energy/controls"]) {
+    await gotoWhenAuthed(page, path);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   }
 });
 
-test("admin sees notification settings on settings page", async ({ page }) => {
-  await openEnergySettings(page);
-  await expect(page.getByText("Alert notifications")).toBeVisible();
-  await expect(page.getByText("Runtime safety toggles")).toBeVisible();
+test("settings has no energy or Sunsynk controls", async ({ page }) => {
+  await openFinanceSettings(page);
+  await expect(page.getByText("Alert notifications")).toHaveCount(0);
+  await expect(page.getByText(/Sunsynk/i)).toHaveCount(0);
 });

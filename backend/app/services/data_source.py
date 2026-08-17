@@ -13,9 +13,10 @@ DATA_SOURCE_SIMULATED = "simulated"
 
 
 def current_data_source() -> str:
-    return (
-        DATA_SOURCE_SIMULATED if settings.adapter_mode.lower() == "simulator" else DATA_SOURCE_LIVE
-    )
+    mode = settings.adapter_mode.lower()
+    if mode in {"simulator", "sunsynk_connect", "sunsynk"}:
+        return DATA_SOURCE_SIMULATED
+    return DATA_SOURCE_LIVE
 
 
 def is_live_mode() -> bool:

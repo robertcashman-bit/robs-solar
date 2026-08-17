@@ -12,15 +12,6 @@ async def test_health_endpoint(client: AsyncClient) -> None:
     assert body["status"] == "ok"
     assert body["adapter_mode"] == "simulator"
     assert body["read_only"] is True
-    assert body["database"] == "sqlite"
-    assert body["database_persistent"] is True
-
-
-@pytest.mark.asyncio
-async def test_health_endpoint_accepts_vercel_backend_prefix(client: AsyncClient) -> None:
-    response = await client.get("/backend/health")
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
 
 
 @pytest.mark.asyncio
@@ -33,7 +24,9 @@ async def test_login_success(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_login_failure(client: AsyncClient) -> None:
-    response = await client.post("/auth/login", json={"username": "admin", "password": "wrong"})
+    response = await client.post(
+        "/auth/login", json={"username": "admin", "password": "wrong"}
+    )
     assert response.status_code == 401
 
 

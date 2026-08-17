@@ -16,13 +16,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Rob's Finance — Personal & Business Dashboard",
-  description: "Personal and business finance dashboard — balances, debts, cash flow, and tax.",
+  description: "Personal and business finance tracking",
   manifest: "/manifest.json",
-  applicationName: "Rob's Finance",
-  icons: {
-    icon: [{ url: "/favicon.png", type: "image/png" }],
-    apple: [{ url: "/icons/icon-180.png", sizes: "180x180", type: "image/png" }],
-  },
   appleWebApp: {
     capable: true,
     title: "Rob's Finance",
@@ -46,7 +41,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <link rel="apple-touch-icon" href="/icons/icon-180.png" sizes="180x180" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
       <body className="min-h-full flex flex-col">
         <div className="app-bg" aria-hidden="true">

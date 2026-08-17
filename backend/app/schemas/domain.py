@@ -97,66 +97,6 @@ class LiveMetrics(BaseModel):
     smart_meter_interval_end: Optional[datetime] = None
 
 
-class LoadFieldOrigin(str, Enum):
-    """Where a single diagnostic field's value actually came from.
-
-    Distinct from ``HouseLoadSource`` (which only classifies house load itself):
-    this labels every power-flow field shown on the diagnostics screen, so a
-    missing/undefined value is reported as ``unknown`` rather than silently
-    displayed as 0.
-    """
-
-    LIVE = "live"
-    DERIVED = "derived"
-    CACHED = "cached"
-    MISSING = "missing"
-    UNKNOWN = "unknown"
-
-
-class LoadFieldStatus(BaseModel):
-    """A single power-flow value plus where it came from, for the diagnostics UI."""
-
-    label: str
-    value: Optional[float] = None
-    unit: str = "W"
-    origin: LoadFieldOrigin
-    source_field: Optional[str] = None
-    note: Optional[str] = None
-
-
-class LoadDiagnostics(BaseModel):
-    """Full raw-to-derived load picture for the diagnostics screen (task 4/5).
-
-    Keeps "Measured Load" (directly reported by the adapter/CT) and
-    "Estimated Load" (calculated from the power balance) explicitly separate,
-    per the requirement to never blur measured and estimated values.
-    """
-
-    timestamp: datetime
-    adapter_mode: str
-    data_source: str
-    is_cached: bool
-    cache_age_seconds: Optional[float] = None
-
-    raw_payload: Optional[dict[str, Any]] = None
-    raw_payload_captured_at: Optional[datetime] = None
-    raw_payload_note: Optional[str] = None
-
-    pv: LoadFieldStatus
-    battery: LoadFieldStatus
-    grid_import: LoadFieldStatus
-    grid_export: LoadFieldStatus
-
-    measured_load_w: Optional[float] = None
-    measured_load_origin: LoadFieldOrigin
-    estimated_load_w: Optional[float] = None
-    estimated_load_formula: str = "pv_power_w + grid_import_w - grid_export_w + battery_power_w"
-    house_load_source: HouseLoadSource
-    house_load_w: float
-    house_load_at: Optional[datetime] = None
-    grid_meter_connected: Optional[bool] = None
-
-
 class ConnectivityStatus(BaseModel):
     backend_healthy: bool
     adapter_mode: str
@@ -165,44 +105,49 @@ class ConnectivityStatus(BaseModel):
     degraded_reason: Optional[str] = None
 
 
+class SunsynkAuthStatus(BaseModel):
+    verification_required: bool
+    message: Optional[str] = None
+
+
+class SunsynkVerificationCodeRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+
+
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=128)
 
 
-class MagicLoginRequest(BaseModel):
+class MagicCodeRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
 
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, value: str) -> str:
-        email = value.strip().lower()
-        local, _, domain = email.partition("@")
-        if not local or "." not in domain or " " in email:
-            raise ValueError("Enter a valid email address")
-        return email
 
-
-class MagicLoginVerifyRequest(BaseModel):
+class MagicCodeVerifyRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
-    code: str = Field(min_length=6, max_length=6)
-
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, value: str) -> str:
-        return MagicLoginRequest.normalize_email(value)
-
-    @field_validator("code")
-    @classmethod
-    def digits_only(cls, value: str) -> str:
-        code = value.strip()
-        if not code.isdigit() or len(code) != 6:
-            raise ValueError("Enter the 6-digit code from your email")
-        return code
+    code: str = Field(min_length=4, max_length=12)
 
 
-class MagicLoginRequestResponse(BaseModel):
+class MagicCodeRequestResponse(BaseModel):
     ok: bool = True
+    message: str
+    expires_in_seconds: int
+    delivery: str = "email"
+    # Present only in non-production when Resend is not configured.
+    dev_code: Optional[str] = None
+    dev_link: Optional[str] = None
+
+
+class MagicLinkConsumeRequest(BaseModel):
+    token: str = Field(min_length=8, max_length=2048)
+
+
+class MagicCodeStatusResponse(BaseModel):
+    enabled: bool
+    password_login_enabled: bool = True
+    email_delivery_configured: bool = False
+    # True when codes are returned in the API response (local/dev without Resend).
+    dev_delivery: bool = False
 
 
 class UserInfo(BaseModel):
@@ -227,8 +172,6 @@ class HealthResponse(BaseModel):
     read_only: bool
     timestamp: datetime
     plant_id: Optional[str] = None
-    database: str = "sqlite"
-    database_persistent: bool = True
 
 
 class AuditOutcome(str, Enum):
@@ -463,7 +406,6 @@ class MetricSummaryResponse(BaseModel):
     breakdown: Optional[SavingsBreakdown] = None
     optimisation_score: Optional["OptimisationScore"] = None
     system_status: str = ""
-    data_available: bool = True
 
 
 class MetricCompareDelta(BaseModel):

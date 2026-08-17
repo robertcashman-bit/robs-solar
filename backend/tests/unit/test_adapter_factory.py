@@ -1,22 +1,16 @@
-"""Tests for the adapter factory's instance caching."""
+"""Tests for the adapter factory."""
 
 import pytest
 
-import app.adapters.factory as factory
-from app.adapters.factory import get_adapter
+from app.adapters.factory import get_adapter, get_sunsynk_adapter
 from app.adapters.simulator import SimulatorAdapter
-from app.adapters.sunsynk_connect import SunsynkConnectAdapter
 from app.config import settings
 
 
-def test_sunsynk_adapter_is_cached_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sunsynk_mode_uses_simulator(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "adapter_mode", "sunsynk_connect")
-    monkeypatch.setattr(factory, "_sunsynk_adapter", None)
-    first = get_adapter()
-    second = get_adapter()
-    assert isinstance(first, SunsynkConnectAdapter)
-    # Sharing one instance keeps a single Sunsynk auth token across all callers.
-    assert first is second
+    adapter = get_adapter()
+    assert isinstance(adapter, SimulatorAdapter)
 
 
 def test_simulator_adapter_is_not_cached(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -25,3 +19,7 @@ def test_simulator_adapter_is_not_cached(monkeypatch: pytest.MonkeyPatch) -> Non
     second = get_adapter()
     assert isinstance(first, SimulatorAdapter)
     assert first is not second
+
+
+def test_get_sunsynk_adapter_is_inert_when_energy_is_off() -> None:
+    assert get_sunsynk_adapter() is None

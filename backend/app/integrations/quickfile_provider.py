@@ -69,7 +69,9 @@ class QuickFileProvider(BaseFinanceProvider):
 
     def _ensure_configured(self) -> None:
         if not (
-            self._config.account_number and self._config.api_key and self._config.application_id
+            self._config.account_number
+            and self._config.api_key
+            and self._config.application_id
         ):
             raise IntegrationNotConfiguredError(
                 "QuickFile is not configured. Set QUICKFILE_* env vars or save "
@@ -123,7 +125,7 @@ class QuickFileProvider(BaseFinanceProvider):
         return []
 
     async def fetch_debtors_gbp(self) -> float:
-        """Debtors control balance from the balance sheet report (matches QuickFile BS)."""
+        """Debtors control balance from the live QuickFile balance sheet."""
         self._ensure_configured()
         try:
             to_date = datetime.now(timezone.utc).date().isoformat()

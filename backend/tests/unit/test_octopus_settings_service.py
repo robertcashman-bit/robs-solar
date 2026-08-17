@@ -1,7 +1,9 @@
 """Unit tests for Octopus settings auto-seed and discover."""
 
+import json
+
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 
 from app.config import settings
 from app.db.models import AppSettingRow
@@ -9,7 +11,6 @@ from app.db.session import SessionLocal
 from app.schemas.domain import OctopusConfig
 from app.services.octopus_client import octopus_client
 from app.services.octopus_settings_service import OctopusSettingsService
-from app.services.settings_crypto import open_json
 
 
 @pytest.mark.asyncio
@@ -41,9 +42,11 @@ async def test_load_into_client_seeds_from_env_and_discovers_meter(
         await db.commit()
         await service.load_into_client(db)
         row = (
-            await db.execute(select(AppSettingRow).where(AppSettingRow.key == "octopus"))
+            await db.execute(
+                __import__("sqlalchemy").select(AppSettingRow).where(AppSettingRow.key == "octopus")
+            )
         ).scalar_one()
-        stored = OctopusConfig.model_validate(open_json(row.value))
+        stored = OctopusConfig.model_validate(json.loads(row.value))
         assert stored.mpan == "1900033149437"
         assert stored.meter_serial == "24L3288488"
         assert stored.region == "J"

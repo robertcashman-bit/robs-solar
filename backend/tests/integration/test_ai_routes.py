@@ -27,11 +27,8 @@ async def test_ai_assess_requires_admin(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_ai_assess_returns_503_when_disabled(client: AsyncClient) -> None:
-    session = await login(client, "admin", "admin-pass")
-    response = await client.post(
-        "/ai/assess",
-        headers={"X-CSRF-Token": session["csrf_token"]},
-    )
+    await login(client, "admin", "admin-pass")
+    response = await client.post("/ai/assess")
     assert response.status_code == 503
 
 
@@ -55,11 +52,8 @@ async def test_ai_assess_works_when_enabled(client: AsyncClient, monkeypatch) ->
 
     monkeypatch.setattr(ai_advisor_service, "_complete", fake_complete)
 
-    session = await login(client, "admin", "admin-pass")
-    response = await client.post(
-        "/ai/assess",
-        headers={"X-CSRF-Token": session["csrf_token"]},
-    )
+    await login(client, "admin", "admin-pass")
+    response = await client.post("/ai/assess")
     assert response.status_code == 200
     body = response.json()
     assert body["optimal"] is True

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text
+from sqlalchemy import DateTime, Float, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -142,6 +142,7 @@ class FinanceAccountRow(Base):
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
     external_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    dla_direction: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -158,9 +159,13 @@ class FinanceLiabilityRow(Base):
     interest_rate_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     minimum_payment_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     overpayment_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    original_balance_gbp: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     payment_day: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     account_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    dla_direction: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    interest_rate_known: Mapped[bool] = mapped_column(default=True, nullable=False)
+    credit_limit_gbp: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -201,45 +206,18 @@ class BusinessFinanceSnapshotRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class FinanceBudgetPlanRow(Base):
-    __tablename__ = "finance_budget_plans"
-    __table_args__ = (Index("ix_finance_budget_plans_active", "is_active"),)
+class FinancePositionSnapshotRow(Base):
+    __tablename__ = "finance_position_snapshots"
+    __table_args__ = (Index("ix_finance_position_snapshots_month", "month", unique=True),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(128), nullable=False)
-    strategy: Mapped[str] = mapped_column(String(32), nullable=False)
-    period: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
-    is_active: Mapped[bool] = mapped_column(default=False, nullable=False)
-    is_archived: Mapped[bool] = mapped_column(default=False, nullable=False)
-    source_fingerprint: Mapped[str] = mapped_column(String(40), nullable=False, default="")
-    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
-class FinanceBudgetItemRow(Base):
-    __tablename__ = "finance_budget_items"
-    __table_args__ = (Index("ix_finance_budget_items_plan", "budget_id"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    budget_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    item_key: Mapped[str] = mapped_column(String(160), nullable=False, default="")
-    scope: Mapped[str] = mapped_column(String(16), nullable=False)
-    kind: Mapped[str] = mapped_column(String(32), nullable=False)
-    category: Mapped[str] = mapped_column(String(128), nullable=False)
-    amount_gbp: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    source: Mapped[str] = mapped_column(String(32), nullable=False, default="user_entered")
-    source_label: Mapped[str] = mapped_column(String(128), nullable=False, default="")
-    source_record_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    source_record_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    is_generated: Mapped[bool] = mapped_column(default=False, nullable=False)
-    is_user_override: Mapped[bool] = mapped_column(default=False, nullable=False)
-    is_transfer: Mapped[bool] = mapped_column(default=False, nullable=False)
-    is_missing: Mapped[bool] = mapped_column(default=False, nullable=False)
-    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    record_href: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    month: Mapped[str] = mapped_column(String(7), nullable=False)
+    total_debt_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    personal_debt_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    business_debt_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    net_worth_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cash_available_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class MonthlyBudgetRow(Base):
@@ -308,35 +286,6 @@ class EnergyDailySnapshotRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class FinanceTransactionRow(Base):
-    __tablename__ = "finance_transactions"
-    __table_args__ = (Index("ix_finance_transactions_external_id", "external_id", unique=True),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    account_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    scope: Mapped[str] = mapped_column(String(16), nullable=False, default="personal")
-    external_id: Mapped[str] = mapped_column(String(256), nullable=False)
-    transaction_date: Mapped[str] = mapped_column(String(10), nullable=False)
-    description: Mapped[str] = mapped_column(String(512), nullable=False, default="")
-    merchant: Mapped[str] = mapped_column(String(256), nullable=False, default="")
-    amount_gbp: Mapped[float] = mapped_column(Float, nullable=False)
-    category: Mapped[str] = mapped_column(String(128), nullable=False, default="")
-    reference: Mapped[str] = mapped_column(String(128), nullable=False, default="")
-    is_pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
-class MagicLoginCodeRow(Base):
-    __tablename__ = "finance_magic_login_codes"
-
-    email_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
-    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
 class SolarSettingsRow(Base):
     __tablename__ = "solar_settings"
 
@@ -346,3 +295,177 @@ class SolarSettingsRow(Base):
     alert_savings_below_forecast: Mapped[bool] = mapped_column(default=True, nullable=False)
     display_preferences_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FinanceBudgetPlanRow(Base):
+    __tablename__ = "finance_budget_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    style: Mapped[str] = mapped_column(String(32), nullable=False, default="custom")
+    origin: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    explanation: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    debt_intensity: Mapped[str] = mapped_column(String(16), nullable=False, default="medium")
+    cash_buffer_target_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    discretionary_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    tax_reserve_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    income_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    is_active: Mapped[bool] = mapped_column(default=False, nullable=False)
+    active_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FinanceBudgetPlanLineRow(Base):
+    __tablename__ = "finance_budget_plan_lines"
+    __table_args__ = (Index("ix_finance_budget_plan_lines_plan", "plan_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    amount_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="user")
+    source_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_custom: Mapped[bool] = mapped_column(default=False, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    subcategory: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    basis_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    confidence: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    insufficient_data: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+
+class SettingsWatchChangeRow(Base):
+    """Read-only detection of inverter settings changes (external or app)."""
+
+    __tablename__ = "settings_watch_changes"
+    __table_args__ = (Index("ix_settings_watch_changes_timestamp", "timestamp"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    changes_json: Mapped[str] = mapped_column(Text, nullable=False)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="poll")
+    note: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+
+
+class FinanceTransactionRow(Base):
+    __tablename__ = "finance_transactions"
+    __table_args__ = (
+        Index("ix_finance_transactions_posted", "posted_on"),
+        Index("ix_finance_transactions_fingerprint", "fingerprint"),
+        Index("ix_finance_transactions_account", "account_id"),
+        UniqueConstraint("fingerprint", name="uq_finance_transactions_fingerprint"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    account_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    account_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    external_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    posted_on: Mapped[str] = mapped_column(String(10), nullable=False)
+    amount_pence: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    txn_type: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
+    category: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    subcategory: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    import_batch_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_transfer: Mapped[bool] = mapped_column(default=False, nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(default=False, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="GBP")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FinanceImportBatchRow(Base):
+    __tablename__ = "finance_import_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="preview")
+    detected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    imported: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duplicates: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    rejected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    money_in_pence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    money_out_pence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    date_from: Mapped[str] = mapped_column(String(10), nullable=False, default="")
+    date_to: Mapped[str] = mapped_column(String(10), nullable=False, default="")
+    rejects_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    warnings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    committed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class FinanceChangeAuditRow(Base):
+    __tablename__ = "finance_change_audit"
+    __table_args__ = (Index("ix_finance_change_audit_created", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    field: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    new_value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    actor: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FinanceBackupSnapshotRow(Base):
+    __tablename__ = "finance_backup_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    trigger: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    location: Mapped[str] = mapped_column(String(16), nullable=False, default="local")
+    web_url: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    account_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    transaction_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class FinanceSinkingFundRow(Base):
+    __tablename__ = "finance_sinking_funds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_gbp: Mapped[float] = mapped_column(Float, nullable=False)
+    saved_gbp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    due_on: Mapped[str] = mapped_column(String(10), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FinanceRecurringRuleRow(Base):
+    __tablename__ = "finance_recurring_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    description: Mapped[str] = mapped_column(String(256), nullable=False)
+    amount_gbp: Mapped[float] = mapped_column(Float, nullable=False)
+    cadence: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
+    category: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="proposed")
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FinanceHealthEventRow(Base):
+    __tablename__ = "finance_health_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    repaired: Mapped[bool] = mapped_column(default=False, nullable=False)
+    needs_review: Mapped[bool] = mapped_column(default=False, nullable=False)

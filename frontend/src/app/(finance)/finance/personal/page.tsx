@@ -1,17 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 
-import { FinanceAmount } from "@/components/finance/FinanceAmount";
-import { FinanceSignLegend } from "@/components/finance/FinanceSignLegend";
+import { AccountManager } from "@/components/finance/AccountManager";
 import { MetricTile } from "@/components/finance/MetricTile";
-import { HistoricBadge } from "@/components/finance/HistoricBadge";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
-import { ErrorBanner } from "@/components/shared/Banners";
+import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
@@ -21,9 +18,21 @@ import {
   type FinanceAccount,
   type PersonalFinanceSnapshot,
 } from "@/lib/finance-schemas";
-import { isSandboxFinanceAccount } from "@/components/finance/finance-item-utils";
-import { currentMonthKey, financeRoleForAccountBalance, formatGbp, parseRequiredNumber } from "@/lib/money";
+import { useFinanceReload } from "@/lib/use-finance-reload";
+import { currentMonthKey, isCurrentMonthSnapshot, parseGbp } from "@/lib/money";
+import { notifyFinanceChanged } from "@/lib/finance-events";
 import { canWrite } from "@/lib/permissions";
+
+const ACCOUNT_OPTIONS = [
+  { value: "current", label: "Current" },
+  { value: "credit_card", label: "Credit card" },
+  { value: "loan", label: "Loan" },
+  { value: "mortgage", label: "Mortgage" },
+  { value: "pension", label: "Pension" },
+  { value: "property", label: "Property" },
+  { value: "other_asset", label: "Other asset" },
+  { value: "directors_loan", label: "Director's loan (company owes you)" },
+];
 
 export default function PersonalFinancePage() {
   const router = useRouter();
@@ -31,12 +40,8 @@ export default function PersonalFinancePage() {
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
   const [snapshot, setSnapshot] = useState<PersonalFinanceSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    name: "",
-    balance_gbp: "",
-    account_type: "current",
-    credit_limit_gbp: "",
-  });
+  const [status, setStatus] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [snapshotForm, setSnapshotForm] = useState({
     monthly_income_gbp: "",
     monthly_spending_gbp: "",
@@ -52,7 +57,17 @@ export default function PersonalFinancePage() {
       ]);
       setAccounts(z.array(financeAccountSchema).parse(accts));
       const parsed = z.array(personalFinanceSnapshotSchema).parse(snaps);
-      setSnapshot(parsed[0] ?? null);
+      const current = parsed.find((item) => isCurrentMonthSnapshot(item.snapshot_date)) ?? null;
+      setSnapshot(current);
+      if (current) {
+        setSnapshotForm({
+          monthly_income_gbp: String(current.monthly_income_gbp),
+          monthly_spending_gbp: String(current.monthly_spending_gbp),
+          household_bills_gbp: String(current.household_bills_gbp),
+          debt_repayments_gbp: String(current.debt_repayments_gbp),
+        });
+      }
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load personal finance");
     }
@@ -62,180 +77,100 @@ export default function PersonalFinancePage() {
     if (!authLoading && !user) router.replace("/login");
   }, [authLoading, user, router]);
 
-  useEffect(() => {
-    if (!user) return;
-    const timer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timer);
-  }, [user, load]);
+  useFinanceReload(load, Boolean(user));
 
-  async function saveSnapshot(e: React.FormEvent) {
-    e.preventDefault();
-    if (!canWrite(user)) return;
+  async function saveSnapshot(event: React.FormEvent) {
+    event.preventDefault();
+    if (!canWrite(user) || saving) return;
+    setSaving(true);
     try {
-      await apiClient.post("/finance/snapshots/personal", {
+      const payload = {
         snapshot_date: currentMonthKey(),
-        monthly_income_gbp: parseRequiredNumber(snapshotForm.monthly_income_gbp, "Income"),
-        monthly_spending_gbp: parseRequiredNumber(snapshotForm.monthly_spending_gbp, "Spending"),
-        household_bills_gbp: parseRequiredNumber(snapshotForm.household_bills_gbp, "Household bills"),
-        debt_repayments_gbp: parseRequiredNumber(snapshotForm.debt_repayments_gbp, "Debt repayments"),
-      });
-      setError(null);
+        monthly_income_gbp: parseGbp(snapshotForm.monthly_income_gbp),
+        monthly_spending_gbp: parseGbp(snapshotForm.monthly_spending_gbp),
+        household_bills_gbp: parseGbp(snapshotForm.household_bills_gbp),
+        debt_repayments_gbp: parseGbp(snapshotForm.debt_repayments_gbp),
+      };
+      if (Object.values(payload).some((value) => typeof value === "number" && Number.isNaN(value))) {
+        throw new Error("Enter valid amounts for the monthly snapshot");
+      }
+      await apiClient.post("/finance/snapshots/personal", payload);
+      setStatus("Saved");
+      notifyFinanceChanged();
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save snapshot");
-    }
-  }
-
-  async function addAccount(e: React.FormEvent) {
-    e.preventDefault();
-    if (!canWrite(user)) return;
-    try {
-      await apiClient.post("/finance/accounts", {
-        scope: "personal",
-        account_type: form.account_type,
-        name: form.name,
-        balance_gbp: parseRequiredNumber(form.balance_gbp, "Balance"),
-        credit_limit_gbp:
-          form.account_type === "credit_card" && form.credit_limit_gbp.trim()
-            ? parseRequiredNumber(form.credit_limit_gbp, "Credit limit")
-            : null,
-      });
-      setForm({ name: "", balance_gbp: "", account_type: "current", credit_limit_gbp: "" });
-      setError(null);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add account");
+    } finally {
+      setSaving(false);
     }
   }
 
   if (authLoading || !user) return <AuthLoadingShell />;
 
-  const usableAccounts = accounts.filter((account) => !isSandboxFinanceAccount(account));
-  const sandboxAccounts = accounts.filter((account) => isSandboxFinanceAccount(account));
-  const totalBalance = usableAccounts.reduce((s, a) => s + a.balance_gbp, 0);
+  const cash = accounts.filter((a) => a.account_type === "current").reduce((s, a) => s + Math.max(a.balance_gbp, 0), 0);
+  const pension = accounts
+    .filter((a) => a.account_type === "pension")
+    .reduce((s, a) => s + a.balance_gbp, 0);
+  const companyOwes = accounts
+    .filter((a) => a.account_type === "directors_loan")
+    .reduce((s, a) => s + a.balance_gbp, 0);
+  const assets = accounts
+    .filter((a) => ["pension", "property", "other_asset"].includes(a.account_type))
+    .reduce((s, a) => s + a.balance_gbp, 0);
 
   return (
     <AppShell>
       <PageHeader
         eyebrow="Finance"
         title="Personal Finance"
-        description="Current accounts, credit cards, loans, mortgage, pension, and household cash flow."
+        description="Current accounts, pension, property, and the director's loan the company owes you."
       />
-      <p className="mt-2 text-sm">
-        <Link href="/finance/connect" className="underline text-[var(--muted)]">
-          Connect or refresh personal bank logins →
-        </Link>
-      </p>
       {error ? <div className="mt-4"><ErrorBanner message={error} /></div> : null}
-      <div className="mt-4">
-        <FinanceSignLegend />
-      </div>
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+      {status ? <div className="mt-4"><SuccessBanner message={status} /></div> : null}
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <MetricTile label="Personal cash" value={cash} hint="Positive current accounts only" />
         <MetricTile
-          label="Total personal balance"
-          value={totalBalance}
-          amountRole="signed"
-          historic={usableAccounts.some((a) => a.is_historic)}
+          label="Pension"
+          value={pension}
+          positive
+          hint={pension > 0 ? "Included in net worth" : "Add the pot here so net worth includes it"}
         />
         <MetricTile
-          label="Monthly income"
-          value={snapshot?.monthly_income_gbp}
-          amountRole="inflow"
-          historic={Boolean(snapshot)}
+          label="Company owes you"
+          value={companyOwes}
+          positive={companyOwes > 0}
+          hint="Director's loan"
         />
+        <MetricTile label="Personal assets" value={assets} hint="Pension, property, other" />
+        <MetricTile label="Monthly income" value={snapshot?.monthly_income_gbp} />
         <MetricTile
           label="Monthly surplus"
           value={snapshot?.surplus_deficit_gbp}
-          amountRole="signed"
-          historic={Boolean(snapshot)}
+          positive={(snapshot?.surplus_deficit_gbp ?? 0) >= 0}
         />
       </div>
+      <p className="mt-6 text-sm text-[var(--muted)]">
+        The live app records your stated pension pot on first start. Edit the
+        Pension account if that figure changes. A director&apos;s loan on this
+        page is money the company owes you, not a debt.
+      </p>
       <section className="mt-8">
         <h2 className="solar-section-title">Accounts</h2>
-        <ul className="mt-3 space-y-2">
-          {usableAccounts.map((a) => (
-            <li key={a.id} className="flex justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm">
-              <span>
-                {a.name}{" "}
-                <span className="text-[var(--muted)]">({a.account_type.replaceAll("_", " ")})</span>
-                {a.credit_limit_gbp ? (
-                  <span className="text-[var(--muted)]"> · limit {formatGbp(a.credit_limit_gbp)}</span>
-                ) : a.account_type === "credit_card" ? (
-                  <span className="text-[var(--muted)]"> · add a credit limit for available credit</span>
-                ) : null}
-                {a.is_historic ? <HistoricBadge /> : null}
-              </span>
-              <FinanceAmount
-                value={a.balance_gbp}
-                role={financeRoleForAccountBalance(a.account_type, a.balance_gbp)}
-              />
-            </li>
-          ))}
-          {usableAccounts.length === 0 ? (
-            <li className="text-sm text-[var(--muted)]">No personal accounts yet.</li>
-          ) : null}
-          {sandboxAccounts.length > 0 ? (
-            <li className="text-sm text-[var(--muted)]">
-              {sandboxAccounts.length} sandbox account
-              {sandboxAccounts.length === 1 ? "" : "s"} hidden from totals.
-            </li>
-          ) : null}
-        </ul>
+        <AccountManager
+          scope="personal"
+          accounts={accounts}
+          types={ACCOUNT_OPTIONS}
+          canEdit={canWrite(user)}
+          onChanged={load}
+          onError={setError}
+          onNotice={setStatus}
+        />
       </section>
-      {canWrite(user) ? (
-        <form
-          onSubmit={(e) => void addAccount(e)}
-          className="mt-6 grid gap-3 rounded-2xl border border-[var(--border)] p-4 sm:grid-cols-4"
-        >
-          <input
-            className="solar-input"
-            placeholder="Account name"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            required
-          />
-          <select
-            className="solar-input"
-            value={form.account_type}
-            onChange={(e) => setForm({ ...form, account_type: e.target.value })}
-          >
-            <option value="current">Current</option>
-            <option value="savings">Savings</option>
-            <option value="credit_card">Credit card</option>
-            <option value="loan">Loan</option>
-            <option value="mortgage">Mortgage</option>
-            <option value="property">Property</option>
-            <option value="pension">Pension</option>
-          </select>
-          <input
-            className="solar-input"
-            type="number"
-            step="0.01"
-            placeholder="Balance GBP"
-            value={form.balance_gbp}
-            onChange={(e) => setForm({ ...form, balance_gbp: e.target.value })}
-            required
-          />
-          {form.account_type === "credit_card" ? (
-            <input
-              className="solar-input"
-              type="number"
-              step="0.01"
-              placeholder="Credit limit GBP"
-              value={form.credit_limit_gbp}
-              onChange={(e) => setForm({ ...form, credit_limit_gbp: e.target.value })}
-            />
-          ) : null}
-          <button type="submit" className="solar-btn-primary">
-            Add account
-          </button>
-        </form>
-      ) : null}
       {canWrite(user) ? (
         <section className="mt-8">
           <h2 className="solar-section-title">Monthly snapshot ({currentMonthKey()})</h2>
           <form
-            onSubmit={(e) => void saveSnapshot(e)}
+            onSubmit={(event) => void saveSnapshot(event)}
             className="mt-3 grid gap-3 rounded-2xl border border-[var(--border)] p-4 sm:grid-cols-2 lg:grid-cols-5"
           >
             {(
@@ -249,16 +184,14 @@ export default function PersonalFinancePage() {
               <input
                 key={key}
                 className="solar-input"
-                type="number"
-                step="0.01"
                 placeholder={label}
                 value={snapshotForm[key]}
-                onChange={(e) => setSnapshotForm({ ...snapshotForm, [key]: e.target.value })}
+                onChange={(event) => setSnapshotForm({ ...snapshotForm, [key]: event.target.value })}
                 required
               />
             ))}
-            <button type="submit" className="solar-btn-primary">
-              Save snapshot
+            <button type="submit" className="solar-btn-primary" disabled={saving}>
+              {saving ? "Saving…" : "Save snapshot"}
             </button>
           </form>
         </section>

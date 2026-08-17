@@ -1,21 +1,44 @@
 #!/usr/bin/env node
 /**
  * Fetch QuickFile credentials from Custody Note cloud KV (encrypted blob).
- * Uses custody-note-website/.env.local for KV access and custody-note-app for decrypt.
+ * Looks for the decrypt helper and KV tokens in several checkout layouts,
+ * and can pull KV from the custody-note-website Vercel project when
+ * VERCEL_TOKEN is set.
  */
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
+import { homedir } from "os";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const websiteRoot = process.env.CUSTODY_NOTE_WEBSITE || join(process.env.HOME || "", "custody-note-website");
-const custodyAppRoot = process.env.CUSTODY_NOTE_APP || join(process.env.HOME || "", "custody-note-app");
+const allRoot = join(root, "..");
+const home = process.env.HOME || homedir();
 const require = createRequire(import.meta.url);
-const sync = require(join(custodyAppRoot, "lib/quickfileSettingsSync.js"));
 
-function loadEnvLocal() {
-  const path = join(websiteRoot, ".env.local");
+function firstExisting(paths) {
+  for (const path of paths) {
+    if (path && existsSync(path)) return path;
+  }
+  return null;
+}
+
+function findSyncModule() {
+  const app = process.env.CUSTODY_NOTE_APP || "";
+  return firstExisting([
+    app && join(app, "lib/quickfileSettingsSync.js"),
+    app && join(app, "custody-note-app-source/lib/quickfileSettingsSync.js"),
+    join(allRoot, "custody-note-app/lib/quickfileSettingsSync.js"),
+    join(allRoot, "custody-note-app/custody-note-app-source/lib/quickfileSettingsSync.js"),
+    join(home, "custody-note-app/lib/quickfileSettingsSync.js"),
+    join(home, "custody-note-app/custody-note-app-source/lib/quickfileSettingsSync.js"),
+    "/tmp/custody-note-app/custody-note-app-source/lib/quickfileSettingsSync.js",
+    "/tmp/other-git/custody-note-app/lib/quickfileSettingsSync.js",
+  ]);
+}
+
+function loadEnvFile(path) {
+  if (!path || !existsSync(path)) return;
   for (const line of readFileSync(path, "utf8").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
@@ -33,11 +56,47 @@ function loadEnvLocal() {
   }
 }
 
+function loadWebsiteEnv() {
+  const website = process.env.CUSTODY_NOTE_WEBSITE || "";
+  const envPath = firstExisting([
+    website && join(website, ".env.local"),
+    join(allRoot, "custody-note-website/.env.local"),
+    join(home, "custody-note-website/.env.local"),
+  ]);
+  loadEnvFile(envPath);
+}
+
+async function vercelJson(url) {
+  const token = process.env.VERCEL_TOKEN;
+  if (!token) return null;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function loadKvFromVercel() {
+  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) return true;
+  if (!process.env.VERCEL_TOKEN) return false;
+  const listing = await vercelJson("https://api.vercel.com/v9/projects?limit=50");
+  const project = (listing?.projects || []).find((item) => item.name === "custody-note-website");
+  if (!project) return false;
+  const envs = await vercelJson(`https://api.vercel.com/v9/projects/${project.id}/env`);
+  for (const key of ["KV_REST_API_URL", "KV_REST_API_TOKEN"]) {
+    const row = (envs?.envs || []).find((item) => item.key === key);
+    if (!row) continue;
+    const detail = await vercelJson(
+      `https://api.vercel.com/v9/projects/${project.id}/env/${row.id}?decrypt=true`,
+    );
+    if (detail?.value) process.env[key] = detail.value;
+  }
+  return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+}
+
 async function kvGet(key) {
   const url = process.env.KV_REST_API_URL;
   const token = process.env.KV_REST_API_TOKEN;
   if (!url || !token) {
-    throw new Error("KV_REST_API_URL and KV_REST_API_TOKEN required in custody-note-website/.env.local");
+    throw new Error("KV_REST_API_URL and KV_REST_API_TOKEN required");
   }
   const res = await fetch(url, {
     method: "POST",
@@ -58,7 +117,15 @@ async function kvGet(key) {
 }
 
 async function main() {
-  loadEnvLocal();
+  loadWebsiteEnv();
+  await loadKvFromVercel();
+  const syncPath = findSyncModule();
+  if (!syncPath) {
+    throw new Error(
+      "Could not find lib/quickfileSettingsSync.js. Set CUSTODY_NOTE_APP to the desktop app checkout.",
+    );
+  }
+  const sync = require(syncPath);
   const email = String(process.env.CUSTODY_NOTE_EMAIL || "robertdavidcashman@gmail.com")
     .trim()
     .toLowerCase();

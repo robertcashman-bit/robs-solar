@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,8 +20,6 @@ from app.services.data_source import apply_sample_source_filter
 from app.services.iog_schedule import time_to_minutes
 from app.services.tariff_clock import tariff_now, to_tariff
 from app.services.tariff_service import tariff_service
-
-logger = logging.getLogger(__name__)
 
 _IMPORT_SUSTAINED_SAMPLES = 6
 _HIGH_SOC_DEFAULT = 95.0
@@ -52,7 +48,7 @@ class SystemWarningsService:
         try:
             metrics = await adapter.get_live_metrics()
         except Exception:
-            logger.warning("System warnings: failed to load live metrics", exc_info=True)
+            pass
 
         window = await charge_window_service.get_status(adapter)
 
@@ -65,11 +61,6 @@ class SystemWarningsService:
             )
         )
         rows = list(result.scalars().all())
-        if metrics is None and not rows:
-            return SystemWarningsResponse(
-                warnings=[],
-                status_headline="Energy data unavailable.",
-            )
 
         import_kwh = integrate_kwh(rows, "grid_import_w")
         pv_kwh = integrate_kwh(rows, "pv_power_w")
@@ -144,7 +135,8 @@ class SystemWarningsService:
                     severity=SystemWarningSeverity.AMBER,
                     title="Solar exported when battery had room",
                     message=(
-                        "Solar may have been exported when it could have been stored for later use."
+                        "Solar may have been exported when it could have been stored "
+                        "for later use."
                     ),
                     category="export",
                 )
@@ -157,7 +149,8 @@ class SystemWarningsService:
                     severity=SystemWarningSeverity.AMBER,
                     title="Import and export at the same time",
                     message=(
-                        "Import/export readings may be inconsistent. Check data source alignment."
+                        "Import/export readings may be inconsistent. "
+                        "Check data source alignment."
                     ),
                     category="data",
                 )
@@ -194,7 +187,8 @@ class SystemWarningsService:
                     for r in peak_rows[: len(peak_rows) // 2]
                 )
                 late_import = any(
-                    r.grid_import_w > import_threshold for r in peak_rows[len(peak_rows) // 2 :]
+                    r.grid_import_w > import_threshold
+                    for r in peak_rows[len(peak_rows) // 2 :]
                 )
                 if early_low and late_import:
                     warnings.append(
@@ -235,7 +229,10 @@ class SystemWarningsService:
     ) -> bool:
         streak = 0
         for row in rows:
-            if row.battery_soc_pct >= soc_threshold and row.grid_import_w >= import_threshold:
+            if (
+                row.battery_soc_pct >= soc_threshold
+                and row.grid_import_w >= import_threshold
+            ):
                 streak += 1
                 if streak >= _IMPORT_SUSTAINED_SAMPLES:
                     return True

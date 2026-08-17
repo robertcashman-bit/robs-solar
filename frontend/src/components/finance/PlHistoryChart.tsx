@@ -5,15 +5,13 @@ import {
   BarChart,
   CartesianGrid,
   Legend,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 
-import { formatGbp } from "@/lib/money";
+import { formatGbp, formatMonthLabel } from "@/lib/money";
 
 export type PlHistoryPoint = {
   month: string;
@@ -35,13 +33,12 @@ export function PlHistoryChart({ points }: PlHistoryChartProps) {
     );
   }
 
-  const chartData = points.map((p) => ({
-    month: p.month.slice(2),
-    turnover: p.turnover_gbp,
-    expenses: p.expenses_gbp,
-    profit: p.profit_gbp,
+  const chartData = points.map((point) => ({
+    month: formatMonthLabel(point.month),
+    turnover: point.turnover_gbp,
+    expenses: point.expenses_gbp,
+    profit: point.profit_gbp,
   }));
-
   const latest = points[points.length - 1];
 
   return (
@@ -62,41 +59,16 @@ export function PlHistoryChart({ points }: PlHistoryChartProps) {
       </div>
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData}>
+          <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip
-              formatter={(value) =>
-                typeof value === "number" ? formatGbp(value) : String(value ?? "")
-              }
-            />
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={(value: number) => formatGbp(value, 0)} />
+            <Tooltip formatter={(value) => (typeof value === "number" ? formatGbp(value) : "—")} />
             <Legend />
-            <Bar dataKey="turnover" name="Turnover" fill="var(--accent-solar, #f59e0b)" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="expenses" name="Expenses" fill="var(--muted)" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="turnover" name="Turnover" fill="#059669" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="expenses" name="Expenses" fill="#d97706" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="profit" name="Profit" fill="#2563eb" radius={[4, 4, 0, 0]} />
           </BarChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="h-48">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip
-              formatter={(value) =>
-                typeof value === "number" ? formatGbp(value) : String(value ?? "")
-              }
-            />
-            <Line
-              type="monotone"
-              dataKey="profit"
-              name="Profit"
-              stroke="var(--accent-battery, #10b981)"
-              strokeWidth={2}
-              dot={false}
-            />
-          </LineChart>
         </ResponsiveContainer>
       </div>
     </div>

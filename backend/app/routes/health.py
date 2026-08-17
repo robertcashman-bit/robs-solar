@@ -4,7 +4,6 @@ from fastapi import APIRouter
 
 from app.adapters.factory import get_adapter
 from app.config import settings
-from app.db.session import database_backend, database_is_persistent
 from app.schemas.domain import HealthResponse
 from app.services.data_source import current_data_source
 from app.services.safety_settings_service import safety_settings_service
@@ -23,6 +22,4 @@ async def health() -> HealthResponse:
         read_only=safety_settings_service.effective_read_only(),
         timestamp=datetime.now(timezone.utc),
         plant_id=settings.sunsynk_plant_id or None,
-        database=database_backend(),
-        database_persistent=database_is_persistent(),
     )

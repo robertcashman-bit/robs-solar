@@ -1,31 +1,88 @@
 "use client";
 
-import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 
-import { ErrorBanner } from "@/components/shared/Banners";
-import { PageLoading } from "@/components/shared/PageLoading";
+import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { WalletIcon } from "@/components/shared/icons";
+import { ShortcutInstallCard } from "@/components/shared/ShortcutInstallCard";
+import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
-import { readLastEmail, rememberLastEmail } from "@/lib/last-email";
+import { ROBS_FINANCE_OWNER_EMAIL } from "@/lib/hosted";
 
-type Stage = "email" | "otp" | "password";
+const LAST_EMAIL_KEY = "robs-finance-last-login-email";
+const AUTO_SEND_KEY = "robs-finance-auto-send";
+
+function subscribeLastEmail(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  return () => window.removeEventListener("storage", onStoreChange);
+}
+
+function readLastEmail() {
+  try {
+    return window.localStorage.getItem(LAST_EMAIL_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function subscribeSearch(onStoreChange: () => void) {
+  window.addEventListener("popstate", onStoreChange);
+  return () => window.removeEventListener("popstate", onStoreChange);
+}
+
+function readMagicToken() {
+  return new URLSearchParams(window.location.search).get("token") ?? "";
+}
+
+function readSendOnOpen() {
+  return new URLSearchParams(window.location.search).get("send") === "1";
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return fallback;
+}
+
+function rememberEmail(value: string) {
+  try {
+    window.localStorage.setItem(LAST_EMAIL_KEY, value);
+  } catch {
+    // Ignore blocked storage.
+  }
+}
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, requestMagicCode, verifyMagicCode, user, loading } = useAuth();
-  const [stage, setStage] = useState<Stage>("email");
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [username, setUsername] = useState("");
+  const {
+    login,
+    user,
+    loading,
+    magicCodeEnabled,
+    magicCodeDevDelivery,
+    requestMagicCode,
+    verifyMagicCode,
+    consumeMagicLink,
+  } = useAuth();
+  const storedEmail = useSyncExternalStore(subscribeLastEmail, readLastEmail, () => "");
+  const magicToken = useSyncExternalStore(subscribeSearch, readMagicToken, () => "");
+  const sendOnOpen = useSyncExternalStore(subscribeSearch, readSendOnOpen, () => false);
+  const [emailOverride, setEmailOverride] = useState<string | null>(null);
+  const email = emailOverride ?? (storedEmail || ROBS_FINANCE_OWNER_EMAIL);
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [devCode, setDevCode] = useState<string | null>(null);
+  const [linkSent, setLinkSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    setEmail(readLastEmail());
-  }, []);
+  const [sendingLink, setSendingLink] = useState(false);
+  const consumedToken = useRef<string | null>(null);
 
   useEffect(() => {
     if (!loading && user) {
@@ -33,32 +90,104 @@ export default function LoginPage() {
     }
   }, [loading, user, router]);
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center px-4">
-        <div className="w-full max-w-md">
-          <PageLoading label="Checking session" rows={1} />
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!magicToken || consumedToken.current === magicToken) {
+      return;
+    }
+    consumedToken.current = magicToken;
+    let cancelled = false;
+    setSubmitting(true);
+    setError(null);
+    setInfo("Signing you in…");
+    void consumeMagicLink(magicToken)
+      .then(() => {
+        if (!cancelled) {
+          router.replace("/");
+        }
+      })
+      .catch((linkError: unknown) => {
+        if (!cancelled) {
+          setError(
+            errorMessage(
+              linkError,
+              "That sign-in link expired. Request a new code below.",
+            ),
+          );
+          setInfo(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSubmitting(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [consumeMagicLink, magicToken, router]);
 
-  if (user) {
+  const handleSendCode = useCallback(async () => {
+    setSendingLink(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const trimmed = email.trim();
+      rememberEmail(trimmed);
+      const result = await requestMagicCode(trimmed);
+      setLinkSent(true);
+      setCode("");
+      setInfo(result.message);
+      setDevCode(result.devCode ?? null);
+    } catch (linkError) {
+      setError(errorMessage(linkError, "Could not send a sign-in code"));
+    } finally {
+      setSendingLink(false);
+    }
+  }, [email, requestMagicCode]);
+
+  useEffect(() => {
+    if (!sendOnOpen || !magicCodeEnabled || magicToken || sendingLink || loading || user) {
+      return;
+    }
+    const trimmed = email.trim();
+    if (!trimmed.includes("@")) {
+      return;
+    }
+    try {
+      if (window.sessionStorage.getItem(AUTO_SEND_KEY) === trimmed) {
+        return;
+      }
+      window.sessionStorage.setItem(AUTO_SEND_KEY, trimmed);
+    } catch {
+      // Ignore blocked storage and still send once this mount.
+    }
+    void handleSendCode();
+  }, [
+    sendOnOpen,
+    magicCodeEnabled,
+    magicToken,
+    email,
+    loading,
+    user,
+    sendingLink,
+    handleSendCode,
+  ]);
+
+  if (!loading && user) {
     return null;
   }
 
-  const handleSendCode = async (event: FormEvent) => {
+  const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
-    const trimmed = email.trim().toLowerCase();
     try {
-      await requestMagicCode(trimmed);
-      rememberLastEmail(trimmed);
-      setEmail(trimmed);
-      setStage("otp");
-    } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : "Could not send login code");
+      const trimmed = email.trim();
+      rememberEmail(trimmed);
+      await login(trimmed, password);
+      router.replace("/");
+    } catch (loginError) {
+      setError(errorMessage(loginError, "Login failed"));
     } finally {
       setSubmitting(false);
     }
@@ -69,197 +198,143 @@ export default function LoginPage() {
     setSubmitting(true);
     setError(null);
     try {
-      await verifyMagicCode(email.trim().toLowerCase(), code.trim());
-      rememberLastEmail(email);
+      await verifyMagicCode(email.trim(), code.trim());
       router.replace("/");
     } catch (verifyError) {
-      setError(verifyError instanceof Error ? verifyError.message : "Verification failed");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handlePasswordSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      await login(username, password);
-      router.replace("/");
-    } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : "Login failed");
+      setError(errorMessage(verifyError, "That code did not work"));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-8">
+    <div className="flex min-h-screen items-center justify-center px-4">
       <div
-        className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-xl backdrop-blur-xl sm:p-8"
+        className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-8 shadow-xl backdrop-blur-xl"
         style={{ boxShadow: "var(--shadow-lg)" }}
       >
         <div className="flex flex-col items-center text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-lg">
             <WalletIcon size={28} />
           </div>
-          <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+          <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
             Rob&apos;s Finance
           </p>
-          <h1 id="login-heading" className="mt-1 text-2xl font-bold">
-            Sign in
-          </h1>
+          <h1 className="mt-1 text-2xl font-bold">Sign in</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            We&rsquo;ll email a one-time magic code. Password sign-in stays available as a fallback.
+            {magicCodeEnabled
+              ? "Email yourself a new 6-digit sign-in code each time, or use your password."
+              : "Enter your email or username and password."}
           </p>
         </div>
 
-        {stage === "email" ? (
-          <form
-            onSubmit={(event) => void handleSendCode(event)}
-            className="mt-8"
-            aria-labelledby="login-heading"
-          >
-            <label className="block text-sm font-medium">
-              Email
-              <input
-                type="email"
-                className="solar-input"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                autoComplete="username"
-                required
-              />
-            </label>
-            {error ? (
-              <div className="mt-4">
-                <ErrorBanner message={error} />
-              </div>
-            ) : null}
-            <button type="submit" disabled={submitting} className="solar-btn-primary mt-6 w-full">
-              {submitting ? "Sending code…" : "Email me a magic code"}
-            </button>
+        <form onSubmit={(event) => void handleLogin(event)} className="mt-6">
+          <label className="block text-sm font-medium" htmlFor="login-email">
+            Email or username
+            <input
+              id="login-email"
+              name="username"
+              type="text"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="solar-input"
+              value={email}
+              onChange={(event) => setEmailOverride(event.target.value)}
+              autoComplete="username"
+              required
+              placeholder="you@example.com or admin"
+              enterKeyHint={magicCodeEnabled && !password ? "send" : "done"}
+            />
+          </label>
+
+          {magicCodeEnabled ? (
             <button
               type="button"
-              className="mt-3 w-full text-sm font-semibold text-[var(--muted)] underline hover:text-[var(--foreground)]"
-              onClick={() => {
-                setStage("password");
-                setError(null);
-              }}
+              disabled={sendingLink || !email.trim()}
+              onClick={() => void handleSendCode()}
+              className="solar-btn-primary mt-4 w-full"
             >
-              Use password instead
+              {sendingLink
+                ? "Sending code..."
+                : linkSent
+                  ? "Email me a new code"
+                  : "Email me a sign-in code"}
             </button>
-          </form>
-        ) : null}
+          ) : null}
 
-        {stage === "otp" ? (
-          <form
-            onSubmit={(event) => void handleVerifyCode(event)}
-            className="mt-8"
-            aria-labelledby="login-heading"
-          >
-            <div className="rounded-xl border border-emerald-300/50 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-200">
-              <p className="font-medium">Check your email for a login code.</p>
-              <p className="mt-1 text-xs">
-                We sent a 6-digit code to <strong>{email}</strong>. It may take a minute to arrive.
-              </p>
+          {info ? (
+            <div className="mt-3">
+              <SuccessBanner message={info} />
             </div>
-            <label className="mt-4 block text-sm font-medium">
-              Magic code
+          ) : null}
+          {devCode && magicCodeDevDelivery ? (
+            <p className="mt-2 rounded-lg bg-[var(--surface)] px-3 py-2 text-sm">
+              Dev code: <span className="font-mono font-semibold tracking-widest">{devCode}</span>
+            </p>
+          ) : null}
+
+          <label className="mt-4 block text-sm font-medium" htmlFor="current-password">
+            Password
+            <input
+              id="current-password"
+              name="password"
+              type="password"
+              className="solar-input"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </label>
+
+          {error ? (
+            <div className="mt-4">
+              <ErrorBanner message={error} />
+            </div>
+          ) : null}
+
+          <button type="submit" disabled={submitting} className="solar-btn-secondary mt-6 w-full">
+            {submitting
+              ? "Signing in..."
+              : magicCodeEnabled
+                ? "Sign in with password"
+                : "Sign in"}
+          </button>
+        </form>
+
+        {magicCodeEnabled && linkSent ? (
+          <form onSubmit={(event) => void handleVerifyCode(event)} className="mt-6 border-t border-[var(--border)] pt-6">
+            <label className="block text-sm font-medium" htmlFor="login-code">
+              6-digit sign-in code
               <input
-                className="solar-input text-center text-lg tracking-[0.3em]"
-                value={code}
-                onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                id="login-code"
+                name="one-time-code"
+                type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
+                className="solar-input"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
                 placeholder="123456"
+                maxLength={6}
+                pattern="[0-9]*"
+                enterKeyHint="done"
                 required
               />
             </label>
-            {error ? (
-              <div className="mt-4">
-                <ErrorBanner message={error} />
-              </div>
-            ) : null}
-            <button type="submit" disabled={submitting} className="solar-btn-primary mt-6 w-full">
-              {submitting ? "Verifying…" : "Sign in"}
-            </button>
             <button
-              type="button"
-              className="mt-3 w-full text-sm font-semibold text-[var(--muted)] underline hover:text-[var(--foreground)]"
-              onClick={() => {
-                setStage("email");
-                setCode("");
-                setError(null);
-              }}
+              type="submit"
+              disabled={submitting || code.trim().length < 4}
+              className="solar-btn-primary mt-4 w-full"
             >
-              Use a different email
+              {submitting ? "Checking..." : "Sign in with code"}
             </button>
           </form>
         ) : null}
 
-        {stage === "password" ? (
-          <form
-            onSubmit={(event) => void handlePasswordSubmit(event)}
-            className="mt-8"
-            aria-labelledby="login-heading"
-          >
-            <label className="block text-sm font-medium">
-              Username
-              <input
-                className="solar-input"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                autoComplete="username"
-                required
-              />
-            </label>
-            <label className="mt-4 block text-sm font-medium">
-              Password
-              <input
-                type="password"
-                className="solar-input"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </label>
-            {error ? (
-              <div className="mt-4">
-                <ErrorBanner message={error} />
-              </div>
-            ) : null}
-            <button type="submit" disabled={submitting} className="solar-btn-primary mt-6 w-full">
-              {submitting ? "Signing in…" : "Sign in"}
-            </button>
-            <button
-              type="button"
-              className="mt-3 w-full text-sm font-semibold text-[var(--muted)] underline hover:text-[var(--foreground)]"
-              onClick={() => {
-                setStage("email");
-                setError(null);
-              }}
-            >
-              Use magic code instead
-            </button>
-          </form>
-        ) : null}
-
-        <p className="mt-6 text-center text-xs text-[var(--muted)]">
-          Add this sign-in page to your Dock or Home Screen from the browser share menu.
-        </p>
-        <p className="mt-3 text-center text-xs text-[var(--muted)]">
-          By signing in you agree to our{" "}
-          <Link href="/terms" className="underline hover:text-[var(--foreground)]">
-            terms
-          </Link>{" "}
-          and{" "}
-          <Link href="/privacy" className="underline hover:text-[var(--foreground)]">
-            privacy policy
-          </Link>
-          .
-        </p>
+        <ShortcutInstallCard />
       </div>
     </div>
   );

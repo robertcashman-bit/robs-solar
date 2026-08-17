@@ -1,6 +1,6 @@
 """Analytics applies live Octopus import AND export rates when configured."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 
 import pytest
 from sqlalchemy import delete
@@ -10,16 +10,23 @@ from app.db.session import SessionLocal
 from app.schemas.domain import HistoryRange
 from app.services import analytics_service as analytics_module
 from app.services.analytics_service import analytics_service
+from app.services.tariff_clock import tariff_now
 
 
 async def _seed() -> None:
-    now = datetime.now(timezone.utc)
+    # Seed a one-hour afternoon interval in the tariff timezone. Samples at
+    # datetime.now(UTC) fall into the 23:30–05:30 off-peak window after 22:30 UTC
+    # during British Summer Time, and those kWh are billed at night_import_rate
+    # instead of the Octopus/day override these tests assert.
+    local_afternoon = tariff_now().replace(hour=14, minute=0, second=0, microsecond=0)
+    later = local_afternoon.astimezone(timezone.utc)
+    earlier = later - timedelta(hours=1)
     async with SessionLocal() as db:
         await db.execute(delete(MetricSampleRow))
-        for minutes in (0, 60):
+        for timestamp in (earlier, later):
             db.add(
                 MetricSampleRow(
-                    timestamp=now - timedelta(minutes=minutes),
+                    timestamp=timestamp,
                     pv_power_w=2000.0,
                     battery_soc_pct=60.0,
                     house_load_w=1500.0,
@@ -33,22 +40,6 @@ async def _seed() -> None:
                 )
             )
         await db.commit()
-
-
-def _expected_import_cost(
-    summary,
-    *,
-    day_rate: float,
-    night_rate: float,
-) -> float:
-    """Mirror savings_calculation TOU split so overnight CI stays deterministic."""
-    breakdown = summary.breakdown
-    assert breakdown is not None
-    cheap = breakdown.cheap_import_kwh
-    peak = breakdown.peak_import_kwh
-    if cheap + peak > 0:
-        return round(cheap * night_rate + peak * day_rate, 2)
-    return round(summary.import_kwh * day_rate, 2)
 
 
 @pytest.mark.asyncio
@@ -70,11 +61,18 @@ async def test_summary_uses_octopus_import_and_export_overrides(monkeypatch) -> 
         tariff = await analytics_module.tariff_service.get_tariff(db)
         summary = await analytics_service.get_summary(db, HistoryRange.DAY)
 
-    night_rate = tariff.night_import_rate if tariff.night_import_rate is not None else 0.30
     assert summary.import_kwh > 0
     assert summary.export_kwh > 0
+    assert summary.breakdown is not None
+    assert summary.breakdown.import_rate_gbp == pytest.approx(0.30)
+    assert summary.breakdown.export_rate_gbp == pytest.approx(0.10)
+    night_rate = tariff.night_import_rate if tariff.night_import_rate is not None else 0.30
     assert summary.import_cost == pytest.approx(
-        _expected_import_cost(summary, day_rate=0.30, night_rate=night_rate)
+        round(
+            summary.breakdown.cheap_import_kwh * night_rate
+            + summary.breakdown.peak_import_kwh * 0.30,
+            2,
+        )
     )
     assert summary.export_credit == pytest.approx(round(summary.export_kwh * 0.10, 2))
 
@@ -89,16 +87,18 @@ async def test_summary_falls_back_to_stored_tariff_when_unconfigured(monkeypatch
         tariff = await analytics_module.tariff_service.get_tariff(db)
         summary = await analytics_service.get_summary(db, HistoryRange.DAY)
 
+    assert summary.import_kwh > 0
+    assert summary.export_kwh > 0
+    assert summary.breakdown is not None
+    assert summary.breakdown.import_rate_gbp == pytest.approx(tariff.import_rate)
     night_rate = (
         tariff.night_import_rate if tariff.night_import_rate is not None else tariff.import_rate
     )
-    assert summary.import_kwh > 0
-    assert summary.export_kwh > 0
     assert summary.import_cost == pytest.approx(
-        _expected_import_cost(
-            summary,
-            day_rate=tariff.import_rate,
-            night_rate=night_rate,
+        round(
+            summary.breakdown.cheap_import_kwh * night_rate
+            + summary.breakdown.peak_import_kwh * tariff.import_rate,
+            2,
         )
     )
     assert summary.export_credit == pytest.approx(round(summary.export_kwh * tariff.export_rate, 2))

@@ -7,16 +7,13 @@ test.use({ storageState: { cookies: [], origins: [] } });
 test("finance overview is default landing", async ({ page }) => {
   await loginAsAdmin(page);
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Personal" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Business" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Balances" })).toBeVisible();
 });
 
-test("energy dashboard accessible at /energy", async ({ page }) => {
+test("energy dashboard is removed", async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto("/energy");
-  await expect(
-    page.getByRole("heading", { name: "Live inverter data required" }).or(
-      page.getByLabel("Live power now"),
-    ),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  await expect(page.getByLabel("Live power now")).toHaveCount(0);
 });

@@ -4,36 +4,32 @@
 <dict>
     <key>Label</key>
     <string>com.robssolar.backend</string>
-
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/robertcashman/robs-solar/scripts/backend-service.sh</string>
+        <string>/Users/robertcashman/All/robs-solar/scripts/backend-service.sh</string>
     </array>
-
     <key>EnvironmentVariables</key>
     <dict>
         <key>ROBS_SOLAR_ROOT</key>
-        <string>/Users/robertcashman/robs-solar</string>
+        <string>/Users/robertcashman/All/robs-solar</string>
         <key>PATH</key>
         <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
-
     <key>WorkingDirectory</key>
-    <string>/Users/robertcashman/robs-solar/backend</string>
-
+    <string>/Users/robertcashman/All/robs-solar/backend</string>
     <key>RunAtLoad</key>
-    <true/>
-
+    <false/>
+    <!-- KeepAlive must be false. Boolean true starts the job when launchd
+         loads this agent at login. A KeepAlive dictionary can still restart
+         a previous session after logout. The Dock app kickstarts on click. -->
     <key>KeepAlive</key>
-    <true/>
-
+    <false/>
     <key>ThrottleInterval</key>
     <integer>5</integer>
-
     <key>StandardOutPath</key>
-    <string>/Users/robertcashman/robs-solar/.backend-service.log</string>
+    <string>/Users/robertcashman/All/robs-solar/.backend-service.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/robertcashman/robs-solar/.backend-service.log</string>
+    <string>/Users/robertcashman/All/robs-solar/.backend-service.log</string>
 </dict>
 </plist>

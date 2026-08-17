@@ -1,161 +1,83 @@
-"""Unit tests for finance daily background sync."""
-
-from unittest.mock import AsyncMock, patch
+"""Daily cron refreshes QuickFile and Lunch Flow when env credentials exist."""
 
 import pytest
 
-from app.services.finance import finance_daily_sync_service
+from app.schemas.finance import LunchFlowSyncResult, QuickFileSyncResult
+from app.services.finance.finance_daily_sync_service import FinanceDailySyncService
+
+
+class _FakeDb:
+    async def __aenter__(self):
+        return object()
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
 
 
 @pytest.mark.asyncio
-async def test_sync_once_calls_configured_integrations() -> None:
-    ob_result = type("Result", (), {"message": "ob ok"})()
-    lf_result = type("Result", (), {"message": "lf ok"})()
-    qf_result = type("Result", (), {"message": "qf ok", "accounts_synced": 2})()
-
-    with (
-        patch.object(
-            finance_daily_sync_service,
-            "_mark_expired_sessions",
-            new=AsyncMock(),
-        ),
-        patch.object(
-            finance_daily_sync_service.open_banking_settings_service,
-            "get_config",
-            new=AsyncMock(return_value=object()),
-        ),
-        patch.object(
-            finance_daily_sync_service.open_banking_settings_service,
-            "is_configured",
-            return_value=True,
-        ),
-        patch.object(
-            finance_daily_sync_service.open_banking_sync_service,
-            "sync",
-            new=AsyncMock(return_value=ob_result),
-        ) as ob_sync,
-        patch.object(
-            finance_daily_sync_service.lunch_flow_settings_service,
-            "get_status",
-            new=AsyncMock(return_value=type("Status", (), {"configured": True})()),
-        ),
-        patch.object(
-            finance_daily_sync_service.lunch_flow_settings_service,
-            "get_config",
-            new=AsyncMock(return_value=object()),
-        ),
-        patch.object(
-            finance_daily_sync_service.lunch_flow_sync_service,
-            "sync",
-            new=AsyncMock(return_value=lf_result),
-        ) as lf_sync,
-        patch.object(
-            finance_daily_sync_service.quickfile_settings_service,
-            "get_config",
-            new=AsyncMock(return_value=object()),
-        ),
-        patch.object(
-            finance_daily_sync_service.quickfile_settings_service,
-            "get_status",
-            new=AsyncMock(return_value=type("Status", (), {"configured": True})()),
-        ),
-        patch.object(
-            finance_daily_sync_service.quickfile_sync_service,
-            "sync",
-            new=AsyncMock(return_value=qf_result),
-        ) as qf_sync,
-    ):
-        await finance_daily_sync_service.sync_once()
-
-    ob_sync.assert_awaited_once()
-    lf_sync.assert_awaited_once()
-    qf_sync.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_sync_once_returns_structured_result() -> None:
-    with (
-        patch.object(
-            finance_daily_sync_service,
-            "_mark_expired_sessions",
-            new=AsyncMock(),
-        ),
-        patch.object(
-            finance_daily_sync_service.open_banking_settings_service,
-            "get_config",
-            new=AsyncMock(return_value=object()),
-        ),
-        patch.object(
-            finance_daily_sync_service.open_banking_settings_service,
-            "is_configured",
-            return_value=False,
-        ),
-        patch.object(
-            finance_daily_sync_service.lunch_flow_settings_service,
-            "get_status",
-            new=AsyncMock(return_value=type("Status", (), {"configured": False})()),
-        ),
-        patch.object(
-            finance_daily_sync_service.quickfile_settings_service,
-            "get_config",
-            new=AsyncMock(return_value=object()),
-        ),
-        patch.object(
-            finance_daily_sync_service.quickfile_settings_service,
-            "get_status",
-            new=AsyncMock(return_value=type("Status", (), {"configured": False})()),
-        ),
-    ):
-        result = await finance_daily_sync_service.sync_once()
-
+async def test_daily_sync_skips_when_nothing_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.services.finance.finance_daily_sync_service.SessionLocal",
+        lambda: _FakeDb(),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_daily_sync_service.quickfile_settings_service.env_configured",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_daily_sync_service.lunchflow_settings_service.env_configured",
+        lambda: False,
+    )
+    result = await FinanceDailySyncService().sync_once()
     assert result.ok is True
-    assert "skipped" in result.open_banking.lower()
-    assert "skipped" in result.lunch_flow.lower()
+    assert "skipped" in result.quickfile
+    assert "skipped" in result.lunchflow
 
 
 @pytest.mark.asyncio
-async def test_start_and_stop_finance_daily_sync() -> None:
-    from app.config import settings
+async def test_daily_sync_runs_configured_providers(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.services.finance.finance_daily_sync_service.SessionLocal",
+        lambda: _FakeDb(),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_daily_sync_service.quickfile_settings_service.env_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_daily_sync_service.lunchflow_settings_service.env_configured",
+        lambda: True,
+    )
 
-    original_enabled = settings.finance_daily_sync_enabled
-    original_hours = settings.finance_daily_sync_interval_hours
-    original_secret = settings.cron_secret
-    settings.finance_daily_sync_enabled = True
-    settings.finance_daily_sync_interval_hours = 24
-    settings.cron_secret = ""
+    async def fake_qf_config(_db):
+        return object()
 
-    with patch.object(finance_daily_sync_service, "sync_once", new=AsyncMock()):
-        with patch.object(finance_daily_sync_service.asyncio, "sleep", new=AsyncMock()):
-            task = finance_daily_sync_service.start_finance_daily_sync()
-            assert task is not None
-            assert finance_daily_sync_service.start_finance_daily_sync() is task
-            await finance_daily_sync_service.stop_finance_daily_sync()
+    async def fake_lf_config(_db):
+        return object()
 
-    settings.finance_daily_sync_enabled = original_enabled
-    settings.finance_daily_sync_interval_hours = original_hours
-    settings.cron_secret = original_secret
+    async def fake_qf_sync(_db, _config):
+        return QuickFileSyncResult(accounts_synced=2, debtors_gbp=1.0, message="qf ok")
 
+    async def fake_lf_sync(_db, _config):
+        return LunchFlowSyncResult(accounts_synced=5, message="lf ok")
 
-def test_start_finance_daily_sync_disabled_returns_none() -> None:
-    from app.config import settings
-
-    original = settings.finance_daily_sync_enabled
-    settings.finance_daily_sync_enabled = False
-    try:
-        assert finance_daily_sync_service.start_finance_daily_sync() is None
-    finally:
-        settings.finance_daily_sync_enabled = original
-
-
-def test_start_finance_daily_sync_skips_loop_when_cron_secret_set() -> None:
-    from app.config import settings
-
-    original_enabled = settings.finance_daily_sync_enabled
-    original_secret = settings.cron_secret
-    settings.finance_daily_sync_enabled = True
-    settings.cron_secret = "production-cron-secret"
-    try:
-        assert finance_daily_sync_service.start_finance_daily_sync() is None
-    finally:
-        settings.finance_daily_sync_enabled = original_enabled
-        settings.cron_secret = original_secret
+    monkeypatch.setattr(
+        "app.services.finance.finance_daily_sync_service.quickfile_settings_service.get_config",
+        fake_qf_config,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_daily_sync_service.lunchflow_settings_service.get_config",
+        fake_lf_config,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_daily_sync_service.quickfile_sync_service.sync",
+        fake_qf_sync,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_daily_sync_service.lunchflow_sync_service.sync",
+        fake_lf_sync,
+    )
+    result = await FinanceDailySyncService().sync_once()
+    assert result.ok is True
+    assert result.quickfile == "qf ok"
+    assert result.lunchflow == "lf ok"

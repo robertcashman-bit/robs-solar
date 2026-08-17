@@ -1,6 +1,11 @@
 """Unit tests for finance insights rules."""
 
 from app.schemas.finance import FinanceOverviewResponse
+from app.services.finance.finance_insights_service import (
+    CREDIT_CARD_INSIGHT_TITLE,
+    insight_title_is_dismissed,
+    utilisation_is_high,
+)
 
 
 def test_cashflow_insight_trigger_fields() -> None:
@@ -27,3 +32,18 @@ def test_cashflow_insight_trigger_fields() -> None:
     )
     assert overview.cash_after_bills_gbp < 500
     assert overview.vat_reserve_warning is True
+
+
+def test_renamed_credit_card_insight_respects_old_dismissal() -> None:
+    dismissed = {"Credit card balances are increasing"}
+    assert insight_title_is_dismissed(CREDIT_CARD_INSIGHT_TITLE, dismissed)
+    assert not insight_title_is_dismissed(
+        "Personal cash may be tight after expected bills", dismissed
+    )
+
+
+def test_utilisation_requires_a_recorded_limit() -> None:
+    assert utilisation_is_high(800, 0) is False
+    assert utilisation_is_high(800, 1000) is True
+    assert utilisation_is_high(200, 1000) is False
+    assert utilisation_is_high(0, 1000) is False

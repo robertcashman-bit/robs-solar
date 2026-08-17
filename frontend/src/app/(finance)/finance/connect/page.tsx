@@ -1,19 +1,22 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import { BankConnectionsHub } from "@/components/finance/BankConnectionsHub";
-import { OpenBankingSetupPage } from "@/components/finance/OpenBankingSetupPage";
+import { BankImportCard } from "@/components/finance/BankImportCard";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { FundingCircleSettingsPanel } from "@/components/settings/FundingCircleSettingsPanel";
+import { LunchFlowSettingsPanel } from "@/components/settings/LunchFlowSettingsPanel";
+import { OpenBankingSettingsPanel } from "@/components/settings/OpenBankingSettingsPanel";
+import { QuickFileSettingsPanel } from "@/components/settings/QuickFileSettingsPanel";
 import { useAuth } from "@/lib/auth-context";
 import { canWrite } from "@/lib/permissions";
 
-function ConnectBanksContent() {
-  const { user, loading } = useAuth();
+export default function ConnectBanksPage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -21,35 +24,50 @@ function ConnectBanksContent() {
 
   if (loading || !user) return <AuthLoadingShell />;
 
+  const readOnly = !canWrite(user);
+
   return (
     <AppShell>
       <PageHeader
         eyebrow="Finance"
         title="Connect banks"
-        description="Authorize personal banks at Lunch Flow in your browser, then sync here. QuickFile covers business; Funding Circle is entered manually."
+        description="Link personal banks with TrueLayer or Lunch Flow. QuickFile covers the company. Funding Circle is entered manually."
       />
-      <div className="mt-6 space-y-10">
-        <section id="open-banking-setup" aria-labelledby="open-banking-setup-heading">
-          <h2 id="open-banking-setup-heading" className="sr-only">
-            Open Banking setup
+      <div className="mt-6 space-y-8">
+        <section aria-labelledby="open-banking-heading">
+          <h2 id="open-banking-heading" className="solar-section-title">
+            Open Banking
           </h2>
-          <OpenBankingSetupPage readOnly={!canWrite(user)} handleOAuthCallback={false} />
+          <div className="mt-4 space-y-4">
+            <BankImportCard readOnly={readOnly} />
+            <OpenBankingSettingsPanel readOnly={readOnly} />
+          </div>
         </section>
-        <section aria-labelledby="bank-connections-heading">
-          <h2 id="bank-connections-heading" className="sr-only">
-            Linked bank accounts
+        <section aria-labelledby="lunchflow-heading">
+          <h2 id="lunchflow-heading" className="solar-section-title">
+            Lunch Flow
           </h2>
-          <BankConnectionsHub readOnly={!canWrite(user)} />
+          <div className="mt-4">
+            <LunchFlowSettingsPanel readOnly={readOnly} />
+          </div>
+        </section>
+        <section aria-labelledby="quickfile-heading">
+          <h2 id="quickfile-heading" className="solar-section-title">
+            QuickFile
+          </h2>
+          <div className="mt-4">
+            <QuickFileSettingsPanel readOnly={readOnly} />
+          </div>
+        </section>
+        <section aria-labelledby="funding-circle-heading">
+          <h2 id="funding-circle-heading" className="solar-section-title">
+            Funding Circle
+          </h2>
+          <div className="mt-4">
+            <FundingCircleSettingsPanel readOnly={readOnly} />
+          </div>
         </section>
       </div>
     </AppShell>
-  );
-}
-
-export default function ConnectBanksPage() {
-  return (
-    <Suspense fallback={<AuthLoadingShell />}>
-      <ConnectBanksContent />
-    </Suspense>
   );
 }

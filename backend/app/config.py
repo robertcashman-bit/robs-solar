@@ -1,3 +1,6 @@
+import os
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,16 +10,12 @@ class Settings(BaseSettings):
     app_env: str = "development"
     secret_key: str = "change-me"
     database_url: str = "sqlite+aiosqlite:///./data/robs_solar.db"
-    # Neon (Vercel Marketplace). Used when DATABASE_URL is ephemeral /tmp SQLite.
-    robs_finance_database_url: str = ""
-    robs_finance_database_url_unpooled: str = ""
-    robs_finance_postgres_url: str = ""
-    robs_finance_postgres_url_non_pooling: str = ""
     read_only: bool = True
     adapter_mode: str = "simulator"
     cors_origins: str = "http://127.0.0.1:3000"
     admin_username: str = "admin"
     admin_password: str = "change-me-admin"
+    admin_email: str = "robertdavidcashman@gmail.com"
     viewer_username: str = "viewer"
     viewer_password: str = "change-me-viewer"
     rate_limit_writes_per_minute: int = 10
@@ -33,9 +32,12 @@ class Settings(BaseSettings):
     ha_entity_inverter_status: str = ""
     ha_entity_export_limit: str = ""
     ha_service_export_limit: str = ""
+    ha_service_schedule: str = ""
+    ha_service_operating_mode: str = ""
 
     modbus_bridge_url: str = ""
     modbus_bridge_token: str = ""
+    modbus_bridge_writes_enabled: bool = False
 
     # Direct Modbus TCP (RS485-WiFi dongle)
     modbus_host: str = ""
@@ -71,6 +73,8 @@ class Settings(BaseSettings):
     sunsynk_base_url: str = "https://api.sunsynk.net"
     sunsynk_username: str = ""
     sunsynk_password: str = ""
+    # One-shot emailed Sunsynk lockout code. Consumed on the next login attempt.
+    sunsynk_verification_code: str = ""
     sunsynk_plant_id: str = ""
     sunsynk_inverter_sn: str = ""
     sunsynk_enable_unverified_writes: bool = False
@@ -81,6 +85,12 @@ class Settings(BaseSettings):
     metrics_sampler_enabled: bool = True
     metrics_sample_interval_seconds: int = 60
     metrics_retention_days: int = 90
+
+    # Read-only inverter settings watcher (detects external/app changes; never writes)
+    settings_watch_enabled: bool = True
+    # Poll settings every N metric samples (default 3 → ~3 minutes at 60s sampling)
+    settings_watch_every_n_samples: int = 3
+    settings_watch_retention_days: int = 90
 
     # Default tariff (GBP per kWh); overridable via PUT /tariff
     tariff_import_rate: float = 0.28
@@ -142,50 +152,74 @@ class Settings(BaseSettings):
     quickfile_api_key: str = ""
     quickfile_application_id: str = ""
 
-    # Personal Open Banking — Enable Banking (default) or legacy GoCardless
-    open_banking_provider: str = "enable_banking"
-    enable_banking_application_id: str = ""
-    enable_banking_private_key_pem: str = ""
-    enable_banking_private_key_path: str = ""
-    enable_banking_environment: str = "SANDBOX"
-    open_banking_secret_id: str = ""
-    open_banking_secret_key: str = ""
-    open_banking_redirect_url: str = "http://127.0.0.1:3000/open-banking/callback"
-
-    # Personal banks via Lunch Flow (API key — connect banks at lunchflow.app)
-    lunch_flow_api_key: str = ""
-
-    # Finance background sync (Open Banking + QuickFile)
-    finance_daily_sync_enabled: bool = True
-    finance_daily_sync_interval_hours: int = 24
-    # Vercel Cron sends Authorization: Bearer <CRON_SECRET>. When set, the in-process
-    # daily loop is disabled — production relies on GET /finance/cron/daily-sync instead.
+    # Open Banking (TrueLayer — UK)
+    truelayer_client_id: str = ""
+    truelayer_client_secret: str = ""
+    truelayer_redirect_uri: str = ""
+    truelayer_environment: str = "sandbox"
+    lunchflow_api_key: str = ""
+    # Vercel Cron bearer for /finance/cron/daily-sync
     cron_secret: str = ""
+    # Automatic web backup (Vercel Blob). Never required for local/tests.
+    blob_read_write_token: str = ""
+    finance_backup_prefix: str = "robs-finance-backups"
 
-    # Magic-code sign-in (email OTP). Names match the previous hosted All deploy.
-    admin_email: str = ""
+    # Tesla Fleet API (EV charging visibility)
+    tesla_client_id: str = ""
+    tesla_client_secret: str = ""
+    tesla_refresh_token: str = ""
+    tesla_energy_site_id: str = ""
+
+    # OIDC SSO (optional — local password auth remains available)
+    oidc_enabled: bool = False
+    oidc_issuer_url: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_redirect_uri: str = ""
+    oidc_admin_emails: str = ""
+
+    # Magic-code (email OTP) sign-in
     magic_code_enabled: bool = True
+    magic_code_ttl_seconds: int = 600
     magic_code_admin_emails: str = ""
+    magic_code_viewer_emails: str = ""
+    # Always used in sign-in emails. Never a Cloudflare tunnel or preview host.
+    public_app_url: str = "https://robs-solar.vercel.app"
+    # Resend transactional email (preferred). When unset, codes are logged and
+    # returned in the API response for local/dev only (never in production).
     resend_api_key: str = ""
     resend_from_email: str = "Rob's Finance <onboarding@resend.dev>"
-    public_app_url: str = ""
 
-    @property
-    def magic_code_admin_email_set(self) -> frozenset[str]:
-        raw = self.magic_code_admin_emails or self.admin_email
-        return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
 
-    @property
-    def neon_database_url(self) -> str:
-        return self.robs_finance_database_url or self.robs_finance_postgres_url
-
-    @property
-    def neon_database_url_unpooled(self) -> str:
-        return self.robs_finance_database_url_unpooled or self.robs_finance_postgres_url_non_pooling
+    @model_validator(mode="after")
+    def _alias_legacy_env_names(self) -> "Settings":
+        # Previous commits and the live Vercel project use LUNCH_FLOW_API_KEY.
+        if not self.lunchflow_api_key.strip():
+            alt = os.environ.get("LUNCH_FLOW_API_KEY", "").strip()
+            if alt:
+                self.lunchflow_api_key = alt
+        if not self.blob_read_write_token.strip():
+            alt_blob = (
+                os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip()
+                or os.environ.get("VERCEL_BLOB_READ_WRITE_TOKEN", "").strip()
+            )
+            if alt_blob:
+                self.blob_read_write_token = alt_blob
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        origins = [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        # Hosted Finance and local app must always be able to call /backend.
+        # A leftover localhost-only CORS_ORIGINS on Vercel blocked browser login.
+        for extra in (
+            "http://127.0.0.1:3000",
+            "http://localhost:3000",
+            "https://robs-solar.vercel.app",
+        ):
+            if extra not in origins:
+                origins.append(extra)
+        return origins
 
     @property
     def is_production(self) -> bool:
@@ -196,8 +230,59 @@ class Settings(BaseSettings):
         return self.is_production
 
     @property
+    def oidc_admin_email_list(self) -> list[str]:
+        return [
+            email.strip().lower()
+            for email in self.oidc_admin_emails.split(",")
+            if email.strip()
+        ]
+
+    @property
+    def magic_code_admin_email_list(self) -> list[str]:
+        emails = [
+            email.strip().lower()
+            for email in self.magic_code_admin_emails.split(",")
+            if email.strip()
+        ]
+        # Fall back to OIDC admin allowlist when magic-code list is empty.
+        resolved = emails or list(self.oidc_admin_email_list)
+        admin_email = self.admin_email.strip().lower()
+        if admin_email and "@" in admin_email and admin_email not in resolved:
+            resolved.append(admin_email)
+        return resolved
+
+    @property
+    def magic_code_viewer_email_list(self) -> list[str]:
+        return [
+            email.strip().lower()
+            for email in self.magic_code_viewer_emails.split(",")
+            if email.strip()
+        ]
+
+
+    @property
+    def truelayer_auth_base(self) -> str:
+        return (
+            "https://auth.truelayer.com"
+            if self.truelayer_environment.lower() == "live"
+            else "https://auth.truelayer-sandbox.com"
+        )
+
+    @property
+    def truelayer_api_base(self) -> str:
+        return (
+            "https://api.truelayer.com"
+            if self.truelayer_environment.lower() == "live"
+            else "https://api.truelayer-sandbox.com"
+        )
+
+    @property
     def cookie_samesite(self) -> str:
         return "lax"
 
 
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    return settings

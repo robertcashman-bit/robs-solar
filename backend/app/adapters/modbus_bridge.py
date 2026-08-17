@@ -35,16 +35,31 @@ class ModbusBridgeAdapter(InverterAdapter):
 
     async def get_capabilities(self) -> AdapterCapabilities:
         configured = bool(settings.modbus_bridge_url)
+        writes_enabled = configured and settings.modbus_bridge_writes_enabled
+        supported_writes: list[str] = []
+        if writes_enabled:
+            supported_writes = ["export_limit", "schedule", "operating_mode"]
         return AdapterCapabilities(
             mode="modbus_bridge",
             supports_read=configured,
-            supports_write=False,
-            supported_writes=[],
+            supports_write=writes_enabled,
+            supported_writes=supported_writes,
             notes=[
-                "Modbus register mappings are not verified in v1.",
                 "Configure MODBUS_BRIDGE_URL to a local HTTP bridge service.",
+                "Set MODBUS_BRIDGE_WRITES_ENABLED=true after verifying bridge write paths.",
             ],
         )
+
+    async def _post_control(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not settings.modbus_bridge_url:
+            raise AdapterError("MODBUS_BRIDGE_URL not configured")
+        if not settings.modbus_bridge_writes_enabled:
+            raise UnsupportedWriteError(
+                "Modbus bridge writes disabled. Set MODBUS_BRIDGE_WRITES_ENABLED=true."
+            )
+        response = await self._client.post(path, json=payload)
+        response.raise_for_status()
+        return response.json()
 
     async def get_live_metrics(self) -> LiveMetrics:
         from datetime import datetime, timezone
@@ -96,13 +111,16 @@ class ModbusBridgeAdapter(InverterAdapter):
             )
 
     async def set_export_limit(self, request: ExportLimitRequest) -> dict[str, Any]:
-        raise UnsupportedWriteError("Modbus bridge export limit write not yet verified.")
+        return await self._post_control("/controls/export-limit", request.model_dump())
 
     async def set_schedule(self, request: ScheduleRequest) -> dict[str, Any]:
-        raise UnsupportedWriteError("Modbus bridge schedule write not yet verified.")
+        return await self._post_control(
+            "/controls/schedule",
+            {"windows": [window.model_dump() for window in request.windows]},
+        )
 
     async def set_operating_mode(self, request: OperatingModeRequest) -> dict[str, Any]:
-        raise UnsupportedWriteError("Modbus bridge operating mode write not yet verified.")
+        return await self._post_control("/controls/operating-mode", request.model_dump())
 
     async def get_last_known_good(self) -> Optional[dict[str, Any]]:
         return None

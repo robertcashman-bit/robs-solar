@@ -5,7 +5,6 @@ from __future__ import annotations
 from app.integrations.base import (
     BaseFinanceProvider,
     ManualFinanceProvider,
-    OpenBankingProvider,
 )
 
 
@@ -13,7 +12,6 @@ class IntegrationRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, BaseFinanceProvider] = {
             "manual": ManualFinanceProvider(),
-            "open_banking": OpenBankingProvider(),
         }
 
     def get(self, name: str) -> BaseFinanceProvider:
@@ -23,10 +21,9 @@ class IntegrationRegistry:
         return [
             {"id": "manual", "label": "Manual entry", "status": "active"},
             {"id": "open_banking", "label": "Open Banking", "status": "inactive"},
+            {"id": "lunchflow", "label": "Lunch Flow", "status": "inactive"},
+            {"id": "funding_circle", "label": "Funding Circle", "status": "inactive"},
             {"id": "quickfile", "label": "QuickFile", "status": "inactive"},
-            {"id": "lunch_flow", "label": "Lunch Flow", "status": "inactive"},
-            {"id": "octopus", "label": "Octopus Energy", "status": "active"},
-            {"id": "sunsynk", "label": "Sunsynk Connect", "status": "active"},
         ]
 
 

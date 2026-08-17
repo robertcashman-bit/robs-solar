@@ -2,7 +2,7 @@
   "name": "robs-solar",
   "version": "0.1.0",
   "private": true,
-  "description": "Rob's Solar — secure browser app for Sunsynk inverter monitoring and control",
+  "description": "Rob's Finance — personal and business finance dashboard",
   "workspaces": [
     "frontend"
   ],
@@ -10,12 +10,16 @@
     "dev": "bash scripts/dev.sh",
     "verify": "bash scripts/verify.sh",
     "setup": "bash scripts/setup.sh",
+    "build": "npm --workspace frontend run build",
     "postinstall": "bash scripts/ensure-lightningcss.sh || true",
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "cd backend && .venv/bin/pytest -q",
     "test:frontend": "cd frontend && npm run test",
     "test:e2e": "cd frontend && npm run test:e2e",
     "lint": "cd backend && .venv/bin/ruff check . && cd ../frontend && npm run lint",
-    "typecheck": "cd frontend && npm run typecheck"
+    "typecheck": "cd frontend && npm run typecheck",
+    "mac:install": "bash scripts/build-mac-app.sh",
+    "mac:launch": "bash scripts/mac-launch.sh",
+    "mac:test": "bash scripts/test-mac-launch.sh"
   }
 }

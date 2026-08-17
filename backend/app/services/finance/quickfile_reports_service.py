@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -17,6 +18,9 @@ from app.schemas.finance import (
     QuickFileProfitAndLossSummary,
     QuickFileReportsResponse,
 )
+from app.services.quickfile_settings_service import quickfile_settings_service
+
+logger = logging.getLogger(__name__)
 
 _REPORTS_KEY = "quickfile_reports"
 
@@ -64,6 +68,23 @@ class QuickFileReportsService:
         except (json.JSONDecodeError, ValueError):
             return None
 
+    async def get_or_refresh_reports(
+        self, db: AsyncSession
+    ) -> QuickFileReportsResponse | None:
+        from app.services.finance.finance_live_refresh_service import is_stale
+
+        stored = await self.get_stored_reports(db)
+        if stored is not None and not is_stale(stored.synced_at):
+            return stored
+        if not quickfile_settings_service.env_configured():
+            return stored
+        config = await quickfile_settings_service.get_config(db)
+        try:
+            return await self.sync_reports(db, config)
+        except Exception:
+            logger.warning("Live QuickFile report refresh failed", exc_info=True)
+            return stored
+
     async def save_reports(
         self, db: AsyncSession, reports: QuickFileReportsResponse
     ) -> QuickFileReportsResponse:
@@ -82,8 +103,8 @@ class QuickFileReportsService:
     ) -> QuickFileReportsResponse:
         try:
             reports = await self.fetch_live_reports(config)
-        except QuickFileError as exc:
-            raise exc
+        except QuickFileError:
+            raise
         await self.save_reports(db, reports)
         await self._upsert_business_snapshot(db, reports)
         return reports
@@ -101,7 +122,12 @@ class QuickFileReportsService:
         month_key = pl.to_date[:7]
         row = await db.scalar(
             select(BusinessFinanceSnapshotRow)
-            .where(BusinessFinanceSnapshotRow.snapshot_date == month_key)
+            .where(BusinessFinanceSnapshotRow.snapshot_date.startswith(month_key))
+            .order_by(
+                BusinessFinanceSnapshotRow.snapshot_date.desc(),
+                BusinessFinanceSnapshotRow.created_at.desc(),
+                BusinessFinanceSnapshotRow.id.desc(),
+            )
             .limit(1)
         )
         debtors = bs.debtors_gbp if bs else 0.0
@@ -119,21 +145,22 @@ class QuickFileReportsService:
         }
         now = datetime.now(timezone.utc)
         if row is None:
-            row = BusinessFinanceSnapshotRow(
-                snapshot_date=month_key,
-                turnover_gbp=pl.turnover_gbp,
-                expenses_gbp=pl.expenses_gbp,
-                vat_reserve_gbp=vat_reserve,
-                corp_tax_reserve_gbp=0.0,
-                debtors_gbp=debtors,
-                creditors_gbp=creditors,
-                profit_estimate_gbp=profit,
-                cash_available_to_draw_gbp=cash_draw,
-                notes="Synced from QuickFile profit & loss and balance sheet",
-                breakdown_json=json.dumps(breakdown),
-                created_at=now,
+            db.add(
+                BusinessFinanceSnapshotRow(
+                    snapshot_date=month_key,
+                    turnover_gbp=pl.turnover_gbp,
+                    expenses_gbp=pl.expenses_gbp,
+                    vat_reserve_gbp=vat_reserve,
+                    corp_tax_reserve_gbp=0.0,
+                    debtors_gbp=debtors,
+                    creditors_gbp=creditors,
+                    profit_estimate_gbp=profit,
+                    cash_available_to_draw_gbp=cash_draw,
+                    notes="Synced from QuickFile profit & loss and balance sheet",
+                    breakdown_json=json.dumps(breakdown),
+                    created_at=now,
+                )
             )
-            db.add(row)
         else:
             row.turnover_gbp = pl.turnover_gbp
             row.expenses_gbp = pl.expenses_gbp

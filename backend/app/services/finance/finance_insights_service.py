@@ -1,4 +1,4 @@
-"""Rule-based finance and energy insights."""
+"""Rule-based finance insights."""
 
 from __future__ import annotations
 
@@ -8,14 +8,32 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DailySavingsRow, FinanceInsightRow, PersonalFinanceSnapshotRow
+from app.db.models import FinanceInsightRow, PersonalFinanceSnapshotRow
 from app.schemas.finance import (
     FinanceInsight,
     FinanceInsightCategory,
     FinanceInsightSeverity,
     FinanceOverviewResponse,
 )
-from app.services.energy_activity import row_has_energy_activity
+
+CREDIT_CARD_INSIGHT_TITLE = "Credit card balances are high relative to spending"
+_DISMISSED_TITLE_ALIASES = {
+    CREDIT_CARD_INSIGHT_TITLE: frozenset({"Credit card balances are increasing"}),
+}
+
+
+def insight_title_is_dismissed(title: str, dismissed_titles: set[str]) -> bool:
+    if title in dismissed_titles:
+        return True
+    aliases = _DISMISSED_TITLE_ALIASES.get(title, frozenset())
+    return any(alias in dismissed_titles for alias in aliases)
+
+
+def utilisation_is_high(used_gbp: float, credit_limit_gbp: float) -> bool:
+    """True only when a recorded limit exists and at least 70% is drawn."""
+    if credit_limit_gbp <= 0 or used_gbp <= 0:
+        return False
+    return used_gbp / credit_limit_gbp >= 0.7
 
 
 def _to_schema(row: FinanceInsightRow) -> FinanceInsight:
@@ -43,6 +61,7 @@ class FinanceInsightsService:
         rows = await db.scalars(
             select(FinanceInsightRow)
             .where(FinanceInsightRow.status == "active")
+            .where(FinanceInsightRow.category != FinanceInsightCategory.ENERGY.value)
             .order_by(FinanceInsightRow.created_at.desc())
             .limit(20)
         )
@@ -52,6 +71,7 @@ class FinanceInsightsService:
         rows = await db.scalars(
             select(FinanceInsightRow)
             .where(FinanceInsightRow.status == "active")
+            .where(FinanceInsightRow.category != FinanceInsightCategory.ENERGY.value)
             .order_by(FinanceInsightRow.created_at.desc())
             .limit(20)
         )
@@ -69,8 +89,35 @@ class FinanceInsightsService:
     async def _refresh_insights(self, db: AsyncSession, overview) -> None:
         """Replace stale active insights with freshly computed rules."""
         await db.execute(delete(FinanceInsightRow).where(FinanceInsightRow.status == "active"))
+        dismissed_rows = await db.scalars(
+            select(FinanceInsightRow).where(FinanceInsightRow.status == "dismissed")
+        )
+        dismissed_titles = {row.title for row in dismissed_rows.all()}
 
         candidates: list[tuple[str, str, str, str]] = []
+
+        if overview.monthly_surplus_gbp < 0:
+            candidates.append(
+                (
+                    FinanceInsightCategory.CASHFLOW.value,
+                    FinanceInsightSeverity.CRITICAL.value,
+                    "Negative monthly cashflow",
+                    f"Recorded spending and debt repayments exceed income by "
+                    f"{abs(overview.monthly_surplus_gbp):.0f} GBP. "
+                    "Adjust the budget or income snapshot.",
+                )
+            )
+
+        if overview.personal_overdraft_gbp > 0:
+            candidates.append(
+                (
+                    FinanceInsightCategory.CASHFLOW.value,
+                    FinanceInsightSeverity.WARNING.value,
+                    "Personal current account is overdrawn",
+                    f"Personal overdraft is {overview.personal_overdraft_gbp:.0f} GBP. "
+                    "Clear this before increasing discretionary spending.",
+                )
+            )
 
         if overview.cash_after_bills_gbp < 500:
             candidates.append(
@@ -78,8 +125,31 @@ class FinanceInsightsService:
                     FinanceInsightCategory.CASHFLOW.value,
                     FinanceInsightSeverity.WARNING.value,
                     "Personal cash may be tight after expected bills",
-                    f"After household bills, about {overview.cash_after_bills_gbp:.0f} GBP "
-                    "remains in personal accounts.",
+                    f"After household bills and any overdraft, about "
+                    f"{overview.cash_after_bills_gbp:.0f} GBP remains in personal accounts.",
+                )
+            )
+
+        if overview.active_budget and overview.active_budget.surplus_gbp < 0:
+            candidates.append(
+                (
+                    FinanceInsightCategory.CASHFLOW.value,
+                    FinanceInsightSeverity.WARNING.value,
+                    "Active budget is in deficit",
+                    f"{overview.active_budget.name} projects a shortfall of "
+                    f"{abs(overview.active_budget.surplus_gbp):.0f} GBP.",
+                )
+            )
+
+        if utilisation_is_high(overview.credit_card_balances_gbp, overview.credit_limit_gbp):
+            used = overview.credit_card_balances_gbp
+            limit = overview.credit_limit_gbp
+            candidates.append(
+                (
+                    FinanceInsightCategory.DEBT.value,
+                    FinanceInsightSeverity.WARNING.value,
+                    "Credit utilisation is high",
+                    f"Revolving balances are {used:.0f} GBP of {limit:.0f} GBP limit.",
                 )
             )
 
@@ -111,13 +181,17 @@ class FinanceInsightsService:
             .offset(1)
             .limit(1)
         )
-        if prior_snap and overview.credit_card_balances_gbp > prior_snap.monthly_spending_gbp * 0.5:
+        if (
+            prior_snap
+            and overview.credit_card_balances_gbp > prior_snap.monthly_spending_gbp * 0.5
+        ):
             candidates.append(
                 (
                     FinanceInsightCategory.DEBT.value,
                     FinanceInsightSeverity.WARNING.value,
-                    "Credit card balances are increasing",
-                    "Credit card total is high relative to recent spending — review repayments.",
+                    CREDIT_CARD_INSIGHT_TITLE,
+                    "Credit card total is high relative to recent spending — "
+                    "review repayments.",
                 )
             )
 
@@ -126,54 +200,30 @@ class FinanceInsightsService:
             candidates.append(
                 (
                     FinanceInsightCategory.BUSINESS.value,
-                    FinanceInsightSeverity.WARNING.value,
-                    "You may be drawing too much from the business this month",
-                    f"Director's loan balance is {directors:.0f} GBP "
-                    "while business cash is limited.",
+                    FinanceInsightSeverity.INFO.value,
+                    "The company owes you on the director's loan",
+                    f"Director's loan is {directors:.0f} GBP owed to you. "
+                    "Business cash is lower than that claim — keep enough in "
+                    "the company if you plan to draw it.",
                 )
             )
 
-        # Energy insights from daily savings
-        savings_rows = await db.scalars(
-            select(DailySavingsRow).order_by(DailySavingsRow.date.desc()).limit(7)
-        )
-        recent = list(savings_rows.all())
-        latest = recent[0] if recent else None
-        usable = [r for r in recent if row_has_energy_activity(r)]
-        if latest is not None and row_has_energy_activity(latest):
-            if len(usable) >= 2:
-                avg_saving = sum(r.estimated_saving_gbp for r in usable) / len(usable)
-                if latest.estimated_saving_gbp < avg_saving * 0.6:
-                    candidates.append(
-                        (
-                            FinanceInsightCategory.ENERGY.value,
-                            FinanceInsightSeverity.INFO.value,
-                            "Solar savings this month are below forecast",
-                            f"Latest daily saving ({latest.estimated_saving_gbp:.2f} GBP) "
-                            "is below the 7-day average.",
-                        )
-                    )
-            warnings = json.loads(latest.warnings_json or "[]")
-            for w in warnings:
-                text = (
-                    f"{w.get('title', '')} {w.get('message', '')}"
-                    if isinstance(w, dict)
-                    else str(w)
-                )
-                if "discharg" in text.lower() or "peak" in text.lower():
-                    candidates.append(
-                        (
-                            FinanceInsightCategory.ENERGY.value,
-                            FinanceInsightSeverity.WARNING.value,
-                            "Battery did not discharge during peak rate",
-                            text.strip(),
-                        )
-                    )
-                    break
-
+        actions = {
+            FinanceInsightCategory.CASHFLOW.value: ("/finance/budget", "Adjust budget"),
+            FinanceInsightCategory.DEBT.value: ("/finance/debts", "Edit debt"),
+            FinanceInsightCategory.TAX.value: ("/finance/business", "Review reserves"),
+            FinanceInsightCategory.BUSINESS.value: ("/finance/business", "Review business"),
+        }
         now = datetime.now(timezone.utc)
         today = now.date().isoformat()
         for category, severity, title, message in candidates:
+            if insight_title_is_dismissed(title, dismissed_titles):
+                continue
+            href, label = actions.get(category, ("/finance/personal", "Review"))
+            if "APR" in title or "APR" in message:
+                href, label = "/finance/debts", "Add APR"
+            if "budget" in title.lower():
+                href, label = "/finance/budget", "Adjust budget"
             db.add(
                 FinanceInsightRow(
                     category=category,
@@ -182,7 +232,7 @@ class FinanceInsightsService:
                     message=message,
                     status="active",
                     related_date=today,
-                    metadata_json="{}",
+                    metadata_json=json.dumps({"action_href": href, "action_label": label}),
                     created_at=now,
                 )
             )

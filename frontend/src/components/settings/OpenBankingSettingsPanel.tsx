@@ -1,95 +1,227 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
+import { notifyFinanceChanged } from "@/lib/finance-events";
 import { useAuth } from "@/lib/auth-context";
-import { openBankingConfigStatusSchema, type OpenBankingConfigStatus } from "@/lib/finance-schemas";
+import {
+  trueLayerConfigStatusSchema,
+  trueLayerSyncResultSchema,
+  type TrueLayerConfigStatus,
+} from "@/lib/finance-schemas";
 
 type OpenBankingSettingsPanelProps = {
   readOnly?: boolean;
 };
 
 export function OpenBankingSettingsPanel({ readOnly = false }: OpenBankingSettingsPanelProps) {
-  const { user } = useAuth();
-  const [status, setStatus] = useState<OpenBankingConfigStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading } = useAuth();
+  const [status, setStatus] = useState<TrueLayerConfigStatus | null>(null);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [redirectUri, setRedirectUri] = useState("");
+  const [environment, setEnvironment] = useState("sandbox");
+  const [secretSet, setSecretSet] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"save" | "connect" | "sync" | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
 
   const load = useCallback(async () => {
     if (!user) return;
-    setLoading(true);
+    setLoadingStatus(true);
     setError(null);
     try {
       const data = await apiClient.get<unknown>("/finance/integrations/open-banking/status");
-      setStatus(openBankingConfigStatusSchema.parse(data));
+      const parsed = trueLayerConfigStatusSchema.parse(data);
+      setStatus(parsed);
+      setClientId(parsed.client_id);
+      setRedirectUri(parsed.redirect_uri);
+      setEnvironment(parsed.environment);
+      setSecretSet(parsed.client_secret_set);
     } catch (err) {
       setStatus(null);
       setError(err instanceof Error ? err.message : "Failed to load Open Banking status");
     } finally {
-      setLoading(false);
+      setLoadingStatus(false);
     }
   }, [user]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (authLoading) {
+      return;
+    }
+    if (!user) {
+      queueMicrotask(() => setLoadingStatus(false));
+      return;
+    }
+    let active = true;
+    void (async () => {
+      setLoadingStatus(true);
+      setError(null);
+      try {
+        const data = await apiClient.get<unknown>("/finance/integrations/open-banking/status");
+        if (!active) return;
+        const parsed = trueLayerConfigStatusSchema.parse(data);
+        setStatus(parsed);
+        setClientId(parsed.client_id);
+        setRedirectUri(parsed.redirect_uri);
+        setEnvironment(parsed.environment);
+        setSecretSet(parsed.client_secret_set);
+      } catch (err) {
+        if (!active) return;
+        setStatus(null);
+        setError(err instanceof Error ? err.message : "Failed to load Open Banking status");
+      } finally {
+        if (active) setLoadingStatus(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [authLoading, user]);
 
-  const configured = status?.configured ?? false;
+  async function save() {
+    setBusy("save");
+    setError(null);
+    setMessage(null);
+    try {
+      const data = await apiClient.put<unknown>("/finance/integrations/open-banking/settings", {
+        client_id: clientId,
+        client_secret: clientSecret || undefined,
+        redirect_uri: redirectUri,
+        environment,
+      });
+      const parsed = trueLayerConfigStatusSchema.parse(data);
+      setStatus(parsed);
+      setSecretSet(parsed.client_secret_set);
+      setClientSecret("");
+      setMessage("Open Banking settings saved");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function connect() {
+    setBusy("connect");
+    setError(null);
+    try {
+      const data = await apiClient.get<{ authorize_url: string }>(
+        "/finance/integrations/open-banking/authorize",
+      );
+      window.location.href = data.authorize_url;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Connect failed");
+      setBusy(null);
+    }
+  }
+
+  async function sync() {
+    setBusy("sync");
+    setError(null);
+    setMessage(null);
+    try {
+      const data = await apiClient.post<unknown>("/finance/integrations/open-banking/sync");
+      const parsed = trueLayerSyncResultSchema.parse(data);
+      setMessage(parsed.message);
+      notifyFinanceChanged();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (loadingStatus) {
+    return <p className="text-sm text-[var(--muted)]">Loading Open Banking…</p>;
+  }
 
   return (
     <section className="solar-card space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold">Open Banking (personal)</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Connect Lloyds, Virgin, MBNA and other personal accounts. Credentials and linking live on
-            the Connect banks page.
-          </p>
-        </div>
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-medium ${
-            configured
-              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-              : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
-          }`}
-        >
-          {loading ? "Loading…" : configured ? "Configured" : "Not configured"}
-        </span>
-      </div>
-
-      {error ? (
-        <p className="rounded-lg border border-red-300/40 bg-red-500/10 px-3 py-2 text-sm text-red-800 dark:text-red-200">
-          {error}
+      <div>
+        <h2 className="text-lg font-semibold">Open Banking (TrueLayer)</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          One-time TrueLayer credentials. After they are saved, use Log in to
+          your bank and import — we pull accounts, cards, and Funding Circle.
         </p>
-      ) : null}
-
-      {status?.linked_banks.length ? (
-        <div className="rounded-xl border border-[var(--border)] px-4 py-3 text-sm">
-          <p className="font-medium">Connected banks</p>
-          <ul className="mt-2 list-disc pl-5 text-[var(--muted)]">
-            {status.linked_banks.map((bank) => (
-              <li key={bank}>{bank}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {status?.last_sync_at ? (
-        <p className="text-xs text-[var(--muted)]">
-          Last sync: {new Date(status.last_sync_at).toLocaleString("en-GB")}
-        </p>
-      ) : null}
-
-      <div className="flex flex-wrap gap-2">
-        <Link href="/finance/connect" className="solar-btn-primary">
-          Connect banks →
-        </Link>
       </div>
-
-      {readOnly ? (
-        <p className="text-xs text-[var(--muted)]">Admin access is required to change Open Banking settings.</p>
+      {error ? <p className="text-sm text-red-500">{error}</p> : null}
+      {message ? <p className="text-sm text-emerald-500">{message}</p> : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1 text-sm">
+          <span>Client ID</span>
+          <input
+            className="w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2"
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            disabled={readOnly}
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span>Client secret {secretSet ? "(saved)" : ""}</span>
+          <input
+            type="password"
+            className="w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2"
+            value={clientSecret}
+            onChange={(e) => setClientSecret(e.target.value)}
+            placeholder={secretSet ? "Leave blank to keep existing" : ""}
+            disabled={readOnly}
+          />
+        </label>
+        <label className="space-y-1 text-sm sm:col-span-2">
+          <span>Redirect URI</span>
+          <input
+            className="w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2"
+            value={redirectUri}
+            onChange={(e) => setRedirectUri(e.target.value)}
+            placeholder="https://your-app/backend/finance/integrations/open-banking/callback"
+            disabled={readOnly}
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span>Environment</span>
+          <select
+            className="w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2"
+            value={environment}
+            onChange={(e) => setEnvironment(e.target.value)}
+            disabled={readOnly}
+          >
+            <option value="sandbox">Sandbox</option>
+            <option value="live">Live</option>
+          </select>
+        </label>
+      </div>
+      {!readOnly ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900"
+            onClick={() => void save()}
+            disabled={busy != null}
+          >
+            {busy === "save" ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm"
+            onClick={() => void connect()}
+            disabled={busy != null || !status?.configured}
+          >
+            {busy === "connect" ? "Redirecting…" : "Log in to your bank"}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm"
+            onClick={() => void sync()}
+            disabled={busy != null || !status?.connected}
+          >
+            {busy === "sync" ? "Syncing…" : "Pull latest"}
+          </button>
+        </div>
       ) : null}
     </section>
   );

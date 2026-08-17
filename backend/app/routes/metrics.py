@@ -14,7 +14,6 @@ from app.schemas.domain import (
     ForecastStrategy,
     HistoryRange,
     LiveMetrics,
-    LoadDiagnostics,
     MetricCompareResponse,
     MetricHistoryResponse,
     MetricSummaryResponse,
@@ -38,7 +37,6 @@ from app.services.live_metrics_guard import (
     LiveMetricsGuardError,
     assert_live_metrics_integrity,
 )
-from app.services.load_diagnostics_service import load_diagnostics_service
 from app.services.octopus_client import octopus_client
 from app.services.peak_import_guard_service import peak_import_guard_service
 from app.services.sell_advisor_service import sell_advisor_service
@@ -94,20 +92,6 @@ async def live_metrics(_: SessionData = Depends(require_viewer)) -> LiveMetrics:
     return await _enrich_with_smart_meter(finalized)
 
 
-@router.get("/diagnostics", response_model=LoadDiagnostics)
-async def load_diagnostics(
-    _: SessionData = Depends(require_viewer),
-    db: AsyncSession = Depends(get_db),
-) -> LoadDiagnostics:
-    """Raw payload + per-field source breakdown behind the Load figure.
-
-    Never silently substitutes 0 for a value that could not be determined —
-    unavailable fields are reported with an explicit "unknown"/"cached" origin.
-    """
-    adapter = get_adapter()
-    return await load_diagnostics_service.get_diagnostics(adapter, db)
-
-
 @router.get("/connectivity", response_model=ConnectivityStatus)
 async def connectivity(_: SessionData = Depends(require_viewer)) -> ConnectivityStatus:
     adapter = get_adapter()
@@ -139,8 +123,6 @@ async def metrics_summary(
             live = await live_metrics_cache.get(adapter)
         except AdapterError:
             return summary
-    if live is None:
-        return summary
     enriched = await enrich_day_summary_with_live(db, summary, live)
     warnings_resp = await system_warnings_service.evaluate(db, adapter=adapter)
     from app.services.optimisation_score_service import compute_optimisation_score

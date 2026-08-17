@@ -3,180 +3,254 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { ActiveBudgetCard } from "@/components/finance/ActiveBudgetCard";
-import { FinanceAmount } from "@/components/finance/FinanceAmount";
 import { MetricTile } from "@/components/finance/MetricTile";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
-import { ErrorBanner } from "@/components/shared/Banners";
-import { EmptyState } from "@/components/shared/EmptyState";
+import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { PageLoading } from "@/components/shared/PageLoading";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
-import {
-  activeBudgetSummarySchema,
-  cashflowForecastsSchema,
-  type ActiveBudgetSummary,
-  type CashflowForecast,
-} from "@/lib/finance-schemas";
-import { financeRoleForCashflowEntry } from "@/lib/money";
+import { COMPANY_SHORT, PERSONAL_LEDGER } from "@/lib/finance-branding";
+import { notifyFinanceChanged } from "@/lib/finance-events";
+import { useFinanceReload } from "@/lib/use-finance-reload";
+import { cashflowForecastSchema, type CashflowForecast } from "@/lib/finance-schemas";
+import { formatGbp, parseGbp } from "@/lib/money";
+import { canWrite } from "@/lib/permissions";
 
 const horizons = [30, 60, 90] as const;
+const scopes = ["all", "personal", "business"] as const;
 
 export default function CashFlowPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const [horizon, setHorizon] = useState<number>(30);
-  const [scope, setScope] = useState<"personal" | "business">("personal");
-  const [forecasts, setForecasts] = useState<{
-    personal: CashflowForecast;
-    business: CashflowForecast;
-  } | null>(null);
-  const [activeBudget, setActiveBudget] = useState<ActiveBudgetSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [scope, setScope] = useState<(typeof scopes)[number]>("all");
+  const [forecast, setForecast] = useState<CashflowForecast | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [form, setForm] = useState({
+    label: "",
+    amount_gbp: "",
+    forecast_date: new Date().toISOString().slice(0, 10),
+    entry_type: "bill",
+    scope: "personal",
+  });
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
-      const [data, budgetData] = await Promise.all([
-        apiClient.get<unknown>(`/finance/cashflow?horizon=${horizon}`),
-        apiClient.get<unknown>("/finance/budget-plans/active").catch(() => null),
-      ]);
-      const parsed = cashflowForecastsSchema.parse(data);
-      setForecasts({ personal: parsed.personal, business: parsed.business });
-      setActiveBudget(budgetData ? activeBudgetSummarySchema.nullable().parse(budgetData) : null);
+      const query = new URLSearchParams({ horizon: String(horizon) });
+      if (scope !== "all") query.set("scope", scope);
+      const data = await apiClient.get<unknown>(`/finance/cashflow?${query.toString()}`);
+      setForecast(cashflowForecastSchema.parse(data));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load cash flow");
-      setForecasts(null);
-    } finally {
-      setLoading(false);
     }
-  }, [horizon]);
+  }, [horizon, scope]);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [authLoading, user, router]);
 
-  useEffect(() => {
-    if (!user) return;
-    const timer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timer);
-  }, [user, load]);
+  useFinanceReload(load, Boolean(user));
+
+  async function addEntry(event: React.FormEvent) {
+    event.preventDefault();
+    if (!canWrite(user) || saving) return;
+    setSaving(true);
+    try {
+      const amount = parseGbp(form.amount_gbp);
+      if (!form.label.trim() || Number.isNaN(amount)) {
+        throw new Error("Enter a label and a valid amount");
+      }
+      await apiClient.post("/finance/cashflow", {
+        scope: form.scope,
+        forecast_date: form.forecast_date,
+        horizon_days: horizon,
+        entry_type: form.entry_type,
+        label: form.label,
+        amount_gbp: amount,
+        is_confirmed: false,
+        source: "manual",
+      });
+      setForm({ ...form, label: "", amount_gbp: "" });
+      setStatus("Cashflow entry added");
+      await load();
+      notifyFinanceChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add entry");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeEntry() {
+    if (deleteId == null) return;
+    try {
+      await apiClient.delete(`/finance/cashflow/${deleteId}`);
+      setStatus("Entry removed");
+      setDeleteId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete entry");
+    }
+  }
 
   if (authLoading || !user) return <AuthLoadingShell />;
-
-  const forecast = forecasts ? forecasts[scope] : null;
 
   return (
     <AppShell>
       <PageHeader
         eyebrow="Finance"
         title="Cash Flow"
-        description="30, 60, and 90-day forecast with expected income, bills, debt payments, and tax — personal and business kept separate."
+        description="30, 60, and 90-day forecast with expected income, bills, debt payments, and tax."
         actions={
           <div className="flex flex-wrap gap-2">
             <div className="flex gap-1 rounded-lg border border-[var(--border)] p-1">
-              {(["personal", "business"] as const).map((s) => (
+              {scopes.map((item) => (
                 <button
-                  key={s}
+                  key={item}
                   type="button"
-                  className={`rounded-md px-3 py-1 text-sm capitalize ${scope === s ? "bg-emerald-500 text-white" : ""}`}
-                  onClick={() => setScope(s)}
+                  className={`rounded-md px-3 py-1 text-sm capitalize ${scope === item ? "bg-emerald-500 text-white" : ""}`}
+                  onClick={() => setScope(item)}
                 >
-                  {s}
+                  {item === "personal" ? PERSONAL_LEDGER : item === "business" ? COMPANY_SHORT : "All"}
                 </button>
               ))}
             </div>
             <div className="flex gap-1 rounded-lg border border-[var(--border)] p-1">
-              {horizons.map((h) => (
+              {horizons.map((item) => (
                 <button
-                  key={h}
+                  key={item}
                   type="button"
-                  className={`rounded-md px-3 py-1 text-sm ${horizon === h ? "bg-emerald-500 text-white" : ""}`}
-                  onClick={() => setHorizon(h)}
+                  className={`rounded-md px-3 py-1 text-sm ${horizon === item ? "bg-emerald-500 text-white" : ""}`}
+                  onClick={() => setHorizon(item)}
                 >
-                  {h}d
+                  {item}d
                 </button>
               ))}
             </div>
           </div>
         }
       />
-      {error ? (
-        <div className="mt-4">
-          <ErrorBanner message={error} />
-        </div>
-      ) : null}
-      {loading ? (
-        <div className="mt-6">
-          <PageLoading label="Loading cash flow forecast" rows={2} />
-        </div>
-      ) : forecast ? (
+      {error ? <div className="mt-4"><ErrorBanner message={error} /></div> : null}
+      {status ? <div className="mt-4"><SuccessBanner message={status} /></div> : null}
+      {forecast ? (
         <>
-          <div className="mt-6">
-            <ActiveBudgetCard budget={activeBudget} />
-          </div>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
-            <MetricTile label="Starting balance" value={forecast.starting_balance_gbp} amountRole="signed" />
+            <MetricTile label="Starting balance" value={forecast.starting_balance_gbp} />
             <MetricTile
               label="Projected balance"
               value={forecast.projected_balance_gbp}
-              amountRole="signed"
               warning={forecast.cash_pressure_warning}
             />
             <MetricTile label="Horizon" value={forecast.horizon_days} format="number" hint="days" />
           </div>
-          {forecast.is_stub && forecast.stub_message ? (
-            <p className="mt-4 rounded-xl border border-sky-400/35 bg-sky-500/10 px-4 py-3 text-sm">
-              {forecast.stub_message}
-            </p>
-          ) : null}
           {forecast.cash_pressure_warning ? (
             <p className="mt-4 rounded-xl border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-sm">
               {forecast.warning_message}
             </p>
           ) : null}
-          {forecast.entries.length === 0 ? (
-            <div className="mt-6">
-              <EmptyState
-                title="No forecast entries"
-                description={`No expected ${scope} income or outflows in the next ${horizon} days.`}
-              />
-            </div>
-          ) : (
-            <ul className="mt-6 space-y-2">
-              {forecast.entries.map((e) => (
-                <li
-                  key={e.id}
-                  className="flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm"
-                >
-                  <span>
-                    {e.label}{" "}
-                    <span className="text-[var(--muted)]">
-                      · {e.forecast_date} · {e.entry_type}
-                    </span>
-                  </span>
-                  <FinanceAmount
-                    value={e.amount_gbp}
-                    role={financeRoleForCashflowEntry(e.entry_type, e.amount_gbp)}
-                    className="font-semibold"
-                  />
-                </li>
+          {forecast.columns.length > 1 ? (
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              {forecast.columns.map((column) => (
+                <section key={column.scope} className="rounded-2xl border border-[var(--border)] p-4">
+                  <h2 className="text-sm font-semibold">
+                    {column.scope === "business" ? COMPANY_SHORT : PERSONAL_LEDGER}
+                  </h2>
+                  <p className="mt-2 text-sm text-[var(--muted)]">
+                    Start {formatGbp(column.starting_balance_gbp)} · Projected{" "}
+                    {formatGbp(column.projected_balance_gbp)}
+                  </p>
+                </section>
               ))}
-            </ul>
-          )}
+            </div>
+          ) : null}
+          <ul className="mt-6 space-y-2">
+            {forecast.entries.map((entry) => (
+              <li
+                key={entry.id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] px-4 py-3 text-sm"
+              >
+                <span>
+                  {entry.label}{" "}
+                  <span className="text-[var(--muted)]">
+                    · {entry.forecast_date} · {entry.entry_type} · {entry.scope}
+                  </span>
+                </span>
+                <span className="flex items-center gap-3">
+                  <span className={`font-semibold tabular-nums ${entry.amount_gbp >= 0 ? "text-emerald-600" : ""}`}>
+                    {formatGbp(entry.amount_gbp)}
+                  </span>
+                  {canWrite(user) ? (
+                    <button type="button" className="solar-btn-ghost text-xs" onClick={() => setDeleteId(entry.id)}>
+                      Remove
+                    </button>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+            {forecast.entries.length === 0 ? (
+              <li className="text-sm text-[var(--muted)]">No forecast entries in this horizon.</li>
+            ) : null}
+          </ul>
         </>
       ) : (
-        <div className="mt-6">
-          <EmptyState
-            title="Cash flow unavailable"
-            description="Could not load the forecast. Check your connection and try again."
-          />
-        </div>
+        <p className="mt-8 text-sm text-[var(--muted)]">Loading forecast…</p>
       )}
+      {canWrite(user) ? (
+        <form
+          onSubmit={(event) => void addEntry(event)}
+          className="mt-6 grid gap-3 rounded-2xl border border-[var(--border)] p-4 sm:grid-cols-2 lg:grid-cols-6"
+        >
+          <input
+            className="solar-input"
+            placeholder="Label"
+            value={form.label}
+            onChange={(event) => setForm({ ...form, label: event.target.value })}
+            required
+          />
+          <input
+            className="solar-input"
+            placeholder="Amount (+ in / − out)"
+            value={form.amount_gbp}
+            onChange={(event) => setForm({ ...form, amount_gbp: event.target.value })}
+            required
+          />
+          <input
+            className="solar-input"
+            type="date"
+            value={form.forecast_date}
+            onChange={(event) => setForm({ ...form, forecast_date: event.target.value })}
+            required
+          />
+          <select className="solar-input" value={form.entry_type} onChange={(event) => setForm({ ...form, entry_type: event.target.value })}>
+            <option value="income">Income</option>
+            <option value="bill">Bill</option>
+            <option value="debt">Debt</option>
+            <option value="tax_vat">Tax / VAT</option>
+            <option value="other">Other</option>
+          </select>
+          <select className="solar-input" value={form.scope} onChange={(event) => setForm({ ...form, scope: event.target.value })}>
+            <option value="personal">Personal</option>
+            <option value="business">Business</option>
+          </select>
+          <button type="submit" className="solar-btn-primary" disabled={saving}>
+            {saving ? "Saving…" : "Add entry"}
+          </button>
+        </form>
+      ) : null}
+      <ConfirmDialog
+        open={deleteId != null}
+        title="Remove this forecast entry?"
+        description="This only changes the forecast. Live account and debt records stay as they are."
+        confirmLabel="Remove"
+        onCancel={() => setDeleteId(null)}
+        onConfirm={() => void removeEntry()}
+      />
     </AppShell>
   );
 }

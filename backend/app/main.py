@@ -4,11 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.auth.passwords import (
-    assert_production_passwords,
-    assert_production_secret_key,
-    warn_if_default_passwords,
-)
+from app.auth.passwords import warn_if_default_passwords
 from app.config import settings
 from app.db.session import init_db
 from app.logging import configure_logging
@@ -24,7 +20,6 @@ from app.routes import (
     config_snapshots,
     controls,
     finance,
-    finance_ai,
     forecast,
     health,
     metrics,
@@ -32,14 +27,12 @@ from app.routes import (
     optimisation,
     recommendations,
     settings_notifications,
+    settings_watch,
+    sunsynk,
     tariff,
     ws,
 )
 from app.services.auto_scheduler import start_auto_scheduler, stop_auto_scheduler
-from app.services.finance.finance_daily_sync_service import (
-    start_finance_daily_sync,
-    stop_finance_daily_sync,
-)
 from app.services.metric_sampler import start_sampler, stop_sampler
 
 logger = logging.getLogger(__name__)
@@ -55,36 +48,36 @@ def _warn_production_simulator() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
-    assert_production_secret_key()
-    assert_production_passwords()
     warn_if_default_passwords()
     _warn_production_simulator()
     await init_db()
-    await _seed_finance_integrations()
+    await _restore_finance_if_empty()
+    await _seed_stated_finance()
     await _load_octopus_credentials()
     start_sampler()
     start_auto_scheduler()
-    start_finance_daily_sync()
     yield
-    await stop_finance_daily_sync()
     await stop_auto_scheduler()
     await stop_sampler()
 
 
-async def _seed_finance_integrations() -> None:
+async def _restore_finance_if_empty() -> None:
     from app.db.session import SessionLocal
-    from app.services.lunch_flow_settings_service import lunch_flow_settings_service
-    from app.services.quickfile_settings_service import quickfile_settings_service
+    from app.services.finance.finance_backup_service import restore_latest_web_backup_if_empty
 
-    async with SessionLocal() as db:
-        quickfile_seeded = await quickfile_settings_service.seed_from_env(db)
-        lunch_flow_seeded = await lunch_flow_settings_service.seed_from_env(db)
-    if quickfile_seeded or lunch_flow_seeded:
-        logger.info(
-            "Seeded finance integrations from environment (quickfile=%s lunch_flow=%s)",
-            quickfile_seeded,
-            lunch_flow_seeded,
-        )
+    try:
+        async with SessionLocal() as db:
+            restored = await restore_latest_web_backup_if_empty(db)
+        if restored:
+            logger.info("Restored finance books from web backup")
+    except Exception:
+        logger.exception("Finance web-backup restore skipped")
+
+
+async def _seed_stated_finance() -> None:
+    from app.services.finance.finance_seed_service import ensure_stated_pension
+
+    await ensure_stated_pension()
 
 
 async def _load_octopus_credentials() -> None:
@@ -100,7 +93,7 @@ async def _load_octopus_credentials() -> None:
         try:
             await octopus_client.resolve_tariffs_from_account()
         except Exception:
-            logger.warning("Failed to resolve Octopus tariffs from account", exc_info=True)
+            pass
 
 
 app = FastAPI(title="Rob's Solar API", version="0.1.0", lifespan=lifespan)
@@ -108,6 +101,7 @@ app = FastAPI(title="Rob's Solar API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
+    allow_origin_regex=r"https://robs-solar(-[a-z0-9]+)?-robert-cashmans-projects\.vercel\.app",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -121,16 +115,17 @@ app.include_router(capabilities.router)
 app.include_router(metrics.router)
 app.include_router(audit.router)
 app.include_router(controls.router)
+app.include_router(settings_watch.router)
 app.include_router(config_snapshots.router)
 app.include_router(tariff.router)
 app.include_router(octopus.router)
 app.include_router(recommendations.router)
 app.include_router(optimisation.router)
 app.include_router(finance.router)
-app.include_router(finance_ai.router)
 app.include_router(forecast.router)
 app.include_router(alerts.router)
 app.include_router(settings_notifications.router)
 app.include_router(config_safety.router)
+app.include_router(sunsynk.router)
 app.include_router(ai.router)
 app.include_router(ws.router)

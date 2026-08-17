@@ -1,857 +1,730 @@
-"""Persisted budget plans — gather real records, then call budget_engine."""
+"""Named, editable budget plans and suggested-budget materialisation."""
 
 from __future__ import annotations
 
-from calendar import monthrange
-from collections import defaultdict
+import logging
 from datetime import datetime, timezone
-from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import (
-    CashflowForecastRow,
-    FinanceBudgetItemRow,
-    FinanceBudgetPlanRow,
-    FinanceTransactionRow,
-)
+from app.db.models import FinanceBudgetPlanLineRow, FinanceBudgetPlanRow, MonthlyBudgetRow
 from app.schemas.finance import (
     ActiveBudgetSummary,
-    BudgetCashContext,
-    BudgetDuplicateRequest,
-    BudgetItemKindType,
-    BudgetMissingInput,
+    BudgetCompareResponse,
+    BudgetCompareRow,
+    BudgetGap,
     BudgetPlan,
     BudgetPlanCreate,
-    BudgetPlanItem,
-    BudgetPlanItemWrite,
-    BudgetPlanSummary,
+    BudgetPlanFromSuggestion,
+    BudgetPlanLine,
+    BudgetPlanLineWrite,
     BudgetPlanUpdate,
-    BudgetStrategyType,
-    BudgetSuggestion,
+    BudgetStyle,
     BudgetSuggestionsResponse,
-    BudgetTaxContext,
     BudgetTotals,
-    BudgetVarianceLine,
-    BudgetVarianceResponse,
-    BudgetViewType,
-    FinanceAccountType,
+    BudgetVsActualLine,
+    BudgetVsActualResponse,
     FinanceScope,
+    SuggestedBudgetOption,
 )
-from app.services.finance.budget_engine import (
-    BudgetDraft,
-    BudgetDraftItem,
-    BusinessSnapshotInput,
-    CashflowRecordInput,
-    DebtRecordInput,
-    PersonalSnapshotInput,
-    TransactionAverageInput,
-    apply_overrides,
-    calculate_budget_inputs,
-    calculate_budget_totals,
-    calculate_budget_variance,
-    generate_all_suggestions,
-    generate_suggested_budget,
-    item_key,
-    merge_refresh_preserving_overrides,
-    money,
-    recommended_strategy,
-    to_monthly_amount,
+from app.services.finance.budget_suggestion_service import (
+    SuggestedBudget,
+    suggest_budgets,
+    summarise_lines,
 )
 from app.services.finance.finance_accounts_service import finance_accounts_service
+from app.services.finance.finance_calc import (
+    SnapshotView,
+    accounts_from_schema,
+    business_snapshot_view,
+    liabilities_from_schema,
+    personal_snapshot_view,
+    pick_open_banking_flow,
+)
 from app.services.finance.finance_liabilities_service import finance_liabilities_service
 from app.services.finance.finance_overview_service import finance_overview_service
-from app.services.finance.quickfile_reports_service import quickfile_reports_service
+from app.services.lunchflow_settings_service import lunchflow_settings_service
+from app.services.truelayer_settings_service import truelayer_settings_service
 
-DEBT_ACCOUNT_TYPES = {
-    FinanceAccountType.CREDIT_CARD,
-    FinanceAccountType.LOAN,
-    FinanceAccountType.MORTGAGE,
-    FinanceAccountType.CAPITAL_ON_TAP,
-    FinanceAccountType.CREDITORS,
-}
+logger = logging.getLogger(__name__)
 
 
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _totals_from_engine(totals) -> BudgetTotals:
-    return BudgetTotals(**totals.to_dict())
-
-
-def _missing_from_engine(missing) -> list[BudgetMissingInput]:
-    return [
-        BudgetMissingInput(
-            code=item.code,
-            message=item.message,
-            record_href=item.record_href,
-            source_record_type=item.source_record_type,
-            source_record_id=item.source_record_id,
-            category=item.category,
-        )
-        for item in missing
-    ]
-
-
-def _item_from_draft(item: BudgetDraftItem, item_id: int | None = None) -> BudgetPlanItem:
-    return BudgetPlanItem(
-        id=item_id,
-        key=item.key,
-        scope=FinanceScope(item.scope),
-        kind=BudgetItemKindType(item.kind),
-        category=item.category,
-        amount_gbp=item.amount_gbp,
-        source=item.source,
-        source_label=item.source_label,
-        source_record_type=item.source_record_type,
-        source_record_id=item.source_record_id,
-        is_generated=item.is_generated,
-        is_user_override=item.is_user_override,
-        is_transfer=item.is_transfer,
-        is_missing=item.is_missing,
-        notes=item.notes,
-        record_href=item.record_href,
-    )
-
-
-def _draft_from_row(row: FinanceBudgetItemRow) -> BudgetDraftItem:
-    return BudgetDraftItem(
-        key=row.item_key
-        or item_key(
-            scope=row.scope,
-            kind=row.kind,
-            source_record_type=row.source_record_type,
-            source_record_id=row.source_record_id,
-            slug=row.category,
-        ),
-        scope=row.scope,
-        kind=row.kind,
+def _line_schema(row: FinanceBudgetPlanLineRow) -> BudgetPlanLine:
+    return BudgetPlanLine(
+        id=row.id,
+        scope=FinanceScope(row.scope),
         category=row.category,
         amount_gbp=row.amount_gbp,
         source=row.source,
-        source_label=row.source_label or row.source,
-        source_record_type=row.source_record_type,
-        source_record_id=row.source_record_id,
-        is_generated=row.is_generated,
-        is_user_override=row.is_user_override,
-        is_transfer=row.is_transfer,
-        is_missing=row.is_missing or row.amount_gbp is None,
+        source_note=row.source_note,
+        is_custom=row.is_custom,
+        sort_order=row.sort_order,
+        subcategory=getattr(row, "subcategory", "") or "",
+        basis_json=getattr(row, "basis_json", "") or "{}",
+        confidence=getattr(row, "confidence", "") or "",
+        insufficient_data=bool(getattr(row, "insufficient_data", False)),
+    )
+
+
+def _totals(income: float, lines: list[BudgetPlanLine]) -> BudgetTotals:
+    raw = summarise_lines(lines, income)
+    return BudgetTotals(**raw)
+
+
+def _plan_schema(row: FinanceBudgetPlanRow, lines: list[BudgetPlanLine]) -> BudgetPlan:
+    return BudgetPlan(
+        id=row.id,
+        name=row.name,
+        style=row.style,
+        origin=row.origin,
         notes=row.notes,
-        record_href=row.record_href,
-    )
-
-
-def _write_to_draft(body: BudgetPlanItemWrite) -> BudgetDraftItem:
-    is_missing = body.is_missing or body.amount_gbp is None
-    key = body.key or item_key(
-        scope=body.scope.value,
-        kind=body.kind.value,
-        source_record_type=body.source_record_type,
-        source_record_id=body.source_record_id,
-        slug=body.category,
-    )
-    return BudgetDraftItem(
-        key=key,
-        scope=body.scope.value,
-        kind=body.kind.value,
-        category=body.category,
-        amount_gbp=None if is_missing else body.amount_gbp,
-        source=body.source,
-        source_label=body.source_label or body.source,
-        source_record_type=body.source_record_type,
-        source_record_id=body.source_record_id,
-        is_generated=body.is_generated,
-        is_user_override=body.is_user_override,
-        is_transfer=body.is_transfer,
-        is_missing=is_missing,
-        notes=body.notes,
-        record_href=body.record_href,
-    )
-
-
-def _tax_schema(tax) -> BudgetTaxContext:
-    return BudgetTaxContext(
-        vat_reserved_gbp=tax.vat_reserved_gbp,
-        corp_tax_reserved_gbp=tax.corp_tax_reserved_gbp,
-        vat_due_gbp=tax.vat_due_gbp,
-        notes=list(tax.notes),
-    )
-
-
-def _cash_schema(cash) -> BudgetCashContext:
-    return BudgetCashContext(
-        savings_balance_gbp=cash.savings_balance_gbp,
-        savings_accounts_found=cash.savings_accounts_found,
-    )
-
-
-def _active_summary(plan: BudgetPlan) -> ActiveBudgetSummary:
-    totals = plan.totals_consolidated
-    return ActiveBudgetSummary(
-        id=plan.id,
-        name=plan.name,
-        strategy=plan.strategy,
-        period=plan.period,
-        income_gbp=totals.income_gbp,
-        allocated_gbp=totals.allocated_gbp,
-        debt_overpayment_gbp=totals.debt_overpayment_gbp,
-        surplus_gbp=totals.surplus_gbp,
-        has_missing_inputs=totals.has_missing_inputs,
-        is_deficit=totals.is_deficit,
-        income_complete=totals.income_complete,
-        incomplete_reason=totals.incomplete_reason,
-        totals=totals,
-    )
-
-
-def _summary_from_plan(plan: BudgetPlan) -> BudgetPlanSummary:
-    totals = plan.totals_consolidated
-    return BudgetPlanSummary(
-        id=plan.id,
-        name=plan.name,
-        strategy=plan.strategy,
-        period=plan.period,
-        is_active=plan.is_active,
-        is_archived=plan.is_archived,
-        source_stale=plan.source_stale,
-        has_missing_inputs=totals.has_missing_inputs,
-        is_deficit=totals.is_deficit,
-        income_gbp=totals.income_gbp,
-        allocated_gbp=totals.allocated_gbp,
-        surplus_gbp=totals.surplus_gbp,
-        updated_at=plan.updated_at,
+        explanation=row.explanation,
+        debt_intensity=row.debt_intensity,
+        cash_buffer_target_gbp=row.cash_buffer_target_gbp,
+        discretionary_gbp=row.discretionary_gbp,
+        tax_reserve_gbp=row.tax_reserve_gbp,
+        income_gbp=row.income_gbp,
+        is_active=row.is_active,
+        active_scope=getattr(row, "active_scope", "") or "",
+        totals=_totals(row.income_gbp, lines),
+        lines=sorted(lines, key=lambda item: (item.sort_order, item.category)),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
 class FinanceBudgetPlanService:
-    async def _gather_inputs(self, db: AsyncSession):
-        accounts = await finance_accounts_service.list_accounts(db)
-        liabilities = await finance_liabilities_service.list_liabilities(db, active_only=False)
-        personal_snap = await finance_overview_service.latest_personal_snapshot(db)
-        business_snap = await finance_overview_service.latest_business_snapshot(db)
-        qf_reports = await quickfile_reports_service.get_stored_reports(db)
+    async def _open_banking_flow(self, db: AsyncSession):
+        lunchflow = await lunchflow_settings_service.get_monthly_flow(db)
+        truelayer = await truelayer_settings_service.get_monthly_flow(db)
+        return pick_open_banking_flow(lunchflow, truelayer)
 
-        personal = None
-        if personal_snap is not None:
-            personal = PersonalSnapshotInput(
-                exists=True,
-                snapshot_id=personal_snap.id,
-                monthly_income_gbp=personal_snap.monthly_income_gbp,
-                household_bills_gbp=personal_snap.household_bills_gbp,
-                monthly_spending_gbp=personal_snap.monthly_spending_gbp,
-                debt_repayments_gbp=personal_snap.debt_repayments_gbp,
-            )
-        else:
-            personal = PersonalSnapshotInput(exists=False)
-
-        business = BusinessSnapshotInput(exists=False)
-        if qf_reports and qf_reports.profit_and_loss_month:
-            pl = qf_reports.profit_and_loss_month
-            vat_reserve = business_snap.vat_reserve_gbp if business_snap else 0.0
-            corp_reserve = business_snap.corp_tax_reserve_gbp if business_snap else 0.0
-            business = BusinessSnapshotInput(
-                exists=True,
-                source="quickfile",
-                snapshot_id=business_snap.id if business_snap else None,
-                turnover_gbp=pl.turnover_gbp,
-                expenses_gbp=pl.expenses_gbp,
-                vat_reserve_gbp=vat_reserve,
-                corp_tax_reserve_gbp=corp_reserve,
-            )
-        elif business_snap is not None:
-            business = BusinessSnapshotInput(
-                exists=True,
-                source="snapshot",
-                snapshot_id=business_snap.id,
-                turnover_gbp=business_snap.turnover_gbp,
-                expenses_gbp=business_snap.expenses_gbp,
-                vat_reserve_gbp=business_snap.vat_reserve_gbp,
-                corp_tax_reserve_gbp=business_snap.corp_tax_reserve_gbp,
-            )
-
-        linked_account_ids = {
-            debt.account_id for debt in liabilities if debt.account_id is not None
-        }
-        debts: list[DebtRecordInput] = []
-        skipped_inactive: list[DebtRecordInput] = []
-        for debt in liabilities:
-            min_payment: float | None = debt.minimum_payment_gbp
-            if debt.balance_gbp > 0 and (min_payment is None or min_payment == 0):
-                min_payment = None
-            record = DebtRecordInput(
-                id=debt.id,
-                scope=debt.scope.value,
-                name=debt.name,
-                debt_type=debt.debt_type.value,
-                balance_gbp=debt.balance_gbp,
-                interest_rate_pct=debt.interest_rate_pct,
-                minimum_payment_gbp=min_payment,
-                overpayment_gbp=debt.overpayment_gbp,
-                account_id=debt.account_id,
-                origin="liability",
-            )
-            if not debt.is_active:
-                if debt.balance_gbp > 0:
-                    skipped_inactive.append(record)
-                continue
-            if debt.balance_gbp <= 0:
-                continue
-            debts.append(record)
-
-        for account in accounts:
-            if not account.is_active:
-                continue
-            if account.account_type not in DEBT_ACCOUNT_TYPES:
-                continue
-            if account.id in linked_account_ids:
-                continue
-            if account.balance_gbp <= 0:
-                continue
-            min_payment = account.minimum_payment_gbp
-            if min_payment is None or min_payment == 0:
-                min_payment = None
-            debts.append(
-                DebtRecordInput(
-                    id=account.id,
-                    scope=account.scope.value,
-                    name=account.name,
-                    debt_type=account.account_type.value,
-                    balance_gbp=account.balance_gbp,
-                    interest_rate_pct=account.interest_rate_pct or 0.0,
-                    minimum_payment_gbp=min_payment,
-                    overpayment_gbp=0.0,
-                    account_id=account.id,
-                    origin="account",
-                )
-            )
-
-        cashflow_rows = list(
-            (
-                await db.scalars(
-                    select(CashflowForecastRow).where(CashflowForecastRow.is_confirmed.is_(True))
-                )
-            ).all()
+    async def _personal_view(self, db: AsyncSession) -> SnapshotView | None:
+        personal = personal_snapshot_view(
+            await finance_overview_service.latest_personal_snapshot(db)
         )
-        confirmed = [
-            CashflowRecordInput(
-                id=row.id,
-                scope=row.scope,
-                entry_type=row.entry_type,
-                label=row.label,
-                amount_gbp=row.amount_gbp,
-                is_confirmed=True,
-            )
-            for row in cashflow_rows
-        ]
-
-        averages = await self._transaction_averages(db, accounts)
-        savings_accounts = [
-            a
-            for a in accounts
-            if a.is_active and a.account_type == FinanceAccountType.SAVINGS
-        ]
-        savings_found = bool(savings_accounts)
-        savings_balance = sum(a.balance_gbp for a in savings_accounts) if savings_found else None
-
-        vat_accounts = sum(
-            a.balance_gbp
-            for a in accounts
-            if a.is_active and a.account_type == FinanceAccountType.VAT_RESERVE
-        )
-        corp_accounts = sum(
-            a.balance_gbp
-            for a in accounts
-            if a.is_active and a.account_type == FinanceAccountType.CORP_TAX_RESERVE
-        )
-        vat_due = None
-        if qf_reports and qf_reports.balance_sheet and qf_reports.balance_sheet.vat_liability_gbp:
-            vat_due = qf_reports.balance_sheet.vat_liability_gbp
-
-        return calculate_budget_inputs(
-            personal=personal,
-            business=business,
-            debts=debts,
-            confirmed_cashflow=confirmed,
-            transaction_averages=averages,
-            savings_balance_gbp=savings_balance,
-            savings_accounts_found=savings_found,
-            vat_due_gbp=vat_due,
-            account_vat_reserve_gbp=vat_accounts,
-            account_corp_tax_reserve_gbp=corp_accounts,
-            skipped_inactive_debts=skipped_inactive,
+        if personal is not None and personal.monthly_income_gbp > 0:
+            return personal
+        flow = await self._open_banking_flow(db)
+        if not flow.has_values() or flow.income_gbp <= 0:
+            return personal
+        return SnapshotView(
+            monthly_income_gbp=flow.income_gbp,
+            monthly_spending_gbp=personal.monthly_spending_gbp if personal else 0.0,
+            household_bills_gbp=personal.household_bills_gbp if personal else 0.0,
+            debt_repayments_gbp=personal.debt_repayments_gbp if personal else 0.0,
         )
 
-    async def _transaction_averages(
-        self,
-        db: AsyncSession,
-        accounts,
-    ) -> list[TransactionAverageInput]:
-        rows = list((await db.scalars(select(FinanceTransactionRow))).all())
-        if not rows:
-            return []
-        scope_by_account = {a.id: a.scope.value for a in accounts}
-        by_month_cat: dict[tuple[str, str, str], Decimal] = defaultdict(lambda: Decimal("0"))
-        months: set[str] = set()
-        for row in rows:
-            if row.amount_gbp >= 0:
-                continue
-            month = row.transaction_date[:7]
-            months.add(month)
-            category = (row.category or "").strip() or "Uncategorised"
-            scope = scope_by_account.get(row.account_id, "personal")
-            by_month_cat[(scope, category, month)] += Decimal(str(abs(row.amount_gbp)))
-        if not months:
-            return []
-        month_count = len(months)
-        totals: dict[tuple[str, str], Decimal] = defaultdict(lambda: Decimal("0"))
-        for (scope, category, _month), amount in by_month_cat.items():
-            totals[(scope, category)] += amount
-        return [
-            TransactionAverageInput(
-                category=category,
-                monthly_average_gbp=money(total / Decimal(month_count)),
-                scope=scope,
-            )
-            for (scope, category), total in totals.items()
-            if total > 0
-        ]
-
-    def _suggestion_from_draft(self, draft: BudgetDraft) -> BudgetSuggestion:
-        return BudgetSuggestion(
-            strategy=BudgetStrategyType(draft.strategy),
-            name=draft.name,
-            recommended=draft.recommended,
-            items=[_item_from_draft(item) for item in draft.items],
-            missing=_missing_from_engine(draft.missing),
-            source_notes=list(draft.notes),
-            tax=_tax_schema(draft.tax),
-            cash=_cash_schema(draft.cash),
-            fingerprint=draft.fingerprint,
-            totals_personal=_totals_from_engine(draft.totals_personal),
-            totals_business=_totals_from_engine(draft.totals_business),
-            totals_consolidated=_totals_from_engine(draft.totals_consolidated),
+    async def _load_inputs(self, db: AsyncSession):
+        accounts = await finance_accounts_service.list_accounts(db, refresh_live=False)
+        liabilities = await finance_liabilities_service.list_liabilities(db)
+        business = await finance_overview_service.latest_business_snapshot(db)
+        return (
+            accounts_from_schema(accounts),
+            liabilities_from_schema(liabilities),
+            await self._personal_view(db),
+            business_snapshot_view(business),
         )
 
-    async def _items_for_plan(
-        self, db: AsyncSession, plan_id: int
-    ) -> list[FinanceBudgetItemRow]:
+    async def _lines_for(self, db: AsyncSession, plan_id: int) -> list[BudgetPlanLine]:
         rows = await db.scalars(
-            select(FinanceBudgetItemRow)
-            .where(FinanceBudgetItemRow.budget_id == plan_id)
-            .order_by(FinanceBudgetItemRow.id)
+            select(FinanceBudgetPlanLineRow)
+            .where(FinanceBudgetPlanLineRow.plan_id == plan_id)
+            .order_by(FinanceBudgetPlanLineRow.sort_order, FinanceBudgetPlanLineRow.id)
         )
-        return list(rows.all())
+        return [_line_schema(row) for row in rows.all()]
 
-    async def _plan_from_row(
-        self,
-        db: AsyncSession,
-        row: FinanceBudgetPlanRow,
-        *,
-        current_fingerprint: str | None = None,
-        live_missing=None,
-        live_notes=None,
-        live_tax=None,
-        live_cash=None,
-    ) -> BudgetPlan:
-        item_rows = await self._items_for_plan(db, row.id)
-        drafts = [_draft_from_row(item) for item in item_rows]
-        items = [
-            _item_from_draft(draft, item_id=item_row.id)
-            for draft, item_row in zip(drafts, item_rows)
-        ]
-        stale = bool(
-            current_fingerprint
-            and row.source_fingerprint
-            and current_fingerprint != row.source_fingerprint
-        )
-        return BudgetPlan(
-            id=row.id,
-            name=row.name,
-            strategy=BudgetStrategyType(row.strategy),
-            period=row.period,
-            is_active=row.is_active,
-            is_archived=row.is_archived,
-            source_fingerprint=row.source_fingerprint,
-            source_stale=stale,
-            notes=row.notes,
-            items=items,
-            missing=_missing_from_engine(live_missing or []),
-            source_notes=list(live_notes or []),
-            tax=_tax_schema(live_tax) if live_tax else BudgetTaxContext(),
-            cash=_cash_schema(live_cash) if live_cash else BudgetCashContext(),
-            totals_personal=_totals_from_engine(calculate_budget_totals(drafts, "personal")),
-            totals_business=_totals_from_engine(calculate_budget_totals(drafts, "business")),
-            totals_consolidated=_totals_from_engine(
-                calculate_budget_totals(drafts, "consolidated")
-            ),
-            created_at=row.created_at,
-            updated_at=row.updated_at,
-        )
+    async def _to_plan(self, db: AsyncSession, row: FinanceBudgetPlanRow) -> BudgetPlan:
+        return _plan_schema(row, await self._lines_for(db, row.id))
 
-    async def _replace_items(
-        self,
-        db: AsyncSession,
-        plan_id: int,
-        items: list[BudgetDraftItem],
-    ) -> None:
-        existing = await self._items_for_plan(db, plan_id)
-        for row in existing:
-            await db.delete(row)
-        now = _now()
-        for item in items:
-            db.add(
-                FinanceBudgetItemRow(
-                    budget_id=plan_id,
-                    item_key=item.key,
-                    scope=item.scope,
-                    kind=item.kind,
-                    category=item.category,
-                    amount_gbp=item.amount_gbp,
-                    source=item.source,
-                    source_label=item.source_label,
-                    source_record_type=item.source_record_type,
-                    source_record_id=item.source_record_id,
-                    is_generated=item.is_generated,
-                    is_user_override=item.is_user_override,
-                    is_transfer=item.is_transfer,
-                    is_missing=item.is_missing or item.amount_gbp is None,
-                    notes=item.notes,
-                    record_href=item.record_href,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-
-    async def _clear_active(self, db: AsyncSession) -> None:
+    async def list_plans(self, db: AsyncSession) -> list[BudgetPlan]:
         rows = await db.scalars(
-            select(FinanceBudgetPlanRow).where(FinanceBudgetPlanRow.is_active.is_(True))
-        )
-        for row in rows.all():
-            row.is_active = False
-            row.updated_at = _now()
-
-    async def suggestions(self, db: AsyncSession) -> BudgetSuggestionsResponse:
-        inputs = await self._gather_inputs(db)
-        drafts = generate_all_suggestions(inputs)
-        saved = await self.list_plans(db, include_archived=False, inputs=inputs)
-        active_id = next((p.id for p in saved if p.is_active), None)
-        return BudgetSuggestionsResponse(
-            recommended_strategy=BudgetStrategyType(recommended_strategy(inputs)),
-            fingerprint=inputs.fingerprint,
-            missing=_missing_from_engine(inputs.missing),
-            source_notes=list(inputs.notes),
-            tax=_tax_schema(inputs.tax),
-            cash=_cash_schema(inputs.cash),
-            suggestions=[self._suggestion_from_draft(d) for d in drafts],
-            saved_plans=saved,
-            active_plan_id=active_id,
-        )
-
-    async def list_plans(
-        self,
-        db: AsyncSession,
-        *,
-        include_archived: bool = False,
-        inputs=None,
-    ) -> list[BudgetPlanSummary]:
-        stmt = select(FinanceBudgetPlanRow).order_by(FinanceBudgetPlanRow.updated_at.desc())
-        if not include_archived:
-            stmt = stmt.where(FinanceBudgetPlanRow.is_archived.is_(False))
-        rows = list((await db.scalars(stmt)).all())
-        if inputs is None and rows:
-            inputs = await self._gather_inputs(db)
-        fingerprint = inputs.fingerprint if inputs else ""
-        summaries: list[BudgetPlanSummary] = []
-        for row in rows:
-            plan = await self._plan_from_row(
-                db,
-                row,
-                current_fingerprint=fingerprint,
-                live_missing=inputs.missing if inputs else None,
-                live_notes=inputs.notes if inputs else None,
-                live_tax=inputs.tax if inputs else None,
-                live_cash=inputs.cash if inputs else None,
+            select(FinanceBudgetPlanRow).order_by(
+                FinanceBudgetPlanRow.is_active.desc(),
+                FinanceBudgetPlanRow.updated_at.desc(),
             )
-            summaries.append(_summary_from_plan(plan))
-        return summaries
+        )
+        return [await self._to_plan(db, row) for row in rows.all()]
 
-    async def get_plan(self, db: AsyncSession, plan_id: int) -> BudgetPlan | None:
+    async def get(self, db: AsyncSession, plan_id: int) -> BudgetPlan | None:
         row = await db.get(FinanceBudgetPlanRow, plan_id)
         if row is None:
             return None
-        inputs = await self._gather_inputs(db)
-        return await self._plan_from_row(
-            db,
-            row,
-            current_fingerprint=inputs.fingerprint,
-            live_missing=inputs.missing,
-            live_notes=inputs.notes,
-            live_tax=inputs.tax,
-            live_cash=inputs.cash,
-        )
+        return await self._to_plan(db, row)
 
-    async def get_active_plan(self, db: AsyncSession) -> BudgetPlan | None:
-        row = await db.scalar(
-            select(FinanceBudgetPlanRow).where(
-                FinanceBudgetPlanRow.is_active.is_(True),
-                FinanceBudgetPlanRow.is_archived.is_(False),
-            )
+    async def get_active(self, db: AsyncSession, scope: str | None = None) -> BudgetPlan | None:
+        rows = list(
+            (
+                await db.scalars(
+                    select(FinanceBudgetPlanRow).where(FinanceBudgetPlanRow.is_active.is_(True))
+                )
+            ).all()
         )
-        if row is None:
+        if not rows:
             return None
-        return await self.get_plan(db, row.id)
+        if scope in {"personal", "business"}:
+            scoped = next((item for item in rows if item.active_scope == scope), None)
+            if scoped is not None:
+                return await self._to_plan(db, scoped)
+            combined = next((item for item in rows if not item.active_scope), None)
+            if combined is not None:
+                return await self._to_plan(db, combined)
+            return None
+        return await self._to_plan(db, rows[0])
+
+    def summarise_active(self, plan: BudgetPlan) -> ActiveBudgetSummary:
+        return ActiveBudgetSummary(
+            id=plan.id,
+            name=plan.name,
+            style=plan.style,
+            monthly_total_gbp=plan.totals.total_spending_gbp,
+            surplus_gbp=plan.totals.surplus_gbp,
+            debt_overpayment_gbp=plan.totals.debt_overpayment_gbp,
+            buffer_target_gbp=plan.totals.buffer_gbp,
+            income_gbp=plan.income_gbp,
+        )
 
     async def get_active_summary(self, db: AsyncSession) -> ActiveBudgetSummary | None:
-        plan = await self.get_active_plan(db)
+        plan = await self.get_active(db)
         if plan is None:
             return None
-        return _active_summary(plan)
+        return self.summarise_active(plan)
 
-    async def create_plan(self, db: AsyncSession, body: BudgetPlanCreate) -> BudgetPlan:
-        now = _now()
-        if body.activate:
-            await self._clear_active(db)
-        drafts = [_write_to_draft(item) for item in body.items]
+    async def suggestions(self, db: AsyncSession) -> BudgetSuggestionsResponse:
+        from app.services.finance.finance_live_refresh_service import (
+            finance_live_refresh_service,
+        )
+
+        await finance_live_refresh_service.ensure_fresh(db)
+        bundle = suggest_budgets(*(await self._load_inputs(db)))
+        return BudgetSuggestionsResponse(
+            income_gbp=bundle.income_gbp,
+            personal_income_known=bundle.personal_income_known,
+            default_style=bundle.default_style,
+            gaps=[BudgetGap(field=g.field, message=g.message, href=g.href) for g in bundle.gaps],
+            options=[_suggested_option(item) for item in bundle.options],
+        )
+
+    async def create(self, db: AsyncSession, body: BudgetPlanCreate) -> BudgetPlan:
+        income = body.income_gbp
+        if income is None:
+            bundle = suggest_budgets(*(await self._load_inputs(db)))
+            income = bundle.income_gbp
+        now = datetime.now(timezone.utc)
         row = FinanceBudgetPlanRow(
-            name=body.name.strip(),
-            strategy=body.strategy.value,
-            period=body.period or "monthly",
-            is_active=body.activate,
-            is_archived=False,
-            source_fingerprint=body.source_fingerprint,
+            name=body.name,
+            style=body.style.value,
+            origin=body.origin,
             notes=body.notes,
+            explanation=body.explanation,
+            debt_intensity=body.debt_intensity,
+            cash_buffer_target_gbp=body.cash_buffer_target_gbp,
+            discretionary_gbp=body.discretionary_gbp,
+            tax_reserve_gbp=body.tax_reserve_gbp,
+            income_gbp=income,
+            is_active=False,
+            active_scope=body.active_scope or "",
             created_at=now,
             updated_at=now,
         )
         db.add(row)
         await db.flush()
-        await self._replace_items(db, row.id, drafts)
+        await self._replace_lines(db, row.id, body.lines)
         await db.commit()
         await db.refresh(row)
-        plan = await self.get_plan(db, row.id)
-        assert plan is not None
+        return await self._to_plan(db, row)
+
+    async def create_from_suggestion(
+        self,
+        db: AsyncSession,
+        body: BudgetPlanFromSuggestion,
+    ) -> BudgetPlan:
+        bundle = suggest_budgets(*(await self._load_inputs(db)))
+        match = next((item for item in bundle.options if item.style == body.style.value), None)
+        if match is None:
+            raise ValueError("Unknown suggested budget style")
+        plan = await self.create(
+            db,
+            BudgetPlanCreate(
+                name=body.name or match.name,
+                style=body.style,
+                origin="suggested",
+                notes=match.notes,
+                explanation=match.explanation,
+                debt_intensity=match.debt_intensity,
+                cash_buffer_target_gbp=match.cash_buffer_target_gbp,
+                discretionary_gbp=match.discretionary_gbp,
+                tax_reserve_gbp=match.tax_reserve_gbp,
+                income_gbp=match.income_gbp,
+                lines=[
+                    BudgetPlanLineWrite(
+                        scope=FinanceScope(line.scope),
+                        category=line.category,
+                        amount_gbp=line.amount_gbp,
+                        source=line.source,
+                        source_note=line.source_note,
+                        is_custom=line.is_custom,
+                        sort_order=line.sort_order,
+                    )
+                    for line in match.lines
+                ],
+            ),
+        )
+        if body.activate:
+            activated = await self.activate(db, plan.id)
+            return activated or plan
         return plan
 
-    async def update_plan(
+    async def ensure_active_from_suggestion(self, db: AsyncSession) -> BudgetPlan | None:
+        """Create and activate the recommended live plan when none exists.
+
+        Used after hosted SQLite resets. Does not invent income, bills, or
+        actuals, and does not override a saved plan the user already has.
+        """
+        existing = await self.get_active(db)
+        if existing is not None:
+            return existing
+        count = await db.scalar(select(func.count()).select_from(FinanceBudgetPlanRow))
+        if count:
+            return None
+        inputs = await self._load_inputs(db)
+        flow = await self._open_banking_flow(db)
+        month = datetime.now(timezone.utc).strftime("%Y-%m")
+        current_business = business_snapshot_view(
+            await finance_overview_service.business_snapshot_for_month(db, month)
+        )
+        live_income = flow.income_gbp > 0 or (
+            current_business is not None and current_business.turnover_gbp > 0
+        )
+        if not live_income:
+            return None
+        bundle = suggest_budgets(*inputs)
+        if bundle.income_gbp <= 0:
+            return None
+        try:
+            style = BudgetStyle(bundle.default_style)
+        except ValueError:
+            style = BudgetStyle.BALANCED
+        if style == BudgetStyle.CUSTOM:
+            style = BudgetStyle.BALANCED
+        try:
+            return await self.create_from_suggestion(
+                db,
+                BudgetPlanFromSuggestion(style=style, activate=True),
+            )
+        except Exception:
+            logger.warning("Could not create recommended budget from live data", exc_info=True)
+            await db.rollback()
+            return None
+
+    async def update(
         self, db: AsyncSession, plan_id: int, body: BudgetPlanUpdate
     ) -> BudgetPlan | None:
         row = await db.get(FinanceBudgetPlanRow, plan_id)
         if row is None:
             return None
-        if body.name is not None:
-            row.name = body.name.strip()
-        if body.strategy is not None:
-            row.strategy = body.strategy.value
-        if body.notes is not None:
-            row.notes = body.notes
-        if body.source_fingerprint is not None:
-            row.source_fingerprint = body.source_fingerprint
-        if body.items is not None:
-            drafts = [_write_to_draft(item) for item in body.items]
-            await self._replace_items(db, row.id, drafts)
-        row.updated_at = _now()
-        await db.commit()
-        return await self.get_plan(db, row.id)
-
-    async def activate_plan(self, db: AsyncSession, plan_id: int) -> BudgetPlan | None:
-        row = await db.get(FinanceBudgetPlanRow, plan_id)
-        if row is None or row.is_archived:
-            return None
-        await self._clear_active(db)
-        row.is_active = True
-        row.updated_at = _now()
-        await db.commit()
-        return await self.get_plan(db, row.id)
-
-    async def deactivate_plan(self, db: AsyncSession, plan_id: int) -> BudgetPlan | None:
-        row = await db.get(FinanceBudgetPlanRow, plan_id)
-        if row is None:
-            return None
-        row.is_active = False
-        row.updated_at = _now()
-        await db.commit()
-        return await self.get_plan(db, row.id)
-
-    async def duplicate_plan(
-        self, db: AsyncSession, plan_id: int, body: BudgetDuplicateRequest | None = None
-    ) -> BudgetPlan | None:
-        source = await db.get(FinanceBudgetPlanRow, plan_id)
-        if source is None:
-            return None
-        items = [_draft_from_row(row) for row in await self._items_for_plan(db, plan_id)]
-        name = (body.name.strip() if body and body.name else f"{source.name} copy")
-        now = _now()
-        row = FinanceBudgetPlanRow(
-            name=name,
-            strategy="custom",
-            period=source.period,
-            is_active=False,
-            is_archived=False,
-            source_fingerprint=source.source_fingerprint,
-            notes=source.notes,
-            created_at=now,
-            updated_at=now,
-        )
-        db.add(row)
-        await db.flush()
-        await self._replace_items(db, row.id, items)
+        data = body.model_dump(exclude_unset=True)
+        lines = data.pop("lines", None)
+        for field, value in data.items():
+            setattr(row, field, value)
+        if lines is not None:
+            written = [
+                BudgetPlanLineWrite(**item) if isinstance(item, dict) else item
+                for item in lines
+            ]
+            await self._replace_lines(db, plan_id, written)
+            current_lines = await self._lines_for(db, plan_id)
+            totals = _totals(row.income_gbp, current_lines)
+            row.cash_buffer_target_gbp = totals.buffer_gbp
+            row.discretionary_gbp = totals.discretionary_gbp
+            row.tax_reserve_gbp = totals.tax_reserve_gbp
+        row.updated_at = datetime.now(timezone.utc)
         await db.commit()
         await db.refresh(row)
-        plan = await self.get_plan(db, row.id)
-        assert plan is not None
-        return plan
+        return await self._to_plan(db, row)
 
-    async def reset_plan(self, db: AsyncSession, plan_id: int) -> BudgetPlan | None:
+    async def duplicate(self, db: AsyncSession, plan_id: int) -> BudgetPlan | None:
+        source = await self.get(db, plan_id)
+        if source is None:
+            return None
+        return await self.create(
+            db,
+            BudgetPlanCreate(
+                name=f"{source.name} copy",
+                style=_safe_style(source.style),
+                origin="user",
+                notes=source.notes,
+                explanation=source.explanation,
+                debt_intensity=source.debt_intensity,
+                cash_buffer_target_gbp=source.cash_buffer_target_gbp,
+                discretionary_gbp=source.discretionary_gbp,
+                tax_reserve_gbp=source.tax_reserve_gbp,
+                income_gbp=source.income_gbp,
+                lines=[
+                    BudgetPlanLineWrite(
+                        scope=line.scope,
+                        category=line.category,
+                        amount_gbp=line.amount_gbp,
+                        source=line.source,
+                        source_note=line.source_note,
+                        is_custom=line.is_custom,
+                        sort_order=line.sort_order,
+                    )
+                    for line in source.lines
+                ],
+            ),
+        )
+
+    async def activate(
+        self, db: AsyncSession, plan_id: int, scope: str | None = None
+    ) -> BudgetPlan | None:
         row = await db.get(FinanceBudgetPlanRow, plan_id)
         if row is None:
             return None
-        inputs = await self._gather_inputs(db)
-        strategy = row.strategy if row.strategy != "custom" else "balanced"
-        draft = generate_suggested_budget(inputs, strategy)  # type: ignore[arg-type]
-        await self._replace_items(db, row.id, draft.items)
-        row.source_fingerprint = inputs.fingerprint
-        row.updated_at = _now()
-        await db.commit()
-        return await self.get_plan(db, row.id)
+        target_scope = (scope or row.active_scope or "").strip()
+        existing = await db.scalars(
+            select(FinanceBudgetPlanRow).where(FinanceBudgetPlanRow.is_active.is_(True))
+        )
+        for item in existing.all():
+            if item.id == row.id:
+                continue
+            if not target_scope or item.active_scope in {"", target_scope}:
+                item.is_active = False
+        row.is_active = True
+        row.active_scope = target_scope
+        row.updated_at = datetime.now(timezone.utc)
+        plan = await self._to_plan(db, row)
+        month = datetime.now(timezone.utc).strftime("%Y-%m")
+        from app.services.finance.finance_budget_service import finance_budget_service
 
-    async def refresh_plan(self, db: AsyncSession, plan_id: int) -> BudgetPlan | None:
-        row = await db.get(FinanceBudgetPlanRow, plan_id)
-        if row is None:
-            return None
-        previous = [_draft_from_row(item) for item in await self._items_for_plan(db, plan_id)]
-        inputs = await self._gather_inputs(db)
-        strategy = row.strategy if row.strategy != "custom" else "balanced"
-        draft = generate_suggested_budget(inputs, strategy)  # type: ignore[arg-type]
-        merged = merge_refresh_preserving_overrides(previous, draft.items)
-        await self._replace_items(db, row.id, merged)
-        row.source_fingerprint = inputs.fingerprint
-        row.updated_at = _now()
+        await finance_budget_service.apply_plan_amounts(
+            db,
+            month=month,
+            lines=[
+                (line.scope.value, line.category, line.amount_gbp) for line in plan.lines
+            ],
+            commit=False,
+        )
         await db.commit()
-        return await self.get_plan(db, row.id)
+        await db.refresh(row)
+        return await self._to_plan(db, row)
 
-    async def archive_plan(self, db: AsyncSession, plan_id: int) -> BudgetPlan | None:
-        row = await db.get(FinanceBudgetPlanRow, plan_id)
-        if row is None:
-            return None
-        if row.is_active:
-            raise ValueError(
-                "Cannot remove the active budget. Activate another budget first, "
-                "or deactivate this one and leave no active budget."
-            )
-        row.is_archived = True
-        row.updated_at = _now()
-        await db.commit()
-        return await self.get_plan(db, row.id)
-
-    async def delete_plan(self, db: AsyncSession, plan_id: int) -> bool:
+    async def delete(self, db: AsyncSession, plan_id: int) -> bool:
         row = await db.get(FinanceBudgetPlanRow, plan_id)
         if row is None:
             return False
-        if row.is_active:
-            raise ValueError(
-                "Cannot remove the active budget. Activate another budget first, "
-                "or deactivate this one and leave no active budget."
-            )
-        for item in await self._items_for_plan(db, plan_id):
-            await db.delete(item)
+        lines = await db.scalars(
+            select(FinanceBudgetPlanLineRow).where(FinanceBudgetPlanLineRow.plan_id == plan_id)
+        )
+        for line in lines.all():
+            await db.delete(line)
         await db.delete(row)
         await db.commit()
         return True
 
-    async def variance_for_active(
-        self,
-        db: AsyncSession,
-        *,
-        month: str,
-        view: BudgetViewType = BudgetViewType.CONSOLIDATED,
-    ) -> BudgetVarianceResponse:
-        plan = await self.get_active_plan(db)
-        if plan is None:
-            return BudgetVarianceResponse(
-                available=False,
-                reason="No active budget. Set an active budget to compare with actuals.",
-                month=month,
-                view=view.value,
+    async def compare(self, db: AsyncSession) -> BudgetCompareResponse:
+        plans = await self.list_plans(db)
+        suggestions = await self.suggestions(db)
+        income = suggestions.income_gbp
+        rows: list[BudgetCompareRow] = []
+        for option in suggestions.options:
+            rows.append(
+                BudgetCompareRow(
+                    id=None,
+                    key=option.style,
+                    name=option.name,
+                    style=option.style,
+                    monthly_total_gbp=round(
+                        option.committed_gbp
+                        + option.discretionary_gbp
+                        + option.debt_overpayment_gbp
+                        + option.cash_buffer_target_gbp,
+                        2,
+                    ),
+                    surplus_gbp=option.surplus_gbp,
+                    debt_overpayment_gbp=option.debt_overpayment_gbp,
+                    buffer_gbp=option.cash_buffer_target_gbp,
+                    discretionary_gbp=option.discretionary_gbp,
+                    tax_reserve_gbp=option.tax_reserve_gbp,
+                    shortfall_gbp=option.shortfall_gbp,
+                )
             )
-        return await self.variance_for_plan(db, plan, month=month, view=view)
+        for plan in plans:
+            rows.append(
+                BudgetCompareRow(
+                    id=plan.id,
+                    key=f"plan-{plan.id}",
+                    name=plan.name,
+                    style=plan.style,
+                    monthly_total_gbp=plan.totals.total_spending_gbp,
+                    surplus_gbp=plan.totals.surplus_gbp,
+                    debt_overpayment_gbp=plan.totals.debt_overpayment_gbp,
+                    buffer_gbp=plan.totals.buffer_gbp,
+                    discretionary_gbp=plan.totals.discretionary_gbp,
+                    tax_reserve_gbp=plan.totals.tax_reserve_gbp,
+                    shortfall_gbp=plan.totals.shortfall_gbp,
+                    is_active=plan.is_active,
+                )
+            )
+        return BudgetCompareResponse(rows=rows, income_gbp=income)
 
-    async def variance_for_plan(
-        self,
-        db: AsyncSession,
-        plan: BudgetPlan,
-        *,
-        month: str,
-        view: BudgetViewType = BudgetViewType.CONSOLIDATED,
-    ) -> BudgetVarianceResponse:
-        accounts = await finance_accounts_service.list_accounts(db, active_only=False)
-        scope_by_account = {a.id: a.scope.value for a in accounts}
-        start = f"{month}-01"
-        last = monthrange(int(month[:4]), int(month[5:7]))[1]
-        end = f"{month}-{last:02d}"
-        rows = list(
+    async def vs_actual(
+        self, db: AsyncSession, month: str, scope: str | None = None
+    ) -> BudgetVsActualResponse:
+        from app.db.models import FinanceTransactionRow
+        from app.services.finance.finance_budget_service import recorded_actual_gbp
+        from app.services.finance.money import from_pence
+
+        plan = await self.get_active(db, scope=scope)
+        actual_rows = await db.scalars(
+            select(MonthlyBudgetRow).where(MonthlyBudgetRow.month == month)
+        )
+        actuals = list(actual_rows.all())
+        if scope in {"personal", "business"}:
+            actuals = [row for row in actuals if row.scope == scope]
+        actual_map = {(row.scope, row.category.lower()): row for row in actuals}
+        tx_rows = list(
             (
                 await db.scalars(
                     select(FinanceTransactionRow).where(
-                        FinanceTransactionRow.transaction_date >= start,
-                        FinanceTransactionRow.transaction_date <= end,
+                        FinanceTransactionRow.posted_on.startswith(month),
+                        FinanceTransactionRow.is_deleted.is_(False),
+                        FinanceTransactionRow.is_transfer.is_(False),
                     )
                 )
             ).all()
         )
-        transactions = [
-            {
-                "transaction_date": row.transaction_date,
-                "category": row.category,
-                "amount_gbp": row.amount_gbp,
-                "scope": scope_by_account.get(row.account_id),
-            }
-            for row in rows
-        ]
-        drafts = [
-            BudgetDraftItem(
-                key=item.key,
-                scope=item.scope.value,
-                kind=item.kind.value,
-                category=item.category,
-                amount_gbp=item.amount_gbp,
-                source=item.source,
-                source_label=item.source_label,
-                source_record_type=item.source_record_type,
-                source_record_id=item.source_record_id,
-                is_generated=item.is_generated,
-                is_user_override=item.is_user_override,
-                is_transfer=item.is_transfer,
-                is_missing=item.is_missing,
-                notes=item.notes,
-                record_href=item.record_href,
+        if scope in {"personal", "business"}:
+            tx_rows = [row for row in tx_rows if row.scope == scope]
+        tx_totals: dict[tuple[str, str], int] = {}
+        tx_counts: dict[tuple[str, str], int] = {}
+        for row in tx_rows:
+            key = (row.scope, (row.category or "Uncategorised").lower())
+            tx_totals[key] = tx_totals.get(key, 0) + (
+                -row.amount_pence if row.amount_pence < 0 else 0
             )
-            for item in plan.items
+            if row.amount_pence > 0 and (row.category or "").lower() in {
+                "salary",
+                "income",
+                "turnover",
+            }:
+                tx_totals[key] = tx_totals.get(key, 0) + row.amount_pence
+            tx_counts[key] = tx_counts.get(key, 0) + 1
+
+        def _resolve_actual(key: tuple[str, str], row: MonthlyBudgetRow | None):
+            recorded = recorded_actual_gbp(row) if row is not None else None
+            if recorded is not None:
+                return recorded, "manual", 0
+            if key in tx_totals and tx_counts.get(key, 0) > 0 and (row is not None or key[1] != ""):
+                if key in tx_totals:
+                    return from_pence(tx_totals[key]), "transactions", tx_counts[key]
+            if key in tx_counts:
+                return from_pence(tx_totals.get(key, 0)), "transactions", tx_counts[key]
+            return None, "missing", 0
+        lines: list[BudgetVsActualLine] = []
+        used_keys: set[tuple[str, str]] = set()
+        if plan:
+            plan_lines = [
+                line
+                for line in plan.lines
+                if scope not in {"personal", "business"} or line.scope.value == scope
+            ]
+            for line in plan_lines:
+                key = (line.scope.value, line.category.lower())
+                used_keys.add(key)
+                row = actual_map.get(key)
+                recorded, source, txn_count = _resolve_actual(key, row)
+                percent = (
+                    round((recorded / line.amount_gbp) * 100, 1)
+                    if recorded is not None and line.amount_gbp
+                    else None
+                )
+                remaining = (
+                    round(line.amount_gbp - recorded, 2) if recorded is not None else None
+                )
+                lines.append(
+                    BudgetVsActualLine(
+                        scope=line.scope,
+                        category=line.category,
+                        budget_gbp=line.amount_gbp,
+                        actual_gbp=recorded,
+                        variance_gbp=remaining,
+                        percent_used=percent,
+                        missing_actual=recorded is None,
+                        forecast_gbp=None,
+                        remaining_gbp=remaining,
+                        actual_source=source,
+                        transaction_count=txn_count,
+                    )
+                )
+        else:
+            for row in actuals:
+                key = (row.scope, row.category.lower())
+                used_keys.add(key)
+                recorded, source, txn_count = _resolve_actual(key, row)
+                lines.append(
+                    BudgetVsActualLine(
+                        scope=FinanceScope(row.scope),
+                        category=row.category,
+                        budget_gbp=row.budgeted_gbp,
+                        actual_gbp=recorded,
+                        variance_gbp=(
+                            round(row.budgeted_gbp - recorded, 2) if recorded is not None else None
+                        ),
+                        percent_used=(
+                            round((recorded / row.budgeted_gbp) * 100, 1)
+                            if recorded is not None and row.budgeted_gbp
+                            else None
+                        ),
+                        missing_actual=recorded is None,
+                        remaining_gbp=(
+                            round(row.budgeted_gbp - recorded, 2) if recorded is not None else None
+                        ),
+                        actual_source=source,
+                        transaction_count=txn_count,
+                    )
+                )
+        unbudgeted: list[BudgetVsActualLine] = []
+        if plan is not None:
+            for row in actuals:
+                key = (row.scope, row.category.lower())
+                if key in used_keys:
+                    continue
+                recorded, source, txn_count = _resolve_actual(key, row)
+                if recorded is None:
+                    continue
+                unbudgeted.append(
+                    BudgetVsActualLine(
+                        scope=FinanceScope(row.scope),
+                        category=row.category,
+                        budget_gbp=0,
+                        actual_gbp=recorded,
+                        variance_gbp=None,
+                        percent_used=None,
+                        missing_actual=False,
+                        actual_source=source,
+                        transaction_count=txn_count,
+                    )
+                )
+            used_lower = {item[1] for item in used_keys}
+            for key, total in tx_totals.items():
+                if key in used_keys or key[1] in used_lower:
+                    continue
+                if key[1] == "uncategorised":
+                    unbudgeted.append(
+                        BudgetVsActualLine(
+                            scope=FinanceScope(key[0]),
+                            category="Uncategorised",
+                            budget_gbp=0,
+                            actual_gbp=from_pence(total),
+                            variance_gbp=None,
+                            percent_used=None,
+                            missing_actual=False,
+                            actual_source="transactions",
+                            transaction_count=tx_counts.get(key, 0),
+                        )
+                    )
+        recorded_actuals = [
+            line.actual_gbp
+            for line in lines
+            if not line.missing_actual and line.actual_gbp is not None
         ]
-        result = calculate_budget_variance(
-            drafts, transactions, month=month, view=view.value  # type: ignore[arg-type]
-        )
-        return BudgetVarianceResponse(
-            available=result.available,
-            reason=result.reason,
-            month=result.month,
-            view=result.view,
-            lines=[BudgetVarianceLine(**line.__dict__) for line in result.lines],
-            unbudgeted_actuals=[
-                BudgetVarianceLine(**line.__dict__) for line in result.unbudgeted_actuals
-            ],
-            budgeted_total_gbp=result.budgeted_total_gbp,
-            actual_total_gbp=result.actual_total_gbp,
+        unbudgeted_actuals = [line.actual_gbp or 0 for line in unbudgeted]
+        budgeted_total = round(sum(line.budget_gbp for line in lines), 2)
+        actual_total = round(sum(recorded_actuals) + sum(unbudgeted_actuals), 2)
+        has_actuals = bool(recorded_actuals or unbudgeted)
+        available = plan is not None or bool(lines)
+        reason = ""
+        if not available:
+            reason = (
+                "No active budget. Set one on the Budget page to compare planned amounts "
+                "with recorded actuals."
+            )
+        return BudgetVsActualResponse(
+            month=month,
+            plan_id=plan.id if plan else None,
+            plan_name=plan.name if plan else None,
+            lines=lines,
+            unbudgeted_actuals=unbudgeted,
+            has_actuals=has_actuals,
+            available=available,
+            reason=reason,
+            budgeted_total_gbp=budgeted_total,
+            actual_total_gbp=actual_total,
+            variance_total_gbp=round(budgeted_total - actual_total, 2) if has_actuals else None,
         )
 
-    def apply_item_overrides(
-        self, items: list[BudgetDraftItem], overrides: dict[str, float | None]
-    ) -> list[BudgetDraftItem]:
-        return apply_overrides(items, overrides)
+    async def _replace_lines(
+        self,
+        db: AsyncSession,
+        plan_id: int,
+        lines: list[BudgetPlanLineWrite],
+    ) -> None:
+        existing = await db.scalars(
+            select(FinanceBudgetPlanLineRow).where(FinanceBudgetPlanLineRow.plan_id == plan_id)
+        )
+        for row in existing.all():
+            await db.delete(row)
+        await db.flush()
+        for index, line in enumerate(lines):
+            db.add(
+                FinanceBudgetPlanLineRow(
+                    plan_id=plan_id,
+                    scope=line.scope.value,
+                    category=line.category,
+                    amount_gbp=line.amount_gbp,
+                    source=line.source,
+                    source_note=line.source_note,
+                    is_custom=line.is_custom,
+                    sort_order=line.sort_order or index * 10,
+                    subcategory=getattr(line, "subcategory", "") or "",
+                    basis_json=getattr(line, "basis_json", "") or "{}",
+                    confidence=getattr(line, "confidence", "") or "",
+                    insufficient_data=bool(getattr(line, "insufficient_data", False)),
+                )
+            )
 
-    def monthly_from_frequency(self, amount: float, frequency: str) -> float:
-        return money(to_monthly_amount(amount, frequency))
+
+def _suggested_option(item: SuggestedBudget) -> SuggestedBudgetOption:
+    return SuggestedBudgetOption(
+        style=item.style,
+        name=item.name,
+        explanation=item.explanation,
+        debt_intensity=item.debt_intensity,
+        cash_buffer_target_gbp=item.cash_buffer_target_gbp,
+        discretionary_gbp=item.discretionary_gbp,
+        tax_reserve_gbp=item.tax_reserve_gbp,
+        income_gbp=item.income_gbp,
+        committed_gbp=item.committed_gbp,
+        debt_payment_gbp=item.debt_payment_gbp,
+        debt_overpayment_gbp=item.debt_overpayment_gbp,
+        surplus_gbp=item.surplus_gbp,
+        shortfall_gbp=item.shortfall_gbp,
+        recommended=item.recommended,
+        incomplete=item.incomplete,
+        notes=item.notes,
+        gaps=[BudgetGap(field=g.field, message=g.message, href=g.href) for g in item.gaps],
+        lines=[
+            BudgetPlanLine(
+                scope=FinanceScope(line.scope),
+                category=line.category,
+                amount_gbp=line.amount_gbp,
+                source=line.source,
+                source_note=line.source_note,
+                is_custom=line.is_custom,
+                sort_order=line.sort_order,
+            )
+            for line in item.lines
+        ],
+    )
+
+
+def _safe_style(value: str) -> BudgetStyle:
+    try:
+        return BudgetStyle(value)
+    except ValueError:
+        return BudgetStyle.CUSTOM
 
 
 finance_budget_plan_service = FinanceBudgetPlanService()

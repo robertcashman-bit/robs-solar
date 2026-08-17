@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -16,11 +16,9 @@ class FinanceScope(str, Enum):
 
 class FinanceAccountType(str, Enum):
     CURRENT = "current"
-    SAVINGS = "savings"
     CREDIT_CARD = "credit_card"
     LOAN = "loan"
     MORTGAGE = "mortgage"
-    PROPERTY = "property"
     PENSION = "pension"
     DIRECTORS_LOAN = "directors_loan"
     VAT_RESERVE = "vat_reserve"
@@ -28,23 +26,17 @@ class FinanceAccountType(str, Enum):
     CAPITAL_ON_TAP = "capital_on_tap"
     DEBTORS = "debtors"
     CREDITORS = "creditors"
+    PROPERTY = "property"
+    OTHER_ASSET = "other_asset"
     OTHER = "other"
 
 
 class FinanceAccountSource(str, Enum):
     MANUAL = "manual"
     OPEN_BANKING = "open_banking"
+    LUNCHFLOW = "lunchflow"
     QUICKFILE = "quickfile"
-    LUNCH_FLOW = "lunch_flow"
-
-
-def account_is_historic(source: FinanceAccountSource) -> bool:
-    """True when balance is manually entered rather than synced live."""
-    return source not in (
-        FinanceAccountSource.QUICKFILE,
-        FinanceAccountSource.OPEN_BANKING,
-        FinanceAccountSource.LUNCH_FLOW,
-    )
+    FUNDING_CIRCLE = "funding_circle"
 
 
 class DebtType(str, Enum):
@@ -54,6 +46,11 @@ class DebtType(str, Enum):
     BUSINESS_LOAN = "business_loan"
     DIRECTORS_LOAN = "directors_loan"
     OTHER = "other"
+
+
+class DirectorsLoanDirection(str, Enum):
+    DIRECTOR_OWES_COMPANY = "director_owes_company"
+    COMPANY_OWES_DIRECTOR = "company_owes_director"
 
 
 class CashflowEntryType(str, Enum):
@@ -91,10 +88,8 @@ class FinanceAccount(BaseModel):
     notes: str = ""
     source: FinanceAccountSource = FinanceAccountSource.MANUAL
     external_id: str | None = None
+    dla_direction: DirectorsLoanDirection | None = None
     is_active: bool = True
-    is_historic: bool = False
-    data_confidence: str = "manual"
-    last_synced_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -111,17 +106,18 @@ class FinanceAccountCreate(BaseModel):
     notes: str = ""
     source: FinanceAccountSource = FinanceAccountSource.MANUAL
     external_id: str | None = None
+    dla_direction: DirectorsLoanDirection | None = None
 
 
 class FinanceAccountUpdate(BaseModel):
-    name: str | None = None
-    account_type: FinanceAccountType | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=128)
     provider: str | None = None
     balance_gbp: float | None = None
     credit_limit_gbp: float | None = None
     interest_rate_pct: float | None = None
     minimum_payment_gbp: float | None = None
     notes: str | None = None
+    dla_direction: DirectorsLoanDirection | None = None
     is_active: bool | None = None
 
 
@@ -134,13 +130,14 @@ class FinanceLiability(BaseModel):
     interest_rate_pct: float
     minimum_payment_gbp: float
     overpayment_gbp: float = 0.0
+    original_balance_gbp: float | None = None
     payment_day: int | None = None
     account_id: int | None = None
     notes: str = ""
+    dla_direction: DirectorsLoanDirection | None = None
+    interest_rate_known: bool = True
+    credit_limit_gbp: float | None = None
     is_active: bool = True
-    is_historic: bool = False
-    data_confidence: str = "manual"
-    last_synced_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -153,19 +150,27 @@ class FinanceLiabilityCreate(BaseModel):
     interest_rate_pct: float = Field(ge=0, le=100)
     minimum_payment_gbp: float = Field(ge=0)
     overpayment_gbp: float = Field(default=0, ge=0)
+    original_balance_gbp: float | None = Field(default=None, ge=0)
     payment_day: int | None = Field(default=None, ge=1, le=31)
     account_id: int | None = None
     notes: str = ""
+    dla_direction: DirectorsLoanDirection | None = None
+    interest_rate_known: bool = True
+    credit_limit_gbp: float | None = Field(default=None, ge=0)
 
 
 class FinanceLiabilityUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=128)
     balance_gbp: float | None = Field(default=None, ge=0)
     interest_rate_pct: float | None = Field(default=None, ge=0, le=100)
     minimum_payment_gbp: float | None = Field(default=None, ge=0)
     overpayment_gbp: float | None = Field(default=None, ge=0)
+    original_balance_gbp: float | None = Field(default=None, ge=0)
     payment_day: int | None = Field(default=None, ge=1, le=31)
     notes: str | None = None
+    dla_direction: DirectorsLoanDirection | None = None
+    interest_rate_known: bool | None = None
+    credit_limit_gbp: float | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
 
@@ -226,8 +231,9 @@ class MonthlyBudgetLine(BaseModel):
     month: str
     category: str
     budgeted_gbp: float
-    actual_gbp: float
-    remaining_gbp: float = 0.0
+    actual_gbp: float | None = None
+    remaining_gbp: float | None = None
+    actual_recorded: bool = False
     notes: str = ""
     created_at: datetime
     updated_at: datetime
@@ -238,7 +244,7 @@ class MonthlyBudgetLineCreate(BaseModel):
     month: str
     category: str = Field(min_length=1, max_length=64)
     budgeted_gbp: float = Field(ge=0)
-    actual_gbp: float = Field(default=0, ge=0)
+    actual_gbp: float | None = Field(default=None, ge=0)
     notes: str = ""
 
 
@@ -248,246 +254,14 @@ class MonthlyBudgetLineUpdate(BaseModel):
     notes: str | None = None
 
 
-class BudgetSeedRequest(BaseModel):
+class MonthlyBudgetBatchWrite(BaseModel):
+    lines: list[MonthlyBudgetLineCreate] = Field(default_factory=list, max_length=80)
+
+
+class BudgetStarterRequest(BaseModel):
     month: str = Field(pattern=r"^\d{4}-\d{2}$")
     scope: FinanceScope
-
-
-class BudgetStrategyType(str, Enum):
-    STABILISE = "stabilise"
-    BALANCED = "balanced"
-    DEBT_ATTACK = "debt_attack"
-    CUSTOM = "custom"
-
-
-class BudgetViewType(str, Enum):
-    PERSONAL = "personal"
-    BUSINESS = "business"
-    CONSOLIDATED = "consolidated"
-
-
-class BudgetItemKindType(str, Enum):
-    INCOME = "income"
-    ESSENTIAL = "essential"
-    DEBT_MINIMUM = "debt_minimum"
-    DEBT_OVERPAYMENT = "debt_overpayment"
-    TAX_PROVISION = "tax_provision"
-    BUFFER = "buffer"
-    DISCRETIONARY = "discretionary"
-    OTHER = "other"
-
-
-class BudgetMissingInput(BaseModel):
-    code: str
-    message: str
-    record_href: str | None = None
-    source_record_type: str | None = None
-    source_record_id: int | None = None
-    category: str | None = None
-
-
-class BudgetTaxContext(BaseModel):
-    vat_reserved_gbp: float | None = None
-    corp_tax_reserved_gbp: float | None = None
-    vat_due_gbp: float | None = None
-    notes: list[str] = Field(default_factory=list)
-
-
-class BudgetCashContext(BaseModel):
-    savings_balance_gbp: float | None = None
-    savings_accounts_found: bool = False
-
-
-class BudgetTotals(BaseModel):
-    view: str
-    income_gbp: float
-    essential_gbp: float
-    debt_minimum_gbp: float
-    debt_overpayment_gbp: float
-    tax_provision_gbp: float
-    buffer_gbp: float
-    discretionary_gbp: float
-    other_gbp: float
-    committed_gbp: float
-    allocated_gbp: float
-    surplus_gbp: float | None = None
-    income_complete: bool
-    has_missing_inputs: bool
-    is_deficit: bool
-    incomplete_reason: str = ""
-
-
-class BudgetPlanItem(BaseModel):
-    id: int | None = None
-    key: str
-    scope: FinanceScope
-    kind: BudgetItemKindType
-    category: str
-    amount_gbp: float | None = None
-    source: str
-    source_label: str = ""
-    source_record_type: str | None = None
-    source_record_id: int | None = None
-    is_generated: bool = False
-    is_user_override: bool = False
-    is_transfer: bool = False
-    is_missing: bool = False
-    notes: str = ""
-    record_href: str | None = None
-
-
-class BudgetPlanItemWrite(BaseModel):
-    key: str | None = None
-    scope: FinanceScope
-    kind: BudgetItemKindType
-    category: str = Field(min_length=1, max_length=128)
-    amount_gbp: float | None = None
-    source: str = "user_entered"
-    source_label: str = ""
-    source_record_type: str | None = None
-    source_record_id: int | None = None
-    is_generated: bool = False
-    is_user_override: bool = False
-    is_transfer: bool = False
-    is_missing: bool = False
-    notes: str = ""
-    record_href: str | None = None
-
-
-class BudgetPlan(BaseModel):
-    id: int
-    name: str
-    strategy: BudgetStrategyType
-    period: str = "monthly"
-    is_active: bool = False
-    is_archived: bool = False
-    source_fingerprint: str = ""
-    source_stale: bool = False
-    notes: str = ""
-    items: list[BudgetPlanItem] = Field(default_factory=list)
-    missing: list[BudgetMissingInput] = Field(default_factory=list)
-    source_notes: list[str] = Field(default_factory=list)
-    tax: BudgetTaxContext = Field(default_factory=BudgetTaxContext)
-    cash: BudgetCashContext = Field(default_factory=BudgetCashContext)
-    totals_personal: BudgetTotals
-    totals_business: BudgetTotals
-    totals_consolidated: BudgetTotals
-    created_at: datetime
-    updated_at: datetime
-
-
-class BudgetPlanSummary(BaseModel):
-    id: int
-    name: str
-    strategy: BudgetStrategyType
-    period: str = "monthly"
-    is_active: bool = False
-    is_archived: bool = False
-    source_stale: bool = False
-    has_missing_inputs: bool = False
-    is_deficit: bool = False
-    income_gbp: float = 0.0
-    allocated_gbp: float = 0.0
-    surplus_gbp: float | None = None
-    updated_at: datetime
-
-
-class ActiveBudgetSummary(BaseModel):
-    id: int
-    name: str
-    strategy: BudgetStrategyType
-    period: str = "monthly"
-    income_gbp: float
-    allocated_gbp: float
-    debt_overpayment_gbp: float
-    surplus_gbp: float | None = None
-    has_missing_inputs: bool = False
-    is_deficit: bool = False
-    income_complete: bool = True
-    incomplete_reason: str = ""
-    totals: BudgetTotals
-
-
-class BudgetPlanCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=128)
-    strategy: BudgetStrategyType = BudgetStrategyType.CUSTOM
-    period: str = "monthly"
-    activate: bool = False
-    notes: str = ""
-    items: list[BudgetPlanItemWrite] = Field(default_factory=list)
-    source_fingerprint: str = ""
-
-
-class BudgetPlanUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=128)
-    strategy: BudgetStrategyType | None = None
-    notes: str | None = None
-    items: list[BudgetPlanItemWrite] | None = None
-    source_fingerprint: str | None = None
-
-
-class BudgetSuggestion(BaseModel):
-    strategy: BudgetStrategyType
-    name: str
-    recommended: bool = False
-    items: list[BudgetPlanItem] = Field(default_factory=list)
-    missing: list[BudgetMissingInput] = Field(default_factory=list)
-    source_notes: list[str] = Field(default_factory=list)
-    tax: BudgetTaxContext = Field(default_factory=BudgetTaxContext)
-    cash: BudgetCashContext = Field(default_factory=BudgetCashContext)
-    fingerprint: str = ""
-    totals_personal: BudgetTotals
-    totals_business: BudgetTotals
-    totals_consolidated: BudgetTotals
-
-
-class BudgetSuggestionsResponse(BaseModel):
-    recommended_strategy: BudgetStrategyType
-    fingerprint: str
-    missing: list[BudgetMissingInput] = Field(default_factory=list)
-    source_notes: list[str] = Field(default_factory=list)
-    tax: BudgetTaxContext = Field(default_factory=BudgetTaxContext)
-    cash: BudgetCashContext = Field(default_factory=BudgetCashContext)
-    suggestions: list[BudgetSuggestion] = Field(default_factory=list)
-    saved_plans: list[BudgetPlanSummary] = Field(default_factory=list)
-    active_plan_id: int | None = None
-
-
-class BudgetVarianceLine(BaseModel):
-    category: str
-    kind: str
-    scope: str
-    budgeted_gbp: float | None = None
-    actual_gbp: float | None = None
-    variance_gbp: float | None = None
-    is_missing: bool = False
-    matched: bool = False
-
-
-class BudgetVarianceResponse(BaseModel):
-    available: bool
-    reason: str = ""
-    month: str
-    view: str
-    lines: list[BudgetVarianceLine] = Field(default_factory=list)
-    unbudgeted_actuals: list[BudgetVarianceLine] = Field(default_factory=list)
-    budgeted_total_gbp: float = 0.0
-    actual_total_gbp: float = 0.0
-
-
-class BudgetDuplicateRequest(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=128)
-
-
-class PlHistoryPoint(BaseModel):
-    month: str
-    turnover_gbp: float
-    expenses_gbp: float
-    profit_gbp: float
-
-
-class PlHistoryResponse(BaseModel):
-    points: list[PlHistoryPoint]
+    from_active_plan: bool = True
 
 
 class CashflowForecastEntry(BaseModel):
@@ -512,6 +286,264 @@ class CashflowForecastEntryCreate(BaseModel):
     amount_gbp: float
     is_confirmed: bool = False
     source: str = "manual"
+
+
+class BudgetStyle(str, Enum):
+    STABILISE = "stabilise"
+    BALANCED = "balanced"
+    DEBT_ATTACK = "debt_attack"
+    CUSTOM = "custom"
+
+
+class BudgetLineSource(str, Enum):
+    RECURRING = "recurring"
+    DEBT_MINIMUM = "debt_minimum"
+    SNAPSHOT = "snapshot"
+    SUGGESTED = "suggested"
+    USER = "user"
+
+
+class BudgetPlanLine(BaseModel):
+    id: int | None = None
+    scope: FinanceScope
+    category: str
+    amount_gbp: float
+    source: str = "user"
+    source_note: str = ""
+    is_custom: bool = False
+    sort_order: int = 0
+    subcategory: str = ""
+    basis_json: str = "{}"
+    confidence: str = ""
+    insufficient_data: bool = False
+
+
+class BudgetPlanLineWrite(BaseModel):
+    id: int | None = None
+    scope: FinanceScope
+    category: str = Field(min_length=1, max_length=64)
+    amount_gbp: float = Field(ge=0)
+    source: str = "user"
+    source_note: str = ""
+    is_custom: bool = False
+    sort_order: int = 0
+    subcategory: str = ""
+    basis_json: str = "{}"
+    confidence: str = ""
+    insufficient_data: bool = False
+
+
+class BudgetTotals(BaseModel):
+    income_gbp: float = 0.0
+    committed_gbp: float = 0.0
+    total_spending_gbp: float = 0.0
+    debt_payment_gbp: float = 0.0
+    debt_overpayment_gbp: float = 0.0
+    buffer_gbp: float = 0.0
+    discretionary_gbp: float = 0.0
+    tax_reserve_gbp: float = 0.0
+    surplus_gbp: float = 0.0
+    shortfall_gbp: float = 0.0
+
+
+class BudgetGap(BaseModel):
+    field: str
+    message: str
+    href: str = "/finance/personal"
+
+
+class BudgetPlan(BaseModel):
+    id: int
+    name: str
+    style: str
+    origin: str
+    notes: str = ""
+    explanation: str = ""
+    debt_intensity: str = "medium"
+    cash_buffer_target_gbp: float = 0.0
+    discretionary_gbp: float = 0.0
+    tax_reserve_gbp: float = 0.0
+    income_gbp: float = 0.0
+    is_active: bool = False
+    active_scope: str = ""
+    totals: BudgetTotals = Field(default_factory=BudgetTotals)
+    lines: list[BudgetPlanLine] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class BudgetPlanCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    style: BudgetStyle = BudgetStyle.CUSTOM
+    origin: str = "user"
+    notes: str = ""
+    explanation: str = ""
+    debt_intensity: str = "medium"
+    cash_buffer_target_gbp: float = Field(default=0, ge=0)
+    discretionary_gbp: float = Field(default=0, ge=0)
+    tax_reserve_gbp: float = Field(default=0, ge=0)
+    income_gbp: float | None = None
+    lines: list[BudgetPlanLineWrite] = Field(default_factory=list)
+    active_scope: str = ""
+
+
+class BudgetPlanUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    notes: str | None = None
+    explanation: str | None = None
+    debt_intensity: str | None = None
+    cash_buffer_target_gbp: float | None = Field(default=None, ge=0)
+    discretionary_gbp: float | None = Field(default=None, ge=0)
+    tax_reserve_gbp: float | None = Field(default=None, ge=0)
+    income_gbp: float | None = Field(default=None, ge=0)
+    lines: list[BudgetPlanLineWrite] | None = None
+
+
+class BudgetPlanFromSuggestion(BaseModel):
+    style: BudgetStyle
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    activate: bool = False
+
+
+class BudgetPlanFromHistory(BaseModel):
+    scope: FinanceScope
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    activate: bool = False
+
+
+class SuggestedBudgetOption(BaseModel):
+    style: str
+    name: str
+    explanation: str
+    debt_intensity: str
+    cash_buffer_target_gbp: float
+    discretionary_gbp: float
+    tax_reserve_gbp: float
+    income_gbp: float
+    committed_gbp: float
+    debt_payment_gbp: float
+    debt_overpayment_gbp: float
+    surplus_gbp: float
+    shortfall_gbp: float
+    recommended: bool
+    incomplete: bool
+    gaps: list[BudgetGap] = Field(default_factory=list)
+    lines: list[BudgetPlanLine] = Field(default_factory=list)
+    notes: str = ""
+
+
+class BudgetSuggestionsResponse(BaseModel):
+    income_gbp: float
+    personal_income_known: bool
+    default_style: str
+    options: list[SuggestedBudgetOption]
+    gaps: list[BudgetGap] = Field(default_factory=list)
+
+
+class BudgetCompareRow(BaseModel):
+    id: int | None = None
+    key: str
+    name: str
+    style: str
+    monthly_total_gbp: float
+    surplus_gbp: float
+    debt_overpayment_gbp: float
+    buffer_gbp: float
+    discretionary_gbp: float
+    tax_reserve_gbp: float
+    shortfall_gbp: float
+    is_active: bool = False
+
+
+class BudgetCompareResponse(BaseModel):
+    rows: list[BudgetCompareRow]
+    income_gbp: float
+
+
+class BudgetVsActualLine(BaseModel):
+    scope: FinanceScope
+    category: str
+    budget_gbp: float
+    actual_gbp: float | None = None
+    variance_gbp: float | None = None
+    percent_used: float | None = None
+    missing_actual: bool = False
+    forecast_gbp: float | None = None
+    remaining_gbp: float | None = None
+    actual_source: str = ""
+    transaction_count: int = 0
+
+
+class BudgetVsActualResponse(BaseModel):
+    month: str
+    plan_id: int | None = None
+    plan_name: str | None = None
+    lines: list[BudgetVsActualLine] = Field(default_factory=list)
+    unbudgeted_actuals: list[BudgetVsActualLine] = Field(default_factory=list)
+    has_actuals: bool = False
+    available: bool = False
+    reason: str = ""
+    budgeted_total_gbp: float = 0.0
+    actual_total_gbp: float = 0.0
+    variance_total_gbp: float | None = None
+
+
+class ActiveBudgetSummary(BaseModel):
+    id: int
+    name: str
+    style: str
+    monthly_total_gbp: float
+    surplus_gbp: float
+    debt_overpayment_gbp: float
+    buffer_target_gbp: float
+    income_gbp: float = 0.0
+
+
+class DebtAnalysisItem(BaseModel):
+    id: int
+    name: str
+    scope: str
+    debt_type: str
+    balance_gbp: float
+    interest_rate_pct: float
+    minimum_payment_gbp: float
+    overpayment_gbp: float
+    monthly_interest_gbp: float | None = None
+    months_to_payoff: int | None = None
+    priority_score: float
+    priority_label: str
+    apr_known: bool = True
+
+
+class DebtScenarioResult(BaseModel):
+    extra_gbp: float
+    months_current: int | None = None
+    months_with_extra: int | None = None
+    months_saved: int | None = None
+    interest_current_gbp: float | None = None
+    interest_with_extra_gbp: float | None = None
+    interest_saved_gbp: float | None = None
+    payoff_date: str | None = None
+    incomplete: bool = False
+    reason: str = ""
+
+
+class DebtStrategyRecommendation(BaseModel):
+    strategy: str
+    headline: str
+    message: str
+    debts: list[dict[str, Any]] = Field(default_factory=list)
+    estimated_debt_free_date: str | None = None
+    analysis: list[DebtAnalysisItem] = Field(default_factory=list)
+    scenarios: list[DebtScenarioResult] = Field(default_factory=list)
+
+
+class CashflowForecastEntryUpdate(BaseModel):
+    forecast_date: str | None = None
+    label: str | None = Field(default=None, min_length=1, max_length=128)
+    amount_gbp: float | None = None
+    is_confirmed: bool | None = None
+    entry_type: CashflowEntryType | None = None
 
 
 class FinanceInsight(BaseModel):
@@ -543,66 +575,100 @@ class FinanceOverviewResponse(BaseModel):
     mortgage_balance_gbp: float
     pension_value_gbp: float
     directors_loan_gbp: float
-    liquid_assets_gbp: float = 0.0
-    long_term_assets_gbp: float = 0.0
-    property_value_gbp: float = 0.0
-    debtors_gbp: float = 0.0
-    total_assets_gbp: float = 0.0
-    short_term_debt_gbp: float = 0.0
-    long_term_debt_gbp: float = 0.0
-    total_debt_gbp: float = 0.0
-    home_equity_gbp: float = 0.0
-    personal_short_term_debt_gbp: float = 0.0
-    personal_long_term_debt_gbp: float = 0.0
-    business_short_term_debt_gbp: float = 0.0
-    business_long_term_debt_gbp: float = 0.0
     net_worth_estimate_gbp: float
     monthly_surplus_gbp: float
-    personal_monthly_income_gbp: float = 0.0
-    business_monthly_turnover_gbp: float = 0.0
-    business_monthly_expenses_gbp: float = 0.0
-    business_monthly_net_profit_gbp: float = 0.0
-    business_ytd_turnover_gbp: float = 0.0
-    business_ytd_net_profit_gbp: float = 0.0
-    business_income_from_quickfile: bool = False
-    quickfile_reports_at: str | None = None
-    historic_fields: list[str] = Field(default_factory=list)
-    insights: list[FinanceInsight] = Field(default_factory=list)
+    available_cash_gbp: float = 0.0
+    available_credit_gbp: float = 0.0
+    credit_limit_gbp: float = 0.0
+    personal_overdraft_gbp: float = 0.0
+    business_overdraft_gbp: float = 0.0
+    total_assets_gbp: float = 0.0
+    property_gbp: float = 0.0
+    month_budgeted_gbp: float = 0.0
+    month_actual_gbp: float = 0.0
     active_budget: ActiveBudgetSummary | None = None
+    insights: list[FinanceInsight] = Field(default_factory=list)
+    personal_net_worth_gbp: float = 0.0
+    company_position_gbp: float = 0.0
+    director_owes_company_gbp: float = 0.0
+    company_owes_director_gbp: float = 0.0
+    external_debt_gbp: float = 0.0
+    total_debt_gbp: float = 0.0
+    cash_available_gbp: float = 0.0
+    household_bills_gbp: float = 0.0
+    monthly_flow_source: str = "none"
+    monthly_interest_gbp: float = 0.0
+    monthly_interest_incomplete: bool = False
+    high_interest_debt_gbp: float = 0.0
+    upcoming_payments: list[dict[str, Any]] = Field(default_factory=list)
+    pension_configured: bool = False
+    mortgage_configured: bool = False
 
 
-class HistoricFinanceSeedResponse(BaseModel):
-    accounts_created: int
-    liabilities_created: int
-    snapshot_created: bool
-    skipped: bool
-    message: str
-
-
-class DebtStrategyRecommendation(BaseModel):
-    strategy: str
-    headline: str
-    message: str
-    debts: list[dict[str, Any]] = Field(default_factory=list)
-    estimated_debt_free_date: str | None = None
+class CashflowScopeColumn(BaseModel):
+    scope: FinanceScope
+    starting_balance_gbp: float
+    projected_balance_gbp: float
+    entries: list[CashflowForecastEntry] = Field(default_factory=list)
+    cash_pressure_warning: bool = False
 
 
 class CashflowForecastResponse(BaseModel):
-    scope: FinanceScope
     horizon_days: int
     starting_balance_gbp: float
     projected_balance_gbp: float
     entries: list[CashflowForecastEntry]
     cash_pressure_warning: bool
     warning_message: str = ""
-    is_stub: bool = False
-    stub_message: str = ""
+    columns: list[CashflowScopeColumn] = Field(default_factory=list)
 
 
-class CashflowForecastsResponse(BaseModel):
-    horizon_days: int
-    personal: CashflowForecastResponse
-    business: CashflowForecastResponse
+class FinanceReportsResponse(BaseModel):
+    month: str
+    personal_snapshot: PersonalFinanceSnapshot | None = None
+    business_snapshot: BusinessFinanceSnapshot | None = None
+    net_worth_gbp: float | None = None
+    total_debt_gbp: float | None = None
+    debt_reduction_gbp: float | None = None
+    energy_savings_gbp: float
+    energy_savings_vs_forecast: str = ""
+    debt_reduction_available: bool = False
+    previous_month_debt_gbp: float | None = None
+    cashflow_history: list[CashflowHistoryPoint] = Field(default_factory=list)
+    debt_history: list[DebtHistoryPoint] = Field(default_factory=list)
+    pl_history: list[PlHistoryPoint] = Field(default_factory=list)
+    quickfile_reports: QuickFileReportsResponse | None = None
+    active_budget: ActiveBudgetSummary | None = None
+    budget_vs_actual: BudgetVsActualResponse | None = None
+
+
+class FinancePositionSnapshot(BaseModel):
+    month: str
+    total_debt_gbp: float
+    personal_debt_gbp: float
+    business_debt_gbp: float
+    net_worth_gbp: float
+    cash_available_gbp: float
+    recorded_at: datetime
+
+
+class DebtHistoryPoint(BaseModel):
+    month: str
+    total_debt_gbp: float
+
+
+class CashflowHistoryPoint(BaseModel):
+    month: str
+    income_gbp: float
+    spending_gbp: float
+    surplus_gbp: float
+
+
+class PlHistoryPoint(BaseModel):
+    month: str
+    turnover_gbp: float
+    expenses_gbp: float
+    profit_gbp: float
 
 
 class QuickFileReportLine(BaseModel):
@@ -650,36 +716,6 @@ class QuickFileReportsResponse(BaseModel):
     balance_sheet: QuickFileBalanceSheetSummary | None = None
 
 
-class FinanceReportsResponse(BaseModel):
-    month: str
-    personal_snapshot: PersonalFinanceSnapshot | None = None
-    business_snapshot: BusinessFinanceSnapshot | None = None
-    quickfile_reports: QuickFileReportsResponse | None = None
-    net_worth_gbp: float
-    total_debt_gbp: float
-    debt_reduction_gbp: float
-    energy_savings_gbp: float
-    energy_savings_vs_forecast: str = ""
-    budget_vs_actual: BudgetVarianceResponse | None = None
-    active_budget: ActiveBudgetSummary | None = None
-
-
-class IntegrationConnectionState(str, Enum):
-    ACTIVE = "active"
-    KEY_SAVED = "key_saved"
-    NOT_CONNECTED = "not_connected"
-
-
-def integration_connection_state(
-    configured: bool, last_sync_at: str | None
-) -> IntegrationConnectionState:
-    if not configured:
-        return IntegrationConnectionState.NOT_CONNECTED
-    if last_sync_at:
-        return IntegrationConnectionState.ACTIVE
-    return IntegrationConnectionState.KEY_SAVED
-
-
 class QuickFileConfig(BaseModel):
     account_number: str = ""
     api_key: str = ""
@@ -692,7 +728,6 @@ class QuickFileConfigStatus(BaseModel):
     application_id: str = ""
     configured: bool = False
     last_sync_at: str | None = None
-    connection_state: IntegrationConnectionState = IntegrationConnectionState.NOT_CONNECTED
 
 
 class QuickFileSyncResult(BaseModel):
@@ -702,6 +737,33 @@ class QuickFileSyncResult(BaseModel):
     message: str
 
 
+class TrueLayerConfig(BaseModel):
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = ""
+    environment: str = "sandbox"
+
+
+class TrueLayerConfigStatus(BaseModel):
+    client_id: str = ""
+    client_secret_set: bool = False
+    redirect_uri: str = ""
+    environment: str = "sandbox"
+    configured: bool = False
+    connected: bool = False
+    last_sync_at: str | None = None
+
+
+class TrueLayerSyncResult(BaseModel):
+    accounts_synced: int
+    message: str
+    funding_circle_imported: bool = False
+    funding_circle_message: str = ""
+    imported: int = 0
+    duplicates: int = 0
+    rejected: int = 0
+
+
 class LunchFlowConfig(BaseModel):
     api_key: str = ""
 
@@ -709,216 +771,83 @@ class LunchFlowConfig(BaseModel):
 class LunchFlowConfigStatus(BaseModel):
     api_key_set: bool = False
     configured: bool = False
+    connected: bool = False
     last_sync_at: str | None = None
-    connection_state: IntegrationConnectionState = IntegrationConnectionState.NOT_CONNECTED
+    provider: str = "lunchflow"
 
 
 class LunchFlowSyncResult(BaseModel):
     accounts_synced: int
-    transactions_synced: int = 0
     message: str
-
-
-class FinanceIntegrationsReconnectResult(BaseModel):
-    quickfile: QuickFileConfigStatus
-    lunch_flow: LunchFlowConfigStatus
-    quickfile_seeded: bool = False
-    lunch_flow_seeded: bool = False
-    message: str
-
-
-class OpenBankingConfig(BaseModel):
-    provider: Literal["enable_banking", "gocardless"] = "enable_banking"
-    application_id: str = ""
-    private_key_pem: str = ""
-    environment: Literal["SANDBOX", "PRODUCTION"] = "SANDBOX"
-    secret_id: str = ""
-    secret_key: str = ""
-    redirect_url: str = ""
-    country: str = "gb"
-    scopes: str = "accounts,transactions"
-    webhook_url: str = ""
-    access_token: str = ""
-    refresh_token: str = ""
-    access_expires_at: datetime | None = None
-
-
-class OpenBankingRequisition(BaseModel):
-    id: str
-    institution_id: str
-    institution_name: str
-    status: str = "CR"
-    account_ids: list[str] = Field(default_factory=list)
-    reference: str = ""
-    state: str = ""
-    provider: Literal["enable_banking", "gocardless"] = "enable_banking"
-    created_at: datetime | None = None
-
-
-OpenBankingTestStatus = Literal[
-    "connected_successfully",
-    "missing_credentials",
-    "invalid_redirect_url",
-    "provider_rejected_credentials",
-    "further_bank_authorisation_required",
-]
-
-
-class OpenBankingConfigStatus(BaseModel):
-    provider: Literal["enable_banking", "gocardless"] = "enable_banking"
-    application_id: str = ""
-    private_key_set: bool = False
-    environment: Literal["SANDBOX", "PRODUCTION"] = "SANDBOX"
-    secret_id: str = ""
-    secret_key_set: bool = False
-    redirect_url: str = ""
-    country: str = "gb"
-    scopes: str = "accounts,transactions"
-    webhook_url: str = ""
-    configured: bool = False
-    provider_ready: bool | None = None
-    readiness_message: str | None = None
-    readiness_status: OpenBankingTestStatus | None = None
-    linked_banks: list[str] = Field(default_factory=list)
-    connections_count: int = 0
-    last_sync_at: str | None = None
-
-
-OpenBankingSetupProvider = Literal["enable_banking", "gocardless"]
-OpenBankingSetupEnvironment = Literal["sandbox", "live"]
-
-
-class OpenBankingSetupSaveRequest(BaseModel):
-    """Plain-English setup form payload from the UI."""
-
-    provider: OpenBankingSetupProvider = "enable_banking"
-    client_id: str = ""
-    client_secret: str = ""
-    redirect_url: str = ""
-    environment: OpenBankingSetupEnvironment = "sandbox"
-    country: str = Field(default="gb", min_length=2, max_length=2)
-    scopes: str = "accounts,transactions"
-    webhook_url: str = ""
-
-
-class OpenBankingTestResult(BaseModel):
-    status: OpenBankingTestStatus
-    message: str
-    details: dict[str, str] = Field(default_factory=dict)
-
-
-class OpenBankingInstitution(BaseModel):
-    id: str
-    name: str
-    logo: str = ""
-
-
-class OpenBankingConnectRequest(BaseModel):
-    institution_id: str = Field(min_length=2, max_length=128)
-    institution_name: str = Field(min_length=2, max_length=128)
-
-
-class OpenBankingConnectResponse(BaseModel):
-    link: str
-    requisition_id: str
-    institution_id: str
-    institution_name: str
-    reference: str
-    state: str = ""
-
-
-class OpenBankingFinalizeRequest(BaseModel):
-    reference: str | None = Field(default=None, min_length=8, max_length=128)
-    state: str | None = Field(default=None, min_length=8, max_length=128)
-    code: str | None = Field(default=None, min_length=4, max_length=512)
-
-
-class OpenBankingSyncResult(BaseModel):
-    accounts_synced: int
-    message: str
-
-
-class FinanceAiFinding(BaseModel):
-    title: str
-    detail: str
-    severity: str = "info"
-
-
-class FinanceAiAssessment(BaseModel):
-    summary: str
-    findings: list[FinanceAiFinding] = Field(default_factory=list)
-    recommendations: list[str] = Field(default_factory=list)
-    questions_you_might_ask: list[str] = Field(default_factory=list)
-
-
-class FinanceAiChatMessage(BaseModel):
-    role: str = Field(pattern=r"^(user|assistant)$")
-    content: str = Field(min_length=1, max_length=4000)
-
-
-class FinanceAiChatRequest(BaseModel):
-    messages: list[FinanceAiChatMessage] = Field(min_length=1, max_length=20)
-
-
-class FinanceAiChatResponse(BaseModel):
-    reply: str
-
-
-class FinanceAiStatusResponse(BaseModel):
-    enabled: bool
-    model: str = ""
-    reason: str = ""
-
-
-class BankConnectionMethod(str, Enum):
-    OPEN_BANKING = "open_banking"
-    QUICKFILE = "quickfile"
-    MANUAL = "manual"
-
-
-class BankConnectionStatus(str, Enum):
-    NOT_CONFIGURED = "not_configured"
-    NOT_CONNECTED = "not_connected"
-    AWAITING_LOGIN = "awaiting_login"
-    CONNECTED = "connected"
-    NEEDS_RECONNECTION = "needs_reconnection"
-    SYNC_FAILED = "sync_failed"
-    MANUAL = "manual"
+    imported: int = 0
+    duplicates: int = 0
+    rejected: int = 0
 
 
 class FinanceDailySyncResult(BaseModel):
-    open_banking: str = ""
-    lunch_flow: str = ""
-    quickfile: str = ""
     ok: bool = True
+    quickfile: str = ""
+    lunchflow: str = ""
+    backup: str = ""
 
 
-class BankConnectionItem(BaseModel):
-    id: str
-    label: str
-    method: BankConnectionMethod
-    status: BankConnectionStatus
-    status_message: str
+class TeslaConfig(BaseModel):
+    client_id: str = ""
+    client_secret: str = ""
+    refresh_token: str = ""
+    energy_site_id: str = ""
+
+
+class TeslaConfigStatus(BaseModel):
+    client_id: str = ""
+    client_secret_set: bool = False
+    refresh_token_set: bool = False
+    energy_site_id: str = ""
+    configured: bool = False
+    connected: bool = False
     last_sync_at: str | None = None
-    institution: str = ""
-    account_count: int = 0
-    balance_gbp: float = 0.0
 
 
-class BankConnectionsResponse(BaseModel):
-    connections: list[BankConnectionItem] = Field(default_factory=list)
+class FundingCircleConfig(BaseModel):
+    outstanding_gbp: float | None = Field(default=None, ge=0)
+    original_gbp: float | None = Field(default=None, ge=0)
+    apr_pct: float = Field(default=0, ge=0, le=100)
+    minimum_payment_gbp: float = Field(default=0, ge=0)
+    payment_day: int | None = Field(default=None, ge=1, le=31)
+    auto_sync: bool = True
+    last_source: str = ""
+    last_txn_on: str = ""
+    message: str = ""
 
 
-class FinanceTransaction(BaseModel):
-    id: int
-    account_id: int
-    external_id: str
-    transaction_date: str
-    description: str = ""
-    merchant: str = ""
-    amount_gbp: float
-    category: str = ""
-    reference: str = ""
-    is_pending: bool = False
-    synced_at: datetime
-    created_at: datetime
+class FundingCircleConfigStatus(BaseModel):
+    configured: bool = False
+    auto_sync: bool = True
+    outstanding_gbp: float | None = None
+    original_gbp: float | None = None
+    apr_pct: float = 0
+    minimum_payment_gbp: float = 0
+    payment_day: int | None = None
+    last_sync_at: str | None = None
+    last_source: str = ""
+    last_txn_on: str = ""
+    message: str = ""
+
+
+class FundingCircleSyncResult(BaseModel):
+    imported: bool
+    balance_gbp: float
+    repayments_applied_gbp: float
+    source: str
+    message: str
+
+
+class TeslaChargingStatus(BaseModel):
+    connected: bool
+    vehicle_name: str = ""
+    charging_state: str = ""
+    battery_level_pct: float | None = None
+    charge_limit_pct: float | None = None
+    charger_power_kw: float | None = None
+    energy_site_id: str = ""
+    message: str = ""

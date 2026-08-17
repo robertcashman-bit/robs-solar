@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,46 +15,10 @@ from app.schemas.finance import (
     FinanceAccountType,
     FinanceAccountUpdate,
     FinanceScope,
-    account_is_historic,
 )
-
-_STALE_AFTER = timedelta(days=3)
-_LIVE_SOURCES = {
-    FinanceAccountSource.LUNCH_FLOW,
-    FinanceAccountSource.OPEN_BANKING,
-    FinanceAccountSource.QUICKFILE,
-}
-_SOURCE_ALIASES = {
-    "lunchflow": FinanceAccountSource.LUNCH_FLOW.value,
-}
-
-
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _account_confidence(
-    source: FinanceAccountSource, updated_at: datetime, *, is_historic: bool
-) -> str:
-    if is_historic:
-        return "historic"
-    if source in _LIVE_SOURCES:
-        age = datetime.now(timezone.utc) - _as_utc(updated_at)
-        if age > _STALE_AFTER:
-            return "stale"
-        return "live"
-    return "manual"
-
-
-def _normalize_source(value: str) -> FinanceAccountSource:
-    return FinanceAccountSource(_SOURCE_ALIASES.get(value, value))
 
 
 def _to_schema(row: FinanceAccountRow) -> FinanceAccount:
-    source = _normalize_source(row.source)
-    historic = account_is_historic(source)
     return FinanceAccount(
         id=row.id,
         scope=FinanceScope(row.scope),
@@ -66,12 +30,10 @@ def _to_schema(row: FinanceAccountRow) -> FinanceAccount:
         interest_rate_pct=row.interest_rate_pct,
         minimum_payment_gbp=row.minimum_payment_gbp,
         notes=row.notes,
-        source=source,
+        source=FinanceAccountSource(row.source),
         external_id=row.external_id,
+        dla_direction=row.dla_direction,
         is_active=row.is_active,
-        is_historic=historic,
-        data_confidence=_account_confidence(source, row.updated_at, is_historic=historic),
-        last_synced_at=row.updated_at if source in _LIVE_SOURCES else None,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -84,7 +46,14 @@ class FinanceAccountsService:
         *,
         scope: FinanceScope | None = None,
         active_only: bool = True,
+        refresh_live: bool = True,
     ) -> list[FinanceAccount]:
+        if refresh_live:
+            from app.services.finance.finance_live_refresh_service import (
+                finance_live_refresh_service,
+            )
+
+            await finance_live_refresh_service.ensure_fresh(db)
         stmt = select(FinanceAccountRow).order_by(FinanceAccountRow.name)
         if scope is not None:
             stmt = stmt.where(FinanceAccountRow.scope == scope.value)
@@ -111,6 +80,7 @@ class FinanceAccountsService:
             notes=body.notes,
             source=body.source.value,
             external_id=body.external_id,
+            dla_direction=body.dla_direction.value if body.dla_direction else None,
             is_active=True,
             created_at=now,
             updated_at=now,
@@ -126,24 +96,13 @@ class FinanceAccountsService:
         account_id: int,
         body: FinanceAccountUpdate,
     ) -> FinanceAccount | None:
-        from app.services.finance.lunch_flow_sync_service import DISPLAY_NAME_LOCKED
-
         row = await db.get(FinanceAccountRow, account_id)
         if row is None:
             return None
-        payload = body.model_dump(exclude_unset=True)
-        for field, value in payload.items():
-            if field == "account_type" and value is not None:
-                row.account_type = (
-                    value.value if isinstance(value, FinanceAccountType) else str(value)
-                )
-            else:
-                setattr(row, field, value)
-        # Lock display name / type so Lunch Flow sync does not overwrite Configure edits.
-        if "name" in payload or "account_type" in payload:
-            notes = row.notes or ""
-            if DISPLAY_NAME_LOCKED not in notes:
-                row.notes = f"{notes} [{DISPLAY_NAME_LOCKED}]".strip()
+        for field, value in body.model_dump(exclude_unset=True).items():
+            if hasattr(value, "value"):
+                value = value.value
+            setattr(row, field, value)
         row.updated_at = datetime.now(timezone.utc)
         await db.commit()
         await db.refresh(row)
@@ -172,7 +131,9 @@ class FinanceAccountsService:
         account_type: FinanceAccountType = FinanceAccountType.CURRENT,
     ) -> float:
         return sum(
-            a.balance_gbp for a in accounts if a.scope == scope and a.account_type == account_type
+            a.balance_gbp
+            for a in accounts
+            if a.scope == scope and a.account_type == account_type
         )
 
 

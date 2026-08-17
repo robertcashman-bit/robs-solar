@@ -1,19 +1,20 @@
-"""Accept /backend/* paths from the Vercel same-origin rewrite."""
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
-from __future__ import annotations
-
-PREFIX = "/backend"
+_PREFIX = "/backend"
 
 
-class StripBackendPrefixMiddleware:
-    def __init__(self, app):
-        self.app = app
+class StripBackendPrefixMiddleware(BaseHTTPMiddleware):
+    """Accept /backend/* so hosted proxies can reach FastAPI without a path transform."""
 
-    async def __call__(self, scope, receive, send):
-        if scope["type"] in {"http", "websocket"}:
-            path = scope.get("path", "")
-            if path == PREFIX:
-                scope = {**scope, "path": "/"}
-            elif path.startswith(PREFIX + "/"):
-                scope = {**scope, "path": path[len(PREFIX) :]}
-        await self.app(scope, receive, send)
+    async def dispatch(self, request: Request, call_next) -> Response:
+        path = request.scope.get("path") or ""
+        if path == _PREFIX or path.startswith(f"{_PREFIX}/"):
+            request.scope["path"] = path[len(_PREFIX) :] or "/"
+            raw = request.scope.get("raw_path")
+            if isinstance(raw, (bytes, bytearray)):
+                prefix = _PREFIX.encode()
+                if raw == prefix or raw.startswith(prefix + b"/"):
+                    request.scope["raw_path"] = raw[len(prefix) :] or b"/"
+        return await call_next(request)

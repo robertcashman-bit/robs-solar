@@ -1,7 +1,8 @@
+"use client";
+
 import Link from "next/link";
 
 import type { FinanceInsight } from "@/lib/finance-schemas";
-import { insightCategoryHref, insightCategoryLabel } from "@/lib/finance-insight-links";
 
 const severityStyles: Record<string, string> = {
   info: "border-sky-400/35 bg-sky-500/10 text-sky-950 dark:text-sky-100",
@@ -11,29 +12,31 @@ const severityStyles: Record<string, string> = {
 
 type InsightCardProps = {
   insight: FinanceInsight;
-  prominent?: boolean;
+  onDismiss?: (id: number) => void;
 };
 
-export function InsightCard({ insight, prominent = false }: InsightCardProps) {
-  const href = insightCategoryHref(insight.category);
-  const label = insightCategoryLabel(insight.category);
+export function InsightCard({ insight, onDismiss }: InsightCardProps) {
+  const metadata = insight.metadata ?? {};
+  const href = typeof metadata.action_href === "string" ? metadata.action_href : null;
+  const label = typeof metadata.action_label === "string" ? metadata.action_label : "Review";
 
   return (
-    <div
-      className={`rounded-xl border text-sm ${severityStyles[insight.severity] ?? severityStyles.info} ${
-        prominent ? "px-5 py-4" : "px-4 py-3"
-      }`}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className={`font-semibold ${prominent ? "text-base" : ""}`}>{insight.title}</p>
-        <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-medium dark:bg-white/10">
-          {label}
-        </span>
+    <div className={`rounded-xl border px-4 py-3 text-sm ${severityStyles[insight.severity] ?? severityStyles.info}`}>
+      <p className="font-semibold">{insight.title}</p>
+      <p className="mt-1 opacity-90">{insight.message}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <p className="text-xs uppercase tracking-wide opacity-70">{insight.severity} · {insight.category}</p>
+        {href ? (
+          <Link href={href} className="text-xs font-medium underline">
+            {label}
+          </Link>
+        ) : null}
+        {onDismiss ? (
+          <button type="button" className="text-xs underline opacity-80" onClick={() => onDismiss(insight.id)}>
+            Dismiss
+          </button>
+        ) : null}
       </div>
-      <p className={`mt-2 opacity-90 ${prominent ? "text-[15px]" : ""}`}>{insight.message}</p>
-      <Link href={href} className="mt-3 inline-block text-sm font-medium underline underline-offset-2">
-        View {label.toLowerCase()} →
-      </Link>
     </div>
   );
 }

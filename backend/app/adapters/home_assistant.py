@@ -33,14 +33,18 @@ class HomeAssistantAdapter(InverterAdapter):
 
     async def get_capabilities(self) -> AdapterCapabilities:
         read_ready = bool(settings.ha_base_url and settings.ha_entity_pv_power)
-        write_ready = bool(settings.ha_service_export_limit)
         supported_writes: list[str] = []
         notes = [
             "Configure HA entity IDs via environment variables.",
-            "Write support requires verified HA service mappings.",
+            "Write support uses verified HA service mappings from env.",
         ]
-        if write_ready:
+        if settings.ha_service_export_limit:
             supported_writes.append("export_limit")
+        if settings.ha_service_schedule:
+            supported_writes.append("schedule")
+        if settings.ha_service_operating_mode:
+            supported_writes.append("operating_mode")
+        write_ready = bool(supported_writes)
         return AdapterCapabilities(
             mode="home_assistant",
             supports_read=read_ready,
@@ -48,6 +52,19 @@ class HomeAssistantAdapter(InverterAdapter):
             supported_writes=supported_writes,
             notes=notes,
         )
+
+    async def _call_service(self, service_id: str, service_data: dict[str, Any]) -> dict[str, Any]:
+        if not settings.ha_base_url:
+            raise AdapterError("HA_BASE_URL not configured")
+        if "." not in service_id:
+            raise AdapterError(f"Invalid HA service id: {service_id}")
+        domain, service = service_id.split(".", 1)
+        response = await self._client.post(
+            f"/api/services/{domain}/{service}",
+            json=service_data,
+        )
+        response.raise_for_status()
+        return {"service": service_id, "service_data": service_data, "status": "ok"}
 
     async def _fetch_state(self, entity_id: str) -> float:
         if not settings.ha_base_url or not entity_id:
@@ -111,14 +128,30 @@ class HomeAssistantAdapter(InverterAdapter):
             raise UnsupportedWriteError(
                 "HA export limit service not configured. Set HA_SERVICE_EXPORT_LIMIT."
             )
-        # TODO: verified HA service call once entity/service mapping confirmed by user.
-        raise UnsupportedWriteError("Home Assistant export limit write not yet verified.")
+        service_data: dict[str, Any] = {"limit_w": request.limit_w}
+        if settings.ha_entity_export_limit:
+            service_data["entity_id"] = settings.ha_entity_export_limit
+        return await self._call_service(settings.ha_service_export_limit, service_data)
 
     async def set_schedule(self, request: ScheduleRequest) -> dict[str, Any]:
-        raise UnsupportedWriteError("Home Assistant schedule write not yet verified.")
+        if not settings.ha_service_schedule:
+            raise UnsupportedWriteError(
+                "HA schedule service not configured. Set HA_SERVICE_SCHEDULE."
+            )
+        return await self._call_service(
+            settings.ha_service_schedule,
+            {"windows": [window.model_dump() for window in request.windows]},
+        )
 
     async def set_operating_mode(self, request: OperatingModeRequest) -> dict[str, Any]:
-        raise UnsupportedWriteError("Home Assistant operating mode write not yet verified.")
+        if not settings.ha_service_operating_mode:
+            raise UnsupportedWriteError(
+                "HA operating mode service not configured. Set HA_SERVICE_OPERATING_MODE."
+            )
+        service_data: dict[str, Any] = {"mode": request.mode.value}
+        if settings.ha_entity_inverter_mode:
+            service_data["entity_id"] = settings.ha_entity_inverter_mode
+        return await self._call_service(settings.ha_service_operating_mode, service_data)
 
     async def get_last_known_good(self) -> Optional[dict[str, Any]]:
         return None

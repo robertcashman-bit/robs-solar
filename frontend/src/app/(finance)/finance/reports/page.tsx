@@ -1,95 +1,148 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AccountStatements } from "@/components/finance/AccountStatements";
 import { ActiveBudgetCard } from "@/components/finance/ActiveBudgetCard";
 import { BudgetVsActualPanel } from "@/components/finance/BudgetVsActualPanel";
+import { FinanceHistoryCharts } from "@/components/finance/FinanceHistoryCharts";
 import { MetricTile } from "@/components/finance/MetricTile";
-import { PlHistoryChart, type PlHistoryPoint } from "@/components/finance/PlHistoryChart";
+import { PlHistoryChart } from "@/components/finance/PlHistoryChart";
 import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
-import { ErrorBanner } from "@/components/shared/Banners";
-import { EmptyState } from "@/components/shared/EmptyState";
+import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { PageLoading } from "@/components/shared/PageLoading";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
+import { downloadTextFile, toCsv } from "@/lib/finance-export";
 import {
-  financeOverviewSchema,
-  financeReportsSchema,
   financeAccountSchema,
   financeLiabilitySchema,
+  financeReportsSchema,
   type FinanceAccount,
   type FinanceLiability,
-  type FinanceOverview,
   type FinanceReports,
 } from "@/lib/finance-schemas";
-import { formatMonthLabel, currentMonthKey } from "@/lib/money";
+import { FINANCE_CHANGED_EVENT } from "@/lib/finance-events";
+import { currentMonthKey, formatGbp, formatMonthLabel } from "@/lib/money";
 import { z } from "zod";
 
 export default function ReportsPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const [reports, setReports] = useState<FinanceReports | null>(null);
-  const [overview, setOverview] = useState<FinanceOverview | null>(null);
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
-  const [liabilities, setLiabilities] = useState<FinanceLiability[]>([]);
-  const [plHistory, setPlHistory] = useState<PlHistoryPoint[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [debts, setDebts] = useState<FinanceLiability[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-  const month = currentMonthKey();
+  const [status, setStatus] = useState<string | null>(null);
+  const [month, setMonth] = useState(currentMonthKey());
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [authLoading, user, router]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [reportsData, overviewData, accountsData, liabilitiesData, plData] = await Promise.all([
-        apiClient.get<unknown>(`/finance/reports?month=${month}`),
-        apiClient.get<unknown>("/finance/overview"),
-        apiClient.get<unknown>("/finance/accounts"),
-        apiClient.get<unknown>("/finance/liabilities"),
-        apiClient.get<unknown>("/finance/reports/pl-history?months=12").catch(() => ({ points: [] })),
-      ]);
-      setReports(financeReportsSchema.parse(reportsData));
-      setOverview(financeOverviewSchema.parse(overviewData));
-      setAccounts(z.array(financeAccountSchema).parse(accountsData));
-      setLiabilities(z.array(financeLiabilitySchema).parse(liabilitiesData));
-      setPlHistory(
-        z
-          .object({
-            points: z.array(
-              z.object({
-                month: z.string(),
-                turnover_gbp: z.number(),
-                expenses_gbp: z.number(),
-                profit_gbp: z.number(),
-              }),
-            ),
-          })
-          .parse(plData).points,
-      );
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load reports");
-      setReports(null);
-      setOverview(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [month]);
-
   useEffect(() => {
     if (!user) return;
-    const timer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timer);
-  }, [user, load, reloadKey]);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const [reportData, accountData, debtData] = await Promise.all([
+            apiClient.get<unknown>(`/finance/reports?month=${month}`),
+            apiClient.get<unknown>("/finance/accounts"),
+            apiClient.get<unknown>("/finance/liabilities"),
+          ]);
+          setReports(financeReportsSchema.parse(reportData));
+          setAccounts(z.array(financeAccountSchema).parse(accountData));
+          setDebts(z.array(financeLiabilitySchema).parse(debtData));
+          setError(null);
+        } catch (err) {
+          setReports(null);
+          setError(
+            err instanceof Error && err.message
+              ? err.message
+              : "Reports unavailable. Could not load the monthly report. Check your connection and try again.",
+          );
+        }
+      })();
+    }, 0);
+    const onChanged = () => setReloadNonce((value) => value + 1);
+    window.addEventListener(FINANCE_CHANGED_EVENT, onChanged);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener(FINANCE_CHANGED_EVENT, onChanged);
+    };
+  }, [user, month, reloadNonce]);
+
+  function exportSnapshot(format: "csv" | "json") {
+    if (!reports) return;
+    const snapshot = {
+      month: reports.month,
+      net_worth_gbp: reports.net_worth_gbp,
+      total_debt_gbp: reports.total_debt_gbp,
+      debt_reduction_gbp: reports.debt_reduction_gbp,
+      accounts: accounts.map((item) => ({
+        name: item.name,
+        scope: item.scope,
+        type: item.account_type,
+        balance_gbp: item.balance_gbp,
+      })),
+      debts: debts.map((item) => ({
+        name: item.name,
+        scope: item.scope,
+        type: item.debt_type,
+        balance_gbp: item.balance_gbp,
+        apr: item.interest_rate_pct,
+      })),
+      active_budget: reports.active_budget,
+      budget_vs_actual: reports.budget_vs_actual,
+    };
+    if (format === "json") {
+      downloadTextFile(`finance-snapshot-${month}.json`, JSON.stringify(snapshot, null, 2), "application/json");
+    } else {
+      downloadTextFile(
+        `finance-snapshot-${month}.csv`,
+        toCsv([
+          {
+            month: snapshot.month,
+            net_worth_gbp: snapshot.net_worth_gbp,
+            total_debt_gbp: snapshot.total_debt_gbp,
+            debt_reduction_gbp: snapshot.debt_reduction_gbp,
+          },
+          ...snapshot.accounts.map((item) => ({
+            month: snapshot.month,
+            kind: "account",
+            name: item.name,
+            scope: item.scope,
+            type: item.type,
+            balance_gbp: item.balance_gbp,
+          })),
+          ...snapshot.debts.map((item) => ({
+            month: snapshot.month,
+            kind: "debt",
+            name: item.name,
+            scope: item.scope,
+            type: item.type,
+            balance_gbp: item.balance_gbp,
+            apr: item.apr,
+          })),
+          ...(snapshot.budget_vs_actual?.lines ?? []).map((item) => ({
+            month: snapshot.month,
+            kind: "budget_vs_actual",
+            name: item.category,
+            scope: item.scope,
+            budget_gbp: item.budget_gbp,
+            actual_gbp: item.actual_gbp,
+            variance_gbp: item.variance_gbp,
+          })),
+        ]),
+        "text/csv",
+      );
+    }
+    setStatus(`Exported ${format.toUpperCase()} snapshot`);
+  }
 
   if (authLoading || !user) return <AuthLoadingShell />;
 
@@ -100,67 +153,132 @@ export default function ReportsPage() {
         title="Reports"
         description={`Monthly finance report for ${formatMonthLabel(month)}.`}
         actions={
-          <button
-            type="button"
-            className="solar-btn-secondary text-sm"
-            onClick={() => setReloadKey((k) => k + 1)}
-          >
-            Refresh
-          </button>
+          <input
+            type="month"
+            aria-label="Report month"
+            className="solar-input text-sm"
+            value={month}
+            onChange={(event) => setMonth(event.target.value)}
+          />
         }
       />
       {error ? (
-        <div className="mt-4">
+        <div className="mt-4 space-y-3">
           <ErrorBanner message={error} />
+          <button
+            type="button"
+            className="solar-btn-ghost text-sm"
+            onClick={() => setReloadNonce((current) => current + 1)}
+          >
+            Try again
+          </button>
         </div>
       ) : null}
-      {loading ? (
-        <div className="mt-6">
-          <PageLoading label="Loading reports" rows={3} />
-        </div>
-      ) : reports && overview ? (
-        <div className="mt-6 space-y-10">
-          <ActiveBudgetCard budget={reports.active_budget ?? overview.active_budget} />
+      {status ? <div className="mt-4"><SuccessBanner message={status} /></div> : null}
+      {reports ? (
+        <div className="mt-6 space-y-8">
+          <ActiveBudgetCard budget={reports.active_budget} />
           <BudgetVsActualPanel
             variance={reports.budget_vs_actual}
-            activeBudget={reports.active_budget ?? overview.active_budget}
+            activeBudget={reports.active_budget}
           />
-          <section className="space-y-4">
-            <h2 className="solar-section-title">Business reports</h2>
-            <QuickFileStatements reports={reports.quickfile_reports} variant="document" />
-          </section>
-
-          <section className="space-y-4">
-            <h2 className="solar-section-title">Monthly P&amp;L</h2>
-            <div className="rounded-2xl border border-[var(--border)] p-4">
-              <PlHistoryChart points={plHistory} />
-            </div>
-          </section>
-
-          <section className="space-y-4">
-            <h2 className="solar-section-title">Accounts &amp; net worth</h2>
-            <AccountStatements
-              overview={overview}
-              accounts={accounts}
-              liabilities={liabilities}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <MetricTile
+              label="Net worth"
+              value={reports.net_worth_gbp}
+              hint={reports.net_worth_gbp == null ? "No recorded position for this month" : undefined}
             />
-          </section>
-
-          <section className="space-y-4">
-            <h2 className="solar-section-title">Summary</h2>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <MetricTile label="Net worth" value={reports.net_worth_gbp} amountRole="signed" />
-              <MetricTile label="Total debt" value={Math.abs(reports.total_debt_gbp)} amountRole="debt" />
+            <MetricTile
+              label="Total debt"
+              value={reports.total_debt_gbp}
+              warning={reports.total_debt_gbp != null}
+              hint={reports.total_debt_gbp == null ? "No recorded position for this month" : undefined}
+            />
+            <MetricTile
+              label="Debt reduction"
+              value={reports.debt_reduction_gbp}
+              hint={
+                reports.debt_reduction_available
+                  ? "Against the last recorded month"
+                  : "Against original balances where recorded"
+              }
+            />
+          </div>
+          {reports.personal_snapshot ? (
+            <section>
+              <h2 className="solar-section-title">Personal snapshot</h2>
+              <p className="mt-2 text-sm text-[var(--muted)]">
+                Income {formatGbp(reports.personal_snapshot.monthly_income_gbp)} · Spending{" "}
+                {formatGbp(reports.personal_snapshot.monthly_spending_gbp)} · Surplus{" "}
+                {formatGbp(reports.personal_snapshot.surplus_deficit_gbp)}
+              </p>
+            </section>
+          ) : null}
+          <FinanceHistoryCharts reports={reports} />
+          <section>
+            <h2 className="solar-section-title">Live QuickFile statements</h2>
+            <div className="mt-4">
+              <QuickFileStatements
+                reports={reports.quickfile_reports}
+                fallbackPl={
+                  reports.business_snapshot
+                    ? {
+                        turnover_gbp: reports.business_snapshot.turnover_gbp,
+                        expenses_gbp: reports.business_snapshot.expenses_gbp,
+                        net_profit_gbp: reports.business_snapshot.profit_estimate_gbp,
+                      }
+                    : undefined
+                }
+              />
             </div>
           </section>
+          <section>
+            <h2 className="solar-section-title">Company P&amp;L history</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Turnover, expenses, and profit from saved business snapshots.
+            </p>
+            <div className="mt-4">
+              <PlHistoryChart points={reports.pl_history ?? []} />
+            </div>
+          </section>
+          <section>
+            <h2 className="solar-section-title">Account statements</h2>
+            <div className="mt-4">
+              <AccountStatements
+                overview={{
+                  property_gbp: accounts
+                    .filter((item) => item.is_active && item.account_type === "property")
+                    .reduce((sum, item) => sum + item.balance_gbp, 0),
+                  mortgage_balance_gbp: debts
+                    .filter((item) => item.is_active && item.debt_type === "mortgage")
+                    .reduce((sum, item) => sum + item.balance_gbp, 0),
+                }}
+                accounts={accounts}
+                liabilities={debts}
+              />
+            </div>
+          </section>
+          {reports.business_snapshot ? (
+            <section>
+              <h2 className="solar-section-title">Business snapshot</h2>
+              <p className="mt-2 text-sm text-[var(--muted)]">
+                Turnover {formatGbp(reports.business_snapshot.turnover_gbp)} · Expenses{" "}
+                {formatGbp(reports.business_snapshot.expenses_gbp)} · Profit{" "}
+                {formatGbp(reports.business_snapshot.profit_estimate_gbp)}
+              </p>
+            </section>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="solar-btn-primary" onClick={() => exportSnapshot("csv")}>
+              Export CSV
+            </button>
+            <button type="button" className="solar-btn-ghost" onClick={() => exportSnapshot("json")}>
+              Export JSON
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="mt-6">
-          <EmptyState
-            title="Reports unavailable"
-            description="Could not load the monthly report. Use Refresh, or check that the backend is running."
-          />
-        </div>
+        error ? null : <p className="mt-8 text-sm text-[var(--muted)]">Loading reports…</p>
       )}
     </AppShell>
   );

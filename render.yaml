@@ -1,9 +1,6 @@
-# Render blueprint — connect this repo at https://dashboard.render.com/blueprint
-# and Render will create the always-on API service with persistent SQLite storage.
-#
-# Solar/energy integration is DISPLAY-ONLY in production: this service reads live
-# Sunsynk metrics but never writes inverter settings (export limit, TOU, battery,
-# operating mode, auto-align, or peak-import guard remediations).
+# Render blueprint for the All monorepo.
+# Dashboard: https://dashboard.render.com/blueprint/new?repo=https://github.com/robertdavidcashman-droid/All
+# Blueprint path: robs-solar/render.yaml
 services:
   - type: web
     name: robs-solar-api
@@ -11,7 +8,7 @@ services:
     plan: starter
     region: frankfurt
     branch: main
-    rootDir: backend
+    rootDir: robs-solar/backend
     dockerfilePath: ./deploy/Dockerfile
     healthCheckPath: /health
     autoDeploy: true
@@ -41,13 +38,15 @@ services:
       - key: TARIFF_TIMEZONE
         value: Europe/London
       - key: PEAK_IMPORT_GUARD_ENABLED
-        value: "false"
+        value: "true"
       - key: SUNSYNK_ENABLE_UNVERIFIED_WRITES
         value: "false"
       - key: AI_ENABLED
         value: "true"
       # Set these in the Render dashboard (or via scripts/push-render-secrets.sh):
       - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
@@ -81,15 +80,13 @@ services:
         sync: false
       - key: QUICKFILE_APPLICATION_ID
         sync: false
-      - key: OPEN_BANKING_PROVIDER
+      - key: TRUELAYER_CLIENT_ID
         sync: false
-      - key: ENABLE_BANKING_APPLICATION_ID
+      - key: TRUELAYER_CLIENT_SECRET
         sync: false
-      - key: ENABLE_BANKING_PRIVATE_KEY_PEM
+      - key: TRUELAYER_REDIRECT_URI
         sync: false
-      - key: ENABLE_BANKING_ENVIRONMENT
+      - key: TRUELAYER_ENVIRONMENT
         sync: false
-      - key: OPEN_BANKING_REDIRECT_URL
-        sync: false
-      - key: LUNCH_FLOW_API_KEY
+      - key: LUNCHFLOW_API_KEY
         sync: false

@@ -1,0 +1,87 @@
+{
+  "folders": [
+    { "path": ".", "name": "Rob's Solar" },
+    { "path": "frontend", "name": "Frontend" },
+    { "path": "backend", "name": "Backend" }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/.next": true,
+      "**/__pycache__": true,
+      "**/.venv": true,
+      "backend/data": true,
+      "data": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/.next": true,
+      "**/package-lock.json": true
+    },
+    "python.defaultInterpreterPath": "${workspaceFolder:Backend}/.venv/bin/python",
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "eslint.workingDirectories": ["frontend"],
+    "typescript.tsdk": "frontend/node_modules/typescript/lib",
+    "editor.formatOnSave": true,
+    "[python]": {
+      "editor.defaultFormatter": "charliermarsh.ruff"
+    }
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Rob's Finance: restore Mac app shortcut",
+        "type": "shell",
+        "command": "bash scripts/build-mac-app.sh",
+        "options": { "cwd": "${workspaceFolder:Rob's Solar}" },
+        "runOptions": { "runOn": "folderOpen" },
+        "presentation": { "reveal": "silent", "panel": "dedicated", "close": true },
+        "problemMatcher": []
+      },
+      {
+        "label": "Rob's Solar: setup",
+        "type": "shell",
+        "command": "npm run setup",
+        "options": { "cwd": "${workspaceFolder:Rob's Solar}" }
+      },
+      {
+        "label": "Rob's Solar: dev",
+        "type": "shell",
+        "command": "npm run dev",
+        "options": { "cwd": "${workspaceFolder:Rob's Solar}" },
+        "isBackground": true,
+        "problemMatcher": []
+      },
+      {
+        "label": "Rob's Solar: verify",
+        "type": "shell",
+        "command": "npm run verify",
+        "options": { "cwd": "${workspaceFolder:Rob's Solar}" },
+        "group": { "kind": "test", "isDefault": true }
+      },
+      {
+        "label": "Backend: pytest",
+        "type": "shell",
+        "command": ". .venv/bin/activate && pytest -q",
+        "options": { "cwd": "${workspaceFolder:Backend}" },
+        "group": "test"
+      },
+      {
+        "label": "Frontend: unit tests",
+        "type": "shell",
+        "command": "npm run test",
+        "options": { "cwd": "${workspaceFolder:Frontend}" },
+        "group": "test"
+      }
+    ]
+  },
+  "extensions": {
+    "recommendations": [
+      "dbaeumer.vscode-eslint",
+      "ms-python.python",
+      "ms-python.vscode-pylance",
+      "charliermarsh.ruff"
+    ]
+  }
+}

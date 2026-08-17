@@ -1,4 +1,4 @@
-"""Import QuickFile bank accounts into finance tables."""
+"""Import QuickFile bank accounts and live P&L / balance sheet into finance tables."""
 
 from __future__ import annotations
 

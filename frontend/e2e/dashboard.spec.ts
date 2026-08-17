@@ -1,25 +1,25 @@
 import { expect, test } from "@playwright/test";
 
-import { expectEnergyDashboard, loginAsAdmin, loginAsViewer } from "./helpers";
+import { loginAsAdmin, loginAsViewer } from "./helpers";
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
-test("app boot and login shows energy dashboard", async ({ page }) => {
+test("app boot and login shows finance overview, not energy", async ({ page }) => {
   await loginAsAdmin(page);
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   await page.goto("/energy");
-  await expectEnergyDashboard(page);
-  const simulated = page.getByRole("heading", { name: "Live inverter data required" });
-  if (await simulated.isVisible()) {
-    await expect(page.getByLabel("Live power now")).not.toBeVisible();
-  }
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Energy" }),
+  ).toHaveCount(0);
 });
 
-test("viewer can view display-only inverter settings", async ({ page }) => {
+test("viewer cannot open energy controls", async ({ page }) => {
   await loginAsViewer(page);
   await page.goto("/energy/controls");
-  await expect(page.getByRole("heading", { name: "Inverter settings" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Controls" })).not.toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByText(/Display only/i)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Confirm write" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 });

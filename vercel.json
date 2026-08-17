@@ -26,6 +26,16 @@
       ]
     }
   },
+  "crons": [
+    {
+      "path": "/backend/finance/cron/daily-sync",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/backend/finance/cron/daily-backup",
+      "schedule": "30 6 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/backend/:path*",
@@ -34,12 +44,6 @@
     {
       "source": "/(.*)",
       "destination": { "service": "web" }
-    }
-  ],
-  "crons": [
-    {
-      "path": "/backend/finance/cron/daily-sync",
-      "schedule": "0 6 * * *"
     }
   ]
 }

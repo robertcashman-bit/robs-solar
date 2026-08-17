@@ -1,15 +1,47 @@
 #!/usr/bin/env bash
-# Launcher for Rob's Solar.app — must work when started from the Dock (minimal PATH).
+# Launcher for Rob's Finance — Dock .app or local click.
+# Must work with a minimal Dock PATH. Does not start at login.
 set -uo pipefail
 
-ROOT="${ROBS_SOLAR_ROOT:-/Users/robertcashman/robs-solar}"
-URL="http://127.0.0.1:3000"
-LOG="$ROOT/.launch.log"
+_THIS="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "$_THIS/mac-root.sh" ]]; then
+  # shellcheck source=mac-root.sh
+  source "$_THIS/mac-root.sh"
+fi
+
+if [[ -d "$_THIS/../backend" && -d "$_THIS/../frontend" ]]; then
+  ROOT="$(cd "$_THIS/.." && pwd)"
+elif command -v resolve_robs_solar_root >/dev/null 2>&1; then
+  ROOT="$(resolve_robs_solar_root || true)"
+fi
+ROOT="${ROOT:-${ROBS_SOLAR_ROOT:-$HOME/All/robs-solar}}"
+if [[ ! -d "$ROOT/backend" ]]; then
+  ROOT="${ROBS_SOLAR_ROOT:-$HOME/robs-solar}"
+fi
+
+HOST="127.0.0.1"
+FRONTEND_PORT="${ROBS_FINANCE_FRONTEND_PORT:-3000}"
+BACKEND_PORT="${ROBS_FINANCE_BACKEND_PORT:-8000}"
+URL="http://${HOST}:${FRONTEND_PORT}/"
+LOGIN_URL="http://${HOST}:${FRONTEND_PORT}/login"
+HEALTH_URL="http://${HOST}:${BACKEND_PORT}/health"
+
+if command -v robs_finance_log_dir >/dev/null 2>&1; then
+  LOG_DIR="$(robs_finance_log_dir)"
+else
+  LOG_DIR="${HOME}/Library/Logs/RobsFinance"
+fi
+mkdir -p "$LOG_DIR" 2>/dev/null || LOG_DIR="$ROOT"
+LOG="$LOG_DIR/launcher.log"
+SERVER_LOG="$LOG_DIR/server.log"
+FRONTEND_PID_FILE="$LOG_DIR/frontend.pid"
+BACKEND_PID_FILE="$LOG_DIR/backend.pid"
 
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+export ROBS_SOLAR_ROOT="$ROOT"
 
-CURL="/usr/bin/curl"
-OPEN="/usr/bin/open"
+CURL="$(command -v curl 2>/dev/null || echo /usr/bin/curl)"
+OPEN="$(command -v open 2>/dev/null || true)"
 OSASCRIPT="/usr/bin/osascript"
 NPM=""
 
@@ -22,112 +54,224 @@ done
 if [[ -z "$NPM" ]]; then
   NPM="$(command -v npm 2>/dev/null || true)"
 fi
+if [[ -z "$NPM" ]]; then
+  for candidate in "$HOME/.nvm/versions/node/"*/bin/npm; do
+    if [[ -x "$candidate" ]]; then
+      NPM="$candidate"
+    fi
+  done
+fi
+if [[ -n "$NPM" ]]; then
+  export PATH="$(dirname "$NPM"):$PATH"
+fi
 
 log() {
+  mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
   printf '%s %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*" >>"$LOG"
 }
 
 notify() {
-  "$OSASCRIPT" -e "display notification \"$2\" with title \"$1\"" 2>/dev/null || true
+  if [[ -x "$OSASCRIPT" ]]; then
+    "$OSASCRIPT" -e "display notification \"$2\" with title \"$1\"" 2>/dev/null || true
+  fi
 }
 
 alert() {
-  "$OSASCRIPT" -e "display alert \"$1\" message \"$2\"" 2>/dev/null || true
+  if [[ -x "$OSASCRIPT" ]]; then
+    "$OSASCRIPT" -e "display alert \"$1\" message \"$2\"" 2>/dev/null || true
+  else
+    printf '%s: %s\n' "$1" "$2" >&2
+  fi
+}
+
+http_ok() {
+  "$CURL" -sf -o /dev/null --connect-timeout 2 "$1" 2>/dev/null
 }
 
 is_up() {
-  # --max-time guards against a zombie server that holds the port but never
-  # responds; without it this call (and the whole launcher) would hang forever
-  # and the Dock icon would appear to do nothing.
-  "$CURL" -s -o /dev/null --connect-timeout 2 --max-time 5 "$URL" 2>/dev/null
+  http_ok "$URL" || http_ok "$LOGIN_URL"
 }
 
 backend_up() {
-  "$CURL" -s -o /dev/null --connect-timeout 2 --max-time 5 "http://127.0.0.1:8000/health" 2>/dev/null
+  http_ok "$HEALTH_URL"
 }
 
-clear_hung_frontend() {
-  # If something is listening on :3000 but is_up() fails, it is a hung/zombie
-  # next-server. Kill it so the frontend agent can bind the port cleanly.
-  local pids
-  pids="$(lsof -nP -iTCP:3000 -sTCP:LISTEN -t 2>/dev/null || true)"
-  [[ -z "$pids" ]] && return 0
-  if is_up; then
-    return 0
+page_body() {
+  local body
+  body="$("$CURL" -s --connect-timeout 2 "$URL" 2>/dev/null || true)"
+  if [[ -z "$body" ]]; then
+    body="$("$CURL" -s --connect-timeout 2 "$LOGIN_URL" 2>/dev/null || true)"
   fi
-  log "port 3000 held by unresponsive process(es) [$pids] — killing"
-  # shellcheck disable=SC2086
-  kill $pids 2>/dev/null || true
-  for _ in $(seq 1 5); do
-    lsof -nP -iTCP:3000 -sTCP:LISTEN -t >/dev/null 2>&1 || return 0
+  printf '%s' "$body"
+}
+
+looks_like_energy_build() {
+  local body
+  body="$(page_body)"
+  [[ "$body" == *"/energy"* || "$body" == *"Energy / Solar"* || "$body" == *"AI assistant"* ]]
+}
+
+looks_like_robs_finance() {
+  local body
+  body="$(page_body)"
+  [[ "$body" == *"Rob's Finance"* || "$body" == *"Robs Finance"* || "$body" == *"Finance Dashboard"* || "$body" == *"Sign in"* ]]
+}
+
+stop_listen_port() {
+  local port="$1"
+  local pid
+  pid="$(listen_pid "$port" || true)"
+  if [[ -n "$pid" ]]; then
+    log "stopping stale process $pid on port $port"
+    kill "$pid" 2>/dev/null || true
     sleep 1
-  done
-  # shellcheck disable=SC2086
-  kill -9 $pids 2>/dev/null || true
-  sleep 1
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+  fi
+}
+
+stop_stale_stack() {
+  local pid
+  if pid_alive "$FRONTEND_PID_FILE"; then
+    pid="$(cat "$FRONTEND_PID_FILE" 2>/dev/null || true)"
+    [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
+  fi
+  if pid_alive "$BACKEND_PID_FILE"; then
+    pid="$(cat "$BACKEND_PID_FILE" 2>/dev/null || true)"
+    [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
+  fi
+  stop_listen_port "$FRONTEND_PORT"
+  stop_listen_port "$BACKEND_PORT"
+  rm -f "$FRONTEND_PID_FILE" "$BACKEND_PID_FILE"
+}
+
+listen_pid() {
+  local port="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1
+  elif command -v ss >/dev/null 2>&1; then
+    ss -ltnp "sport = :$port" 2>/dev/null | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1
+  else
+    return 1
+  fi
+}
+
+pid_alive() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  local pid
+  pid="$(cat "$file" 2>/dev/null || true)"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+foreign_port_message() {
+  local port="$1"
+  local pid
+  pid="$(listen_pid "$port" || true)"
+  if [[ -n "$pid" ]]; then
+    printf 'Port %s is already in use (process %s), and it is not Rob'\''s Finance. Leave that app running and try again after it has closed, or set ROBS_FINANCE_FRONTEND_PORT / ROBS_FINANCE_BACKEND_PORT.' "$port" "$pid"
+  else
+    printf 'Port %s is in use by another application, not Rob'\''s Finance.' "$port"
+  fi
 }
 
 PLIST_SRC="$ROOT/scripts/launchd/com.robssolar.backend.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/com.robssolar.backend.plist"
 AGENT_LABEL="com.robssolar.backend"
+AGENT_STAMP="$LOG_DIR/backend-agent.sha256"
 
-FE_PLIST_SRC="$ROOT/scripts/launchd/com.robssolar.frontend.plist"
-FE_PLIST_DST="$HOME/Library/LaunchAgents/com.robssolar.frontend.plist"
-FE_AGENT_LABEL="com.robssolar.frontend"
+_plist_sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    wc -c <"$1"
+  fi
+}
 
-ensure_backend_agent() {
-  # The backend runs as a launchd service so the OS keeps it alive (KeepAlive).
-  # The old approach started uvicorn under the launcher's process group, where it
-  # died ~40s after launch and left the UI hitting a dead backend (500s).
-  local uid
-  uid="$(id -u)"
-  if [[ -f "$PLIST_SRC" ]]; then
+_launchd_loaded() {
+  local uid="$1"
+  launchctl print "gui/$uid/$AGENT_LABEL" >/dev/null 2>&1 \
+    || launchctl list "$AGENT_LABEL" >/dev/null 2>&1
+}
+
+install_backend_agent_plist() {
+  if command -v write_backend_launch_agent >/dev/null 2>&1; then
+    write_backend_launch_agent "$ROOT" "$PLIST_DST"
+  elif [[ -f "$PLIST_SRC" ]]; then
     mkdir -p "$HOME/Library/LaunchAgents"
     cp "$PLIST_SRC" "$PLIST_DST" 2>/dev/null || true
   fi
-  if [[ -f "$PLIST_DST" ]]; then
-    launchctl bootstrap "gui/$uid" "$PLIST_DST" 2>/dev/null \
-      || launchctl load -w "$PLIST_DST" 2>/dev/null || true
-    launchctl kickstart "gui/$uid/$AGENT_LABEL" 2>/dev/null || true
-    log "ensured backend launchd agent"
-  else
-    log "backend plist missing ($PLIST_DST); falling back to dev.sh backend"
+}
+
+# Replace a previously loaded KeepAlive=true job. Overwriting the plist file
+# is not enough — launchd keeps the old definition until bootout.
+reload_backend_agent_if_stale() {
+  local uid="$1"
+  local hash stamp
+  [[ -f "$PLIST_DST" ]] || return 1
+  hash="$(_plist_sha256 "$PLIST_DST")"
+  stamp="$(cat "$AGENT_STAMP" 2>/dev/null || true)"
+  if [[ "$stamp" == "$hash" ]] && _launchd_loaded "$uid"; then
+    return 1
+  fi
+  launchctl bootout "gui/$uid/$AGENT_LABEL" 2>/dev/null \
+    || launchctl unload "$PLIST_DST" 2>/dev/null || true
+  launchctl bootstrap "gui/$uid" "$PLIST_DST" 2>/dev/null \
+    || launchctl load "$PLIST_DST" 2>/dev/null || true
+  printf '%s\n' "$hash" >"$AGENT_STAMP"
+  log "loaded backend launchd agent (KeepAlive=false, no login start)"
+  return 0
+}
+
+ensure_backend_agent() {
+  # KeepAlive and RunAtLoad are both false. The API starts only when this
+  # Dock launcher kickstarts the agent. Boolean KeepAlive=true would start
+  # at every Mac login after the first click.
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    start_backend_process
+    return
+  fi
+  local uid
+  uid="$(id -u)"
+  install_backend_agent_plist
+  if [[ ! -f "$PLIST_DST" ]]; then
+    log "backend plist missing ($PLIST_DST); starting backend process"
+    start_backend_process
+    return
+  fi
+  reload_backend_agent_if_stale "$uid" || true
+  if ! backend_up; then
+    launchctl kickstart "gui/$uid/$AGENT_LABEL" 2>/dev/null \
+      || launchctl start "$AGENT_LABEL" 2>/dev/null \
+      || start_backend_process
+    log "kickstarted backend launchd agent"
   fi
 }
 
-ensure_frontend_agent() {
-  # The frontend also runs as a launchd service (KeepAlive) so it survives sleep,
-  # crashes, and this launcher exiting. Previously it was a fire-and-forget
-  # `nohup npm run start &`, which vanished with its parent process group and
-  # left the cached PWA shell throwing "Failed to fetch" on every /backend call.
-  local uid
-  uid="$(id -u)"
-  if [[ -f "$FE_PLIST_SRC" ]]; then
-    mkdir -p "$HOME/Library/LaunchAgents"
-    cp "$FE_PLIST_SRC" "$FE_PLIST_DST" 2>/dev/null || true
+start_backend_process() {
+  if backend_up; then
+    return 0
   fi
-  if [[ -f "$FE_PLIST_DST" ]]; then
-    launchctl bootstrap "gui/$uid" "$FE_PLIST_DST" 2>/dev/null \
-      || launchctl load -w "$FE_PLIST_DST" 2>/dev/null || true
-    launchctl kickstart "gui/$uid/$FE_AGENT_LABEL" 2>/dev/null || true
-    log "ensured frontend launchd agent"
-  else
-    log "frontend plist missing ($FE_PLIST_DST)"
+  local occupied
+  occupied="$(listen_pid "$BACKEND_PORT" || true)"
+  if [[ -n "$occupied" ]]; then
+    log "port $BACKEND_PORT occupied by pid $occupied and health check failed"
+    return 1
   fi
-}
-
-restart_frontend_agent() {
-  # Force a restart (kill + relaunch) so a freshly rebuilt bundle is served.
-  local uid
-  uid="$(id -u)"
-  launchctl kickstart -k "gui/$uid/$FE_AGENT_LABEL" 2>/dev/null || true
-  log "restarted frontend launchd agent"
+  if pid_alive "$BACKEND_PID_FILE"; then
+    return 0
+  fi
+  cd "$ROOT" || return 1
+  nohup bash "$ROOT/scripts/backend-service.sh" >>"$SERVER_LOG" 2>&1 &
+  echo $! >"$BACKEND_PID_FILE"
+  log "started backend pid $(cat "$BACKEND_PID_FILE")"
 }
 
 needs_build() {
-  # Rebuild only when there is no prior build, or when frontend source is newer
-  # than the last build. Keeps warm launches instant while staying correct after
-  # code changes.
   local build_id="$ROOT/frontend/.next/BUILD_ID"
   [[ -f "$build_id" ]] || return 0
   local newer
@@ -137,29 +281,33 @@ needs_build() {
 }
 
 start_frontend() {
-  # Clear any hung server holding :3000, rebuild if source changed, then hand
-  # off to the launchd-supervised frontend agent (which owns `next start`).
-  clear_hung_frontend
   cd "$ROOT" || exit 1
-  local rebuilt=0
   if needs_build; then
-    notify "Rob's Solar" "Building dashboard (one-time after update)…"
+    notify "Rob's Finance" "Building dashboard (one-time after update)…"
     log "frontend build is stale or missing — running production build"
-    bash "$ROOT/scripts/build-frontend.sh" >>"$LOG" 2>&1 || log "frontend build failed"
-    rebuilt=1
+    bash "$ROOT/scripts/build-frontend.sh" >>"$SERVER_LOG" 2>&1 || log "frontend build failed"
   else
     log "frontend build is fresh — skipping rebuild"
   fi
-  ensure_frontend_agent
-  if [[ "$rebuilt" == "1" ]]; then
-    # Restart so the agent serves the bundle we just rebuilt.
-    restart_frontend_agent
+  cd "$ROOT/frontend" || exit 1
+  local -a start_cmd
+  start_cmd=( "$NPM" run start -- --port "$FRONTEND_PORT" --hostname "$HOST" )
+  if [[ ! -f "$ROOT/frontend/.next/BUILD_ID" ]]; then
+    log "no production build; falling back to next dev"
+    start_cmd=( "$NPM" run dev -- --port "$FRONTEND_PORT" --hostname "$HOST" )
   fi
+  if [[ "$(uname -m)" == "arm64" && -x /usr/bin/arch ]]; then
+    nohup /usr/bin/arch -arm64 "${start_cmd[@]}" >>"$SERVER_LOG" 2>&1 &
+  else
+    nohup "${start_cmd[@]}" >>"$SERVER_LOG" 2>&1 &
+  fi
+  echo $! >"$FRONTEND_PID_FILE"
+  log "started frontend pid $(cat "$FRONTEND_PID_FILE")"
 }
 
 start_stack() {
-  notify "Rob's Solar" "Starting dashboard servers…"
-  log "starting stack (backend agent + frontend)"
+  notify "Rob's Finance" "Starting dashboard…"
+  log "starting stack (backend + frontend)"
   ensure_backend_agent
   if ! is_up; then
     start_frontend
@@ -173,52 +321,111 @@ start_stack() {
   return 1
 }
 
-log "launch started (PATH=$PATH, npm=${NPM:-missing})"
+open_dashboard() {
+  log "opening $URL"
+  if [[ "${ROBS_FINANCE_SKIP_OPEN:-0}" == "1" ]]; then
+    log "skipping browser open (ROBS_FINANCE_SKIP_OPEN=1)"
+    return 0
+  fi
+  if [[ -n "$OPEN" && -x "$OPEN" ]]; then
+    "$OPEN" "$URL" || true
+  elif command -v xdg-open >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+    xdg-open "$URL" >/dev/null 2>&1 || true
+  else
+    log "no browser opener; dashboard is at $URL"
+  fi
+  notify "Rob's Finance" "Dashboard opened"
+}
 
-if [[ -z "$NPM" ]]; then
-  log "npm not found"
-  alert "Rob's Solar could not start" "Node.js npm was not found. Install Node or check /usr/local/bin/npm."
+log "launch started project=$ROOT port=$FRONTEND_PORT backend=$BACKEND_PORT npm=${NPM:-missing}"
+
+if [[ ! -d "$ROOT/backend" || ! -d "$ROOT/frontend" ]]; then
+  log "project path missing backend/frontend: $ROOT"
+  alert "Rob's Finance could not start" "Could not find the Rob's Finance project. Expected backend and frontend under $ROOT."
   exit 1
 fi
 
-if ! is_up || ! backend_up; then
-  if is_up && ! backend_up; then
-    log "frontend up but backend down — (re)starting backend agent"
-    ensure_backend_agent
-    for _ in $(seq 1 30); do
-      backend_up && break
-      sleep 1
-    done
+if [[ -d "$ROOT/frontend/src/app/(energy)" ]]; then
+  log "refusing Energy checkout at $ROOT"
+  if command -v resolve_robs_solar_root >/dev/null 2>&1; then
+    ROOT="$(resolve_robs_solar_root || true)"
+    export ROBS_SOLAR_ROOT="$ROOT"
+    log "switched project root to $ROOT"
   fi
-  if ! is_up || ! backend_up; then
-    start_stack || true
-  fi
-else
-  log "dashboard and backend already running"
-  # Both services are supervised by launchd, so they are normally already up.
-  # If the frontend source changed since the last build, rebuild and restart the
-  # agent so the user is never left staring at a stale bundle.
-  if needs_build; then
-    notify "Rob's Solar" "Updating dashboard to the latest build…"
-    log "serving a stale build — rebuilding and restarting frontend agent"
-    ( cd "$ROOT" && bash "$ROOT/scripts/build-frontend.sh" >>"$LOG" 2>&1 ) \
-      || log "frontend build failed"
-    ensure_frontend_agent
-    restart_frontend_agent
-    for _ in $(seq 1 90); do
-      is_up && break
-      sleep 1
-    done
+fi
+if [[ -z "$ROOT" || -d "$ROOT/frontend/src/app/(energy)" || ! -d "$ROOT/backend" ]]; then
+  alert "Rob's Finance could not start" "This copy still has Energy pages. Open the All repo, run git pull, then click Rob's Finance again."
+  exit 1
+fi
+
+if is_up && looks_like_energy_build; then
+  log "localhost is serving a leftover Energy build — stopping it"
+  stop_stale_stack
+  sleep 1
+  if is_up && looks_like_energy_build; then
+    log "leftover Energy build still present after stop"
+    alert "Rob's Finance could not start" "Port $FRONTEND_PORT is still serving an old Energy build. Close that process, then click Rob's Finance again. Check $LOG for details."
+    exit 1
   fi
 fi
 
+if is_up && backend_up && looks_like_robs_finance && ! looks_like_energy_build; then
+  log "dashboard and backend already running — reusing instance"
+  # Still replace a leftover KeepAlive=true LaunchAgent from older installs.
+  ensure_backend_agent
+  if backend_up; then
+    open_dashboard
+    exit 0
+  fi
+fi
+
+if is_up && (! looks_like_robs_finance || looks_like_energy_build); then
+  msg="$(foreign_port_message "$FRONTEND_PORT")"
+  log "$msg"
+  alert "Rob's Finance could not start" "$msg Check $LOG for details."
+  exit 1
+fi
+
+if [[ -z "$NPM" ]]; then
+  log "npm not found"
+  alert "Rob's Finance could not start" "Node.js npm was not found. Install Node from https://nodejs.org then click Rob's Finance again."
+  exit 1
+fi
+
+if ! backend_up; then
+  occupied="$(listen_pid "$BACKEND_PORT" || true)"
+  if [[ -n "$occupied" ]]; then
+    msg="$(foreign_port_message "$BACKEND_PORT")"
+    log "$msg"
+    alert "Rob's Finance could not start" "$msg Check $LOG for details."
+    exit 1
+  fi
+fi
+
+if is_up && ! backend_up; then
+  log "frontend up but backend down — (re)starting backend agent"
+  ensure_backend_agent
+  for _ in $(seq 1 30); do
+    backend_up && break
+    sleep 1
+  done
+fi
+
+if ! is_up || ! backend_up; then
+  start_stack || true
+fi
+
 if is_up && backend_up; then
-  log "opening $URL"
-  "$OPEN" "$URL"
-  notify "Rob's Solar" "Dashboard opened in your browser"
+  if looks_like_energy_build; then
+    log "refusing to open leftover Energy build after launch"
+    alert "Rob's Finance could not start" "Port $FRONTEND_PORT is still serving an old Energy build. Close that process, then click Rob's Finance again. Check $LOG for details."
+    exit 1
+  fi
+  log "readiness ok frontend=$URL backend=$HEALTH_URL"
+  open_dashboard
   exit 0
 fi
 
 log "dashboard did not become reachable"
-alert "Rob's Solar did not start in time" "Check $LOG for details."
+alert "Rob's Finance did not start in time" "Check $LOG for details."
 exit 1

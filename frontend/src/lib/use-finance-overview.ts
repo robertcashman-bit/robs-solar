@@ -3,24 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
-import { z } from "zod";
-
-import {
-  financeAccountSchema,
-  financeLiabilitySchema,
-  financeOverviewSchema,
-  quickFileReportsSchema,
-  type FinanceAccount,
-  type FinanceLiability,
-  type FinanceOverview,
-  type QuickFileReports,
-} from "@/lib/finance-schemas";
+import { FINANCE_CHANGED_EVENT } from "@/lib/finance-events";
+import { financeOverviewSchema, type FinanceOverview } from "@/lib/finance-schemas";
+import { currentMonthKey } from "@/lib/money";
 
 export function useFinanceOverview(enabled = true) {
   const [overview, setOverview] = useState<FinanceOverview | null>(null);
-  const [quickfileReports, setQuickfileReports] = useState<QuickFileReports | null>(null);
-  const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
-  const [liabilities, setLiabilities] = useState<FinanceLiability[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,16 +19,8 @@ export function useFinanceOverview(enabled = true) {
     setLoading(true);
     setError(null);
     try {
-      const [overviewData, reportsData, accountsData, liabilitiesData] = await Promise.all([
-        apiClient.get<unknown>("/finance/overview"),
-        apiClient.get<unknown>("/finance/integrations/quickfile/reports"),
-        apiClient.get<unknown>("/finance/accounts"),
-        apiClient.get<unknown>("/finance/liabilities"),
-      ]);
-      setOverview(financeOverviewSchema.parse(overviewData));
-      setQuickfileReports(quickFileReportsSchema.parse(reportsData));
-      setAccounts(z.array(financeAccountSchema).parse(accountsData));
-      setLiabilities(z.array(financeLiabilitySchema).parse(liabilitiesData));
+      const data = await apiClient.get<unknown>(`/finance/overview?month=${currentMonthKey()}`);
+      setOverview(financeOverviewSchema.parse(data));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load finance overview");
     } finally {
@@ -51,8 +31,15 @@ export function useFinanceOverview(enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     const timer = window.setTimeout(() => void refresh(), 0);
-    return () => window.clearTimeout(timer);
+    const onChanged = () => {
+      void refresh();
+    };
+    window.addEventListener(FINANCE_CHANGED_EVENT, onChanged);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener(FINANCE_CHANGED_EVENT, onChanged);
+    };
   }, [enabled, refresh]);
 
-  return { overview, quickfileReports, accounts, liabilities, loading, error, refresh };
+  return { overview, loading, error, refresh };
 }

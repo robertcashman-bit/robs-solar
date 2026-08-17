@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -5,20 +7,23 @@ from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.config import settings
-from app.db.models import Base
-from app.db.url import (
+from app.db.database_url import (
+    is_ephemeral_sqlite,
     is_postgres_url,
-    is_sqlite_url,
+    normalise_database_url,
+    postgres_connect_args,
     resolve_database_url,
-    uses_neon_pooler,
 )
+from app.db.models import Base
 
-DATABASE_URL = resolve_database_url(
-    settings.database_url,
-    settings.neon_database_url,
-    settings.neon_database_url_unpooled,
-)
+__all__ = [
+    "SessionLocal",
+    "engine",
+    "get_db",
+    "init_db",
+    "is_postgres_url",
+    "resolve_database_url",
+]
 
 
 def _ensure_sqlite_dir(database_url: str) -> None:
@@ -28,7 +33,7 @@ def _ensure_sqlite_dir(database_url: str) -> None:
     with "unable to open database file". Creating it up front keeps tests and
     first-run deploys working without committing the database itself.
     """
-    if not is_sqlite_url(database_url):
+    if not database_url.startswith("sqlite"):
         return
     db_path = database_url.split("///", 1)[-1]
     if not db_path or db_path == ":memory:":
@@ -38,19 +43,26 @@ def _ensure_sqlite_dir(database_url: str) -> None:
         parent.mkdir(parents=True, exist_ok=True)
 
 
-def _engine_kwargs(database_url: str) -> dict:
-    kwargs: dict = {"echo": False}
-    if not is_postgres_url(database_url):
-        return kwargs
-    # Serverless invocations must not hold a connection pool across requests.
-    kwargs["poolclass"] = NullPool
-    if uses_neon_pooler(database_url):
-        kwargs["connect_args"] = {"statement_cache_size": 0}
-    return kwargs
+def _normalise_database_url(database_url: str) -> str:
+    """Back-compat alias — prefer normalise_database_url."""
+    return normalise_database_url(database_url)
 
 
-_ensure_sqlite_dir(DATABASE_URL)
-engine = create_async_engine(DATABASE_URL, **_engine_kwargs(DATABASE_URL))
+_RESOLVED_DATABASE_URL = resolve_database_url()
+_NORMALISED_DATABASE_URL = normalise_database_url(_RESOLVED_DATABASE_URL)
+_ensure_sqlite_dir(_RESOLVED_DATABASE_URL)
+_ENGINE_KWARGS: dict = {
+    "echo": False,
+    "connect_args": postgres_connect_args(_RESOLVED_DATABASE_URL),
+}
+if is_postgres_url(_RESOLVED_DATABASE_URL):
+    _ENGINE_KWARGS["poolclass"] = NullPool
+    if "neon.tech" in _NORMALISED_DATABASE_URL and "-pooler" in _NORMALISED_DATABASE_URL:
+        _ENGINE_KWARGS["connect_args"] = {
+            **_ENGINE_KWARGS["connect_args"],
+            "statement_cache_size": 0,
+        }
+engine = create_async_engine(_NORMALISED_DATABASE_URL, **_ENGINE_KWARGS)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
@@ -59,16 +71,34 @@ def database_backend() -> str:
 
 
 def database_is_persistent() -> bool:
-    if is_postgres_url(DATABASE_URL):
+    if is_postgres_url(_RESOLVED_DATABASE_URL):
         return True
-    if not is_sqlite_url(DATABASE_URL):
-        return False
-    return "/tmp/" not in DATABASE_URL and ":memory:" not in DATABASE_URL
+    return not is_ephemeral_sqlite(_RESOLVED_DATABASE_URL)
+
+
+def _scalar_default_sql(column, *, dialect_name: str) -> str | None:
+    """Render a DEFAULT clause for scalar column defaults (not callables)."""
+    default = column.default
+    if default is None or not getattr(default, "is_scalar", False):
+        return None
+    arg = default.arg
+    if callable(arg):
+        return None
+    if isinstance(arg, bool):
+        if dialect_name == "postgresql":
+            return "TRUE" if arg else "FALSE"
+        return "1" if arg else "0"
+    if isinstance(arg, (int, float)):
+        return str(arg)
+    if isinstance(arg, str):
+        return f"'{arg}'"
+    return None
 
 
 def _migrate_missing_columns(connection) -> None:
-    """Add columns introduced after initial deploy."""
+    """Add columns introduced after initial deploy (SQLite and Postgres)."""
     inspector = inspect(connection)
+    dialect_name = connection.dialect.name
     for table_name, table in Base.metadata.tables.items():
         if table_name not in inspector.get_table_names():
             continue
@@ -77,9 +107,31 @@ def _migrate_missing_columns(connection) -> None:
             if column.name in existing:
                 continue
             col_type = column.type.compile(dialect=connection.dialect)
+            sql = f"ALTER TABLE {table_name} ADD COLUMN {column.name} {col_type}"
+            default_sql = _scalar_default_sql(column, dialect_name=dialect_name)
+            if default_sql is not None:
+                sql = f"{sql} DEFAULT {default_sql}"
+            connection.execute(text(sql))
+    if "finance_liabilities" in inspector.get_table_names():
+        cols = {c["name"] for c in inspector.get_columns("finance_liabilities")}
+        if "interest_rate_known" in cols:
+            known = "TRUE" if dialect_name == "postgresql" else "1"
             connection.execute(
-                text(f"ALTER TABLE {table_name} ADD COLUMN {column.name} {col_type}")
+                text(
+                    "UPDATE finance_liabilities "
+                    f"SET interest_rate_known = {known} WHERE interest_rate_known IS NULL"
+                )
             )
+
+
+def _sqlite_scalar_default_sql(column) -> str | None:
+    """Back-compat alias used by existing SQLite migration tests."""
+    return _scalar_default_sql(column, dialect_name="sqlite")
+
+
+def _migrate_sqlite_columns(connection) -> None:
+    """Back-compat alias used by existing SQLite migration tests."""
+    _migrate_missing_columns(connection)
 
 
 def _postgres_default_sql(column_name: str, col_type: str) -> str:
@@ -96,7 +148,6 @@ def _postgres_default_sql(column_name: str, col_type: str) -> str:
 
 
 def _compat_legacy_not_null_columns(connection) -> None:
-    """Relax leftover Neon columns/constraints so slimmer model inserts succeed."""
     if connection.dialect.name != "postgresql":
         return
     inspector = inspect(connection)
@@ -131,25 +182,11 @@ def _compat_legacy_not_null_columns(connection) -> None:
             )
 
 
-def _compat_legacy_lunchflow_source(connection) -> None:
-    """Older rows used source=lunchflow; this app's enum is lunch_flow."""
-    inspector = inspect(connection)
-    if "finance_accounts" not in inspector.get_table_names():
-        return
-    connection.execute(
-        text(
-            "UPDATE finance_accounts SET is_active = false, source = 'lunch_flow' "
-            "WHERE source = 'lunchflow'"
-        )
-    )
-
-
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_migrate_missing_columns)
         await conn.run_sync(_compat_legacy_not_null_columns)
-        await conn.run_sync(_compat_legacy_lunchflow_source)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

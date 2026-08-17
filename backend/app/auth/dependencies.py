@@ -9,7 +9,7 @@ from app.schemas.domain import LoginRequest, UserInfo, UserRole
 
 def authenticate_user(request: LoginRequest) -> StoredUser | None:
     users = get_seed_users()
-    user = users.get(request.username)
+    user = users.get(request.username.strip().lower())
     if not user or not verify_password(request.password, user.password_hash):
         return None
     return user
@@ -35,15 +35,6 @@ async def require_viewer(session: SessionData = Depends(get_current_session)) ->
 async def require_admin(session: SessionData = Depends(get_current_session)) -> SessionData:
     if session.role != UserRole.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required")
-    return session
-
-
-async def require_admin_csrf(
-    request: Request,
-    session: SessionData = Depends(require_admin),
-) -> SessionData:
-    """Admin session that also validates the CSRF header (mutating routes)."""
-    validate_csrf(request, session)
     return session
 
 

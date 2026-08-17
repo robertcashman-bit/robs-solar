@@ -1,13 +1,15 @@
 import { expect, test } from "@playwright/test";
 
-import { openEnergySettings } from "./helpers";
+import { openFinanceSettings } from "./helpers";
 
-test("settings page shows live writes status", async ({ page }) => {
-  await openEnergySettings(page);
-  await expect(page.getByRole("heading", { name: "Safety & configuration" })).toBeVisible({
-    timeout: 20_000,
-  });
-  await expect(
-    page.getByText(/Live writes disabled/i).or(page.getByText("Live writes on")),
-  ).toBeVisible({ timeout: 20_000 });
+test("settings page is finance-only", async ({ page }) => {
+  await openFinanceSettings(page);
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Energy / Solar" })).toHaveCount(0);
+  await expect(page.getByText(/Sunsynk|Octopus Energy|Tesla|Energy savings/i)).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "App shortcut" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Open Banking (TrueLayer)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Lunch Flow" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Funding Circle" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "QuickFile" })).toBeVisible();
 });
