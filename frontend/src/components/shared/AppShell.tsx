@@ -68,7 +68,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-lg">
             <WalletIcon size={22} className="animate-pulse" />
           </div>
-          <p className="text-sm text-[var(--muted)]">Loading session…</p>
+          <p className="text-sm text-[var(--muted)]" role="status" aria-label="Loading session">
+            Loading session…
+          </p>
         </div>
       </div>
     );

@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { BankImportCard } from "@/components/finance/BankImportCard";
 import { FinanceAiAnalystCard } from "@/components/finance/FinanceAiAnalystCard";
@@ -13,24 +12,18 @@ import { WidgetErrorBoundary } from "@/components/shared/WidgetErrorBoundary";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
-import { useAuth } from "@/lib/auth-context";
+import { useRequireAuth } from "@/lib/use-require-auth";
 import { canWrite } from "@/lib/permissions";
 import { useFinanceOverview } from "@/lib/use-finance-overview";
 
 export default function FinanceOverviewPage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
   const { overview, loading, refreshing, error, refresh, reload } = useFinanceOverview(user);
   const [status, setStatus] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.replace("/login");
-    }
-  }, [authLoading, user, router]);
 
-  if (authLoading || !user) {
-    return <AuthLoadingShell />;
+  if (gated) {
+    return <AuthLoadingShell redirecting={redirecting} />;
   }
 
   return (

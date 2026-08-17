@@ -62,6 +62,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    // Never leave the UI on “Loading session…” if a bootstrap request stalls
+    // past the per-request abort (e.g. proxy/rewrite oddities on hosted deploys).
+    const failSafe = window.setTimeout(() => {
+      if (!active) return;
+      setUser(null);
+      setCsrfToken(null);
+      setLoading(false);
+    }, 10000);
     (async () => {
       try {
         const [session, magicStatus] = await Promise.all([
@@ -95,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
     return () => {
       active = false;
+      window.clearTimeout(failSafe);
     };
   }, []);
 

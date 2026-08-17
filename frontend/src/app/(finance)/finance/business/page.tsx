@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { z } from "zod";
 
 import { AccountManager } from "@/components/finance/AccountManager";
@@ -13,7 +12,7 @@ import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
-import { useAuth } from "@/lib/auth-context";
+import { useRequireAuth } from "@/lib/use-require-auth";
 import {
   businessFinanceSnapshotSchema,
   financeAccountSchema,
@@ -41,8 +40,7 @@ const ACCOUNT_OPTIONS = [
 ];
 
 export default function BusinessFinancePage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
   const [snapshot, setSnapshot] = useState<BusinessFinanceSnapshot | null>(null);
   const [quickfileReports, setQuickfileReports] = useState<QuickFileReports | null>(null);
@@ -87,9 +85,6 @@ export default function BusinessFinancePage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-  }, [authLoading, user, router]);
 
   useFinanceReload(load, Boolean(user));
   const { refreshing } = useFinanceBackgroundLiveRefresh(user);
@@ -122,7 +117,7 @@ export default function BusinessFinancePage() {
     }
   }
 
-  if (authLoading || !user) return <AuthLoadingShell />;
+  if (gated) return <AuthLoadingShell redirecting={redirecting} />;
 
   const bankBalance = accounts
     .filter((account) => account.account_type === "current")

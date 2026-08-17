@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { MetricTile } from "@/components/finance/MetricTile";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -10,7 +9,7 @@ import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
-import { useAuth } from "@/lib/auth-context";
+import { useRequireAuth } from "@/lib/use-require-auth";
 import { COMPANY_SHORT, PERSONAL_LEDGER } from "@/lib/finance-branding";
 import { notifyFinanceChanged } from "@/lib/finance-events";
 import { useFinanceReload } from "@/lib/use-finance-reload";
@@ -31,8 +30,7 @@ const scopes = ["all", "personal", "business"] as const;
 const scenarios = ["conservative", "expected", "optimistic"] as const;
 
 export default function CashFlowPage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
   const [horizon, setHorizon] = useState<number>(30);
   const [scope, setScope] = useState<(typeof scopes)[number]>("all");
   const [scenario, setScenario] = useState<(typeof scenarios)[number]>("expected");
@@ -61,9 +59,6 @@ export default function CashFlowPage() {
     }
   }, [horizon, scope]);
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-  }, [authLoading, user, router]);
 
   useFinanceReload(load, Boolean(user));
 
@@ -109,7 +104,7 @@ export default function CashFlowPage() {
     }
   }
 
-  if (authLoading || !user) return <AuthLoadingShell />;
+  if (gated) return <AuthLoadingShell redirecting={redirecting} />;
 
   return (
     <AppShell>

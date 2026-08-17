@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { AppShell } from "@/components/shared/AppShell";
@@ -9,7 +8,7 @@ import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
-import { useAuth } from "@/lib/auth-context";
+import { useRequireAuth } from "@/lib/use-require-auth";
 import { formatGbp } from "@/lib/money";
 
 type QualityReport = {
@@ -30,8 +29,7 @@ type QualityReport = {
 };
 
 export default function DataQualityPage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
   const [report, setReport] = useState<QualityReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,14 +42,13 @@ export default function DataQualityPage() {
   }, []);
 
   useEffect(() => {
-    if (authLoading || !user) return;
+    if (gated || !user) return;
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [authLoading, user, load]);
+  }, [gated, user, load]);
 
-  if (authLoading || !user) {
-    if (!authLoading && !user) router.replace("/login");
-    return <AuthLoadingShell />;
+  if (gated) {
+    return <AuthLoadingShell redirecting={redirecting} />;
   }
 
   return (

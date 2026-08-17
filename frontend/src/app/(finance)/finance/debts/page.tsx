@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { z } from "zod";
 
 import { BankImportCard } from "@/components/finance/BankImportCard";
@@ -12,7 +11,7 @@ import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
-import { useAuth } from "@/lib/auth-context";
+import { useRequireAuth } from "@/lib/use-require-auth";
 import {
   debtScenarioSchema,
   debtStrategySchema,
@@ -44,8 +43,7 @@ const emptyForm = {
 };
 
 export default function DebtsPage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
   const [debts, setDebts] = useState<FinanceLiability[]>([]);
   const [strategy, setStrategy] = useState<DebtStrategy | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,9 +74,6 @@ export default function DebtsPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-  }, [authLoading, user, router]);
 
   useFinanceReload(load, Boolean(user));
   const { refreshing } = useFinanceBackgroundLiveRefresh(user);
@@ -202,7 +197,7 @@ export default function DebtsPage() {
     }
   }
 
-  if (authLoading || !user) return <AuthLoadingShell />;
+  if (gated) return <AuthLoadingShell redirecting={redirecting} />;
 
   return (
     <AppShell>

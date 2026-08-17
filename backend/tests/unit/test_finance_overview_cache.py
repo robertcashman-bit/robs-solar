@@ -104,3 +104,36 @@ async def test_fresh_query_bypasses_overview_cache(
     assert isinstance(fresh.get("generated_at"), str)
     generated = datetime.fromisoformat(fresh["generated_at"].replace("Z", "+00:00"))
     assert generated.tzinfo == timezone.utc
+
+
+@pytest.mark.asyncio
+async def test_soft_stale_overview_cache_still_returns_last_known(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TTL expiry alone must not force a blank first paint."""
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
+    from app.db.models import FinanceOverviewCacheRow
+    from app.db.session import SessionLocal
+    from app.services.finance import finance_overview_cache_service as cache_mod
+
+    monkeypatch.setattr(cache_mod, "CACHE_TTL", timedelta(seconds=1))
+
+    await login(client, "viewer", "viewer-pass")
+    first = await client.get("/finance/overview")
+    assert first.status_code == 200
+    body = first.json()
+
+    async with SessionLocal() as db:
+        row = (await db.scalars(select(FinanceOverviewCacheRow))).first()
+        assert row is not None
+        row.generated_at = datetime.now(timezone.utc) - timedelta(hours=2)
+        await db.commit()
+
+    second = await client.get("/finance/overview")
+    assert second.status_code == 200
+    cached = second.json()
+    assert cached.get("cached") is True
+    assert cached["personal_bank_balance_gbp"] == body["personal_bank_balance_gbp"]

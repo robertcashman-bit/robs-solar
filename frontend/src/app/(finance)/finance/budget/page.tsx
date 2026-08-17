@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 
 import { BudgetStudio } from "@/components/finance/BudgetStudio";
 import { FinanceIntegrityPanel } from "@/components/finance/FinanceIntegrityPanel";
@@ -9,18 +8,14 @@ import { HistoryStatsPanel } from "@/components/finance/HistoryStatsPanel";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { useAuth } from "@/lib/auth-context";
+import { useRequireAuth } from "@/lib/use-require-auth";
 import { canWrite } from "@/lib/permissions";
 
 export default function BudgetPage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-  }, [authLoading, user, router]);
 
-  if (authLoading || !user) return <AuthLoadingShell />;
+  if (gated) return <AuthLoadingShell redirecting={redirecting} />;
 
   return (
     <AppShell>

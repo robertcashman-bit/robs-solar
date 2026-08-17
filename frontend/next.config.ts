@@ -60,6 +60,12 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
+    // On Vercel multi-service, vercel.json routes /backend to the FastAPI
+    // service. A Next rewrite to BACKEND_URL (often localhost) would hang
+    // session bootstrap on “Loading session…”.
+    if (process.env.VERCEL) {
+      return [];
+    }
     return [
       {
         source: "/backend/:path*",

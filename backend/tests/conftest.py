@@ -4,6 +4,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
@@ -181,3 +182,41 @@ async def login(client: AsyncClient, username: str, password: str) -> dict:
     assert response.status_code == 200
     data = response.json()
     return data
+
+
+# Solar/energy public API was unmounted from app.main — skip route-level tests.
+_ENERGY_ROUTE_TEST_FILES = {
+    "test_auto_schedule_route.py",
+    "test_battery_plan_route.py",
+    "test_capabilities_route.py",
+    "test_control_writes.py",
+    "test_controls_settings_route.py",
+    "test_metrics_compare_route.py",
+    "test_metrics_history_route.py",
+    "test_metrics_live_summary_parity.py",
+    "test_metrics_summary_route.py",
+    "test_octopus_dispatches_route.py",
+    "test_octopus_meter_power_route.py",
+    "test_octopus_prices_route.py",
+    "test_octopus_rate_plan_route.py",
+    "test_octopus_settings.py",
+    "test_optimisation_dashboard.py",
+    "test_peak_import_guard_route.py",
+    "test_readonly_flow.py",
+    "test_restore_flow.py",
+    "test_tariff_settings.py",
+    "test_tier2_routes.py",
+    "test_verify_writes.py",
+    "test_settings_watch.py",
+    "test_sunsynk_verification_routes.py",
+}
+
+
+def pytest_collection_modifyitems(config, items) -> None:  # noqa: ARG001
+    skip = pytest.mark.skip(
+        reason="Energy/solar public API removed — see backend/ENERGY_FOLLOWUP.md"
+    )
+    for item in items:
+        path = getattr(item.fspath, "basename", lambda: "")()
+        if path in _ENERGY_ROUTE_TEST_FILES:
+            item.add_marker(skip)

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 
 import { BankImportCard } from "@/components/finance/BankImportCard";
 import { AppShell } from "@/components/shared/AppShell";
@@ -11,18 +10,14 @@ import { FundingCircleSettingsPanel } from "@/components/settings/FundingCircleS
 import { LunchFlowSettingsPanel } from "@/components/settings/LunchFlowSettingsPanel";
 import { OpenBankingSettingsPanel } from "@/components/settings/OpenBankingSettingsPanel";
 import { QuickFileSettingsPanel } from "@/components/settings/QuickFileSettingsPanel";
-import { useAuth } from "@/lib/auth-context";
+import { useRequireAuth } from "@/lib/use-require-auth";
 import { canWrite } from "@/lib/permissions";
 
 export default function ConnectBanksPage() {
-  const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
 
-  useEffect(() => {
-    if (!loading && !user) router.replace("/login");
-  }, [loading, user, router]);
 
-  if (loading || !user) return <AuthLoadingShell />;
+  if (gated) return <AuthLoadingShell redirecting={redirecting} />;
 
   const readOnly = !canWrite(user);
 

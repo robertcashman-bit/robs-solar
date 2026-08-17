@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { FinanceExportPanel } from "@/components/finance/FinanceExportPanel";
 import { HistoryStatsPanel } from "@/components/finance/HistoryStatsPanel";
@@ -10,7 +9,7 @@ import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
-import { useAuth } from "@/lib/auth-context";
+import { useRequireAuth } from "@/lib/use-require-auth";
 import { formatGbp } from "@/lib/money";
 import { useFinanceReload } from "@/lib/use-finance-reload";
 
@@ -24,8 +23,7 @@ type UpcomingItem = {
 };
 
 export default function UpcomingPage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
   const [days, setDays] = useState(30);
   const [items, setItems] = useState<UpcomingItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -42,11 +40,10 @@ export default function UpcomingPage() {
     }
   }, [days]);
 
-  useFinanceReload(load, Boolean(user) && !authLoading);
+  useFinanceReload(load, Boolean(user) && !gated);
 
-  if (authLoading || !user) {
-    if (!authLoading && !user) router.replace("/login");
-    return <AuthLoadingShell />;
+  if (gated) {
+    return <AuthLoadingShell redirecting={redirecting} />;
   }
 
   return (

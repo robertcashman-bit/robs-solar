@@ -124,9 +124,12 @@ class FinanceOverviewCacheService:
         generated = row.generated_at
         if generated.tzinfo is None:
             generated = generated.replace(tzinfo=timezone.utc)
-        if _now() - generated > CACHE_TTL:
-            return None
-        if current_fingerprint and row.fingerprint != current_fingerprint:
+        stale = _now() - generated > CACHE_TTL
+        fingerprint_mismatch = bool(
+            current_fingerprint and row.fingerprint != current_fingerprint
+        )
+        # Source tables changed — do not serve last-known for a different ledger.
+        if fingerprint_mismatch:
             return None
         try:
             payload = json.loads(row.payload_json)
@@ -136,6 +139,10 @@ class FinanceOverviewCacheService:
         except Exception:
             logger.warning("Overview cache payload was unreadable", exc_info=True)
             return None
+        # TTL expiry alone still returns last Neon/local figures so login paint
+        # is not gated on a full recompute; callers refresh in the background.
+        if stale:
+            logger.info("Serving soft-stale overview cache for month=%s", month)
         overview.cached = True
         overview.generated_at = row.generated_at
         return overview

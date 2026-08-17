@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { useAuth } from "@/lib/auth-context";
+import { useRequireAuth } from "@/lib/use-require-auth";
 
 const STEPS = [
   {
@@ -63,13 +62,11 @@ const STEPS = [
 ];
 
 export default function OnboardingPage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
   const [step, setStep] = useState(0);
 
-  if (authLoading || !user) {
-    if (!authLoading && !user) router.replace("/login");
-    return <AuthLoadingShell />;
+  if (gated) {
+    return <AuthLoadingShell redirecting={redirecting} />;
   }
 
   const current = STEPS[step];

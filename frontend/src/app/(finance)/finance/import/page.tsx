@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
-import { useAuth } from "@/lib/auth-context";
+import { useRequireAuth } from "@/lib/use-require-auth";
 import { notifyFinanceChanged } from "@/lib/finance-events";
 import { formatGbp } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
@@ -35,8 +34,7 @@ type PreviewResult = {
 };
 
 export default function ImportPage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
   const writable = canWrite(user);
   const [file, setFile] = useState<File | null>(null);
   const [accountName, setAccountName] = useState("Personal current");
@@ -118,9 +116,8 @@ export default function ImportPage() {
     }
   }, [parsed]);
 
-  if (authLoading || !user) {
-    if (!authLoading && !user) router.replace("/login");
-    return <AuthLoadingShell />;
+  if (gated) {
+    return <AuthLoadingShell redirecting={redirecting} />;
   }
 
   return (

@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
@@ -9,26 +8,11 @@ import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
-import { useAuth } from "@/lib/auth-context";
 import { notifyFinanceChanged } from "@/lib/finance-events";
 import { formatGbp } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
-import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
-import { useFinanceReload } from "@/lib/use-finance-reload";
-
-type Txn = {
-  id: number;
-  posted_on: string;
-  description: string;
-  amount_gbp: number;
-  category: string;
-  category_confidence?: string;
-  scope: string;
-  is_transfer: boolean;
-  account_name: string;
-};
-
-const PAGE_SIZE = 50;
+import { useFinanceTransactions } from "@/lib/use-finance-transactions";
+import { useRequireAuth } from "@/lib/use-require-auth";
 
 const FILTERS = [
   "all",
@@ -43,51 +27,25 @@ const FILTERS = [
 ] as const;
 
 export default function TransactionsPage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
   const writable = canWrite(user);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const [q, setQ] = useState("");
-  const [rows, setRows] = useState<Txn[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [category, setCategory] = useState("Food");
-  const [categories, setCategories] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [hasMore, setHasMore] = useState(false);
-  const loadedCount = useRef(0);
-
-  const load = useCallback(async (append = false) => {
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (filter === "personal" || filter === "business") {
-        params.set("scope", filter);
-      } else if (filter !== "all") {
-        params.set("filter", filter);
-      }
-      if (q.trim()) params.set("q", q.trim());
-      params.set("limit", String(PAGE_SIZE));
-      params.set("offset", String(append ? loadedCount.current : 0));
-      const [data, cats] = await Promise.all([
-        apiClient.get<Txn[]>(`/finance/transactions?${params}`),
-        apiClient.get<Array<{ parent: string }>>("/finance/categories"),
-      ]);
-      setRows((prev) => (append ? [...prev, ...data] : data));
-      loadedCount.current = append ? loadedCount.current + data.length : data.length;
-      setHasMore(data.length === PAGE_SIZE);
-      setCategories([...new Set(cats.map((item) => item.parent).filter(Boolean))]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load transactions");
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, q]);
-
-  useFinanceReload(load, Boolean(user) && !authLoading);
-  const { refreshing } = useFinanceBackgroundLiveRefresh(user);
+  const {
+    rows,
+    categories,
+    loading,
+    refreshing,
+    error,
+    hasMore,
+    loadMore,
+    reload,
+    setError,
+  } = useFinanceTransactions(user, filter, q);
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -111,7 +69,7 @@ export default function TransactionsPage() {
       setMessage(`Updated ${result.updated} transaction(s)`);
       setSelected(new Set());
       notifyFinanceChanged();
-      await load();
+      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bulk update failed");
     } finally {
@@ -119,9 +77,8 @@ export default function TransactionsPage() {
     }
   };
 
-  if (authLoading || !user) {
-    if (!authLoading && !user) router.replace("/login");
-    return <AuthLoadingShell />;
+  if (gated) {
+    return <AuthLoadingShell redirecting={redirecting} />;
   }
 
   return (
@@ -196,7 +153,7 @@ export default function TransactionsPage() {
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void apiClient.post("/finance/transfers/detect").then(() => load())}
+                onClick={() => void apiClient.post("/finance/transfers/detect").then(() => reload())}
                 className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
               >
                 Detect transfers
@@ -267,7 +224,7 @@ export default function TransactionsPage() {
           <button
             type="button"
             className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
-            onClick={() => void load(true)}
+            onClick={() => void loadMore()}
           >
             Load more
           </button>

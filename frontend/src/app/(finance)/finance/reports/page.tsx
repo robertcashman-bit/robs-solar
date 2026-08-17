@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { AccountStatements } from "@/components/finance/AccountStatements";
 import { ActiveBudgetCard } from "@/components/finance/ActiveBudgetCard";
@@ -16,7 +15,7 @@ import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
-import { useAuth } from "@/lib/auth-context";
+import { useRequireAuth } from "@/lib/use-require-auth";
 import { downloadTextFile, toCsv } from "@/lib/finance-export";
 import {
   financeAccountSchema,
@@ -31,8 +30,7 @@ import { currentMonthKey, formatGbp, formatMonthLabel } from "@/lib/money";
 import { z } from "zod";
 
 export default function ReportsPage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, gated, redirecting } = useRequireAuth();
   const [reports, setReports] = useState<FinanceReports | null>(null);
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
   const [debts, setDebts] = useState<FinanceLiability[]>([]);
@@ -41,9 +39,6 @@ export default function ReportsPage() {
   const [month, setMonth] = useState(currentMonthKey());
   const [reloadNonce, setReloadNonce] = useState(0);
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-  }, [authLoading, user, router]);
 
   useEffect(() => {
     if (!user) return;
@@ -145,7 +140,7 @@ export default function ReportsPage() {
     setStatus(`Exported ${format.toUpperCase()} snapshot`);
   }
 
-  if (authLoading || !user) return <AuthLoadingShell />;
+  if (gated) return <AuthLoadingShell redirecting={redirecting} />;
 
   return (
     <AppShell>
