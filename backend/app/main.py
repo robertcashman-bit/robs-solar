@@ -86,14 +86,14 @@ async def _load_octopus_credentials() -> None:
     from app.services.octopus_settings_service import octopus_settings_service
     from app.services.safety_settings_service import safety_settings_service
 
-    async with SessionLocal() as db:
-        await octopus_settings_service.load_into_client(db)
-        await safety_settings_service.load_cache(db)
-    if octopus_client.configured() and octopus_client.credentials.account_number:
-        try:
+    try:
+        async with SessionLocal() as db:
+            await octopus_settings_service.load_into_client(db)
+            await safety_settings_service.load_cache(db)
+        if octopus_client.configured() and octopus_client.credentials.account_number:
             await octopus_client.resolve_tariffs_from_account()
-        except Exception:
-            pass
+    except Exception:
+        logger.exception("Octopus credential load skipped")
 
 
 app = FastAPI(title="Rob's Solar API", version="0.1.0", lifespan=lifespan)

@@ -41,9 +41,14 @@ class OctopusSettingsService:
 
     async def get_config(self, db: AsyncSession) -> OctopusConfig:
         row = await self._get_row(db)
-        if row is None:
+        if row is None or not (row.value or "").strip():
             return self._env_config()
-        return OctopusConfig.model_validate(json.loads(row.value))
+        try:
+            payload = json.loads(row.value)
+        except json.JSONDecodeError:
+            logger.warning("Ignoring invalid Octopus settings JSON")
+            return self._env_config()
+        return OctopusConfig.model_validate(payload)
 
     @staticmethod
     def _merge_env(config: OctopusConfig, env: OctopusConfig) -> OctopusConfig:
