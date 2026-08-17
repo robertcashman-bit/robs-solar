@@ -488,6 +488,70 @@ async def test_last4_incompatible_debt_types_stay_separate(setup_db: None) -> No
 
 
 @pytest.mark.asyncio
+async def test_last4_other_does_not_bridge_incompatible_types(setup_db: None) -> None:
+    """An `other` seed must not pull a card and mortgage into one last-4 cluster."""
+    async with SessionLocal() as db:
+        other = await _add_liability(
+            db,
+            name="Account 6754",
+            balance=1000,
+            debt_type=DebtType.OTHER.value,
+        )
+        card = await _add_liability(
+            db,
+            name="Lloyds — 6754 credit card",
+            balance=1000,
+            debt_type=DebtType.CREDIT_CARD.value,
+        )
+        mortgage = await _add_liability(
+            db,
+            name="Mortgage 6754",
+            balance=1000,
+            debt_type=DebtType.MORTGAGE.value,
+        )
+
+        archived = await finance_liabilities_service.dedupe_active_liabilities(db)
+        assert archived == 0
+
+        active = (
+            await db.scalars(
+                select(FinanceLiabilityRow).where(FinanceLiabilityRow.is_active.is_(True))
+            )
+        ).all()
+        assert {row.id for row in active} == {other.id, card.id, mortgage.id}
+
+
+@pytest.mark.asyncio
+async def test_last4_non_card_debts_with_shared_digits_stay_separate(
+    setup_db: None,
+) -> None:
+    """Loans/mortgages sharing a year-like token must not last-4 collapse."""
+    async with SessionLocal() as db:
+        loan = await _add_liability(
+            db,
+            name="Personal loan 2024",
+            balance=5000,
+            debt_type=DebtType.LOAN.value,
+        )
+        mortgage = await _add_liability(
+            db,
+            name="House mortgage 2024",
+            balance=5000,
+            debt_type=DebtType.MORTGAGE.value,
+        )
+
+        archived = await finance_liabilities_service.dedupe_active_liabilities(db)
+        assert archived == 0
+
+        active = (
+            await db.scalars(
+                select(FinanceLiabilityRow).where(FinanceLiabilityRow.is_active.is_(True))
+            )
+        ).all()
+        assert {row.id for row in active} == {loan.id, mortgage.id}
+
+
+@pytest.mark.asyncio
 async def test_last4_different_balances_stay_separate(setup_db: None) -> None:
     async with SessionLocal() as db:
         first = await _add_liability(
@@ -546,6 +610,42 @@ async def test_ensure_links_manual_by_shared_last4(setup_db: None) -> None:
         assert active[0].balance_gbp == 8974.94
         assert active[0].interest_rate_pct == 22.9
         assert active[0].name == "Lloyds Personal — 6754 credit card"
+
+
+@pytest.mark.asyncio
+async def test_ensure_does_not_last4_link_non_card_account(setup_db: None) -> None:
+    """A loan account must not claim a manual row merely via shared digits."""
+    async with SessionLocal() as db:
+        await _add_account(
+            db,
+            name="Personal loan 2024",
+            balance=5000,
+            account_type=FinanceAccountType.LOAN.value,
+        )
+        manual = await _add_liability(
+            db,
+            name="Other facility 2024",
+            balance=4800,
+            account_id=None,
+            debt_type=DebtType.LOAN.value,
+            notes="Manual loan",
+        )
+
+        created = await finance_liabilities_service.ensure_from_accounts(db)
+        assert created == 1
+
+        await db.refresh(manual)
+        assert manual.account_id is None
+        assert manual.name == "Other facility 2024"
+        assert manual.balance_gbp == 4800
+
+        active = (
+            await db.scalars(
+                select(FinanceLiabilityRow).where(FinanceLiabilityRow.is_active.is_(True))
+            )
+        ).all()
+        assert len(active) == 2
+        assert {row.account_id is not None for row in active} == {True, False}
 
 
 @pytest.mark.asyncio

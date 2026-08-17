@@ -56,6 +56,9 @@ def _to_schema(row: FinanceLiabilityRow) -> FinanceLiability:
 
 _LAST4_RE = re.compile(r"(?<!\d)(\d{4})(?!\d)")
 
+# Last-4 fingerprinting is for card duplicates only (not loans/mortgages/years).
+_CARD_LIKE_DEBT_TYPES = frozenset({DebtType.CREDIT_CARD.value})
+
 
 def _normalise_debt_name(name: str) -> str:
     """Collapse punctuation/whitespace so near-identical debt names match."""
@@ -69,6 +72,10 @@ def _extract_last4(name: str) -> str | None:
     if not matches:
         return None
     return matches[-1]
+
+
+def _is_card_like_debt(debt_type: str) -> bool:
+    return debt_type in _CARD_LIKE_DEBT_TYPES
 
 
 def _name_specificity(name: str) -> tuple[int, int]:
@@ -297,9 +304,12 @@ class FinanceLiabilitiesService:
 
         # Last-4 fingerprint: same card ending + same balance can appear under
         # different account_ids / truncated names (e.g. Lloyds … 6754 vs 6754).
+        # Only card-like debts participate so years/loan suffixes cannot collapse.
         active = [row for row in rows if row.is_active]
         by_last4: dict[tuple[str, str, float], list[FinanceLiabilityRow]] = {}
         for row in active:
+            if not _is_card_like_debt(row.debt_type):
+                continue
             last4 = _extract_last4(row.name)
             if last4 is None:
                 continue
@@ -313,7 +323,12 @@ class FinanceLiabilitiesService:
             for row in group:
                 placed = False
                 for cluster in clusters:
-                    if not _debt_types_compatible(cluster[0].debt_type, row.debt_type):
+                    # Require compatibility with every member so an `other` seed
+                    # cannot bridge incompatible types (e.g. card + mortgage).
+                    if not all(
+                        _debt_types_compatible(existing.debt_type, row.debt_type)
+                        for existing in cluster
+                    ):
                         continue
                     cluster.append(row)
                     placed = True
@@ -376,8 +391,10 @@ class FinanceLiabilitiesService:
                     if not _debt_types_compatible(candidate.debt_type, debt_type.value):
                         continue
                     name_match = _normalise_debt_name(candidate.name) == account_name
+                    # Last-4 linking is card-only; loans/mortgages may share years.
                     last4_match = (
-                        account_last4 is not None
+                        debt_type == DebtType.CREDIT_CARD
+                        and account_last4 is not None
                         and _extract_last4(candidate.name) == account_last4
                     )
                     if not name_match and not last4_match:
