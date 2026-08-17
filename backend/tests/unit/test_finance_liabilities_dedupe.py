@@ -162,6 +162,87 @@ async def test_ensure_from_accounts_is_idempotent(setup_db: None) -> None:
 
 
 @pytest.mark.asyncio
+async def test_different_account_ids_same_name_stay_separate(setup_db: None) -> None:
+    async with SessionLocal() as db:
+        first_account = await _add_account(db, name="Loan", balance=1000)
+        second_account = await _add_account(
+            db,
+            name="Loan",
+            balance=2000,
+            account_type=FinanceAccountType.LOAN.value,
+        )
+        first = await _add_liability(
+            db,
+            name="Loan",
+            balance=1000,
+            account_id=first_account.id,
+            debt_type=DebtType.LOAN.value,
+            notes="From account",
+        )
+        second = await _add_liability(
+            db,
+            name="Loan",
+            balance=2000,
+            account_id=second_account.id,
+            debt_type=DebtType.LOAN.value,
+            notes="From account",
+        )
+
+        archived = await finance_liabilities_service.dedupe_active_liabilities(db)
+        assert archived == 0
+
+        active = (
+            await db.scalars(
+                select(FinanceLiabilityRow).where(FinanceLiabilityRow.is_active.is_(True))
+            )
+        ).all()
+        assert {row.id for row in active} == {first.id, second.id}
+        assert {row.account_id for row in active} == {first_account.id, second_account.id}
+
+
+@pytest.mark.asyncio
+async def test_same_account_dedupe_keeps_fresher_balance(setup_db: None) -> None:
+    async with SessionLocal() as db:
+        account = await _add_account(db, name="MBNA", balance=350)
+        stale = await _add_liability(
+            db,
+            name="MBNA",
+            account_id=account.id,
+            balance=900,
+            interest_rate_pct=22.9,
+            minimum_payment_gbp=40,
+            notes="Older manual details",
+        )
+        stale.updated_at = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        fresh = await _add_liability(
+            db,
+            name="MBNA",
+            account_id=account.id,
+            balance=350,
+            interest_rate_pct=0,
+            minimum_payment_gbp=0,
+            notes="From account",
+        )
+        fresh.updated_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+        await db.commit()
+
+        archived = await finance_liabilities_service.dedupe_active_liabilities(db)
+        assert archived == 1
+
+        active = (
+            await db.scalars(
+                select(FinanceLiabilityRow).where(FinanceLiabilityRow.is_active.is_(True))
+            )
+        ).all()
+        assert len(active) == 1
+        assert active[0].account_id == account.id
+        assert active[0].balance_gbp == 350.0
+        assert active[0].interest_rate_pct == 22.9
+        assert active[0].minimum_payment_gbp == 40
+        assert active[0].notes == "Older manual details"
+
+
+@pytest.mark.asyncio
 async def test_different_names_stay_separate(setup_db: None) -> None:
     async with SessionLocal() as db:
         await _add_liability(db, name="MBNA", balance=300)

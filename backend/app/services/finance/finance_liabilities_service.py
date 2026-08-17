@@ -86,8 +86,21 @@ def _prefer_liability(
     return left if left_id <= right_id else right
 
 
+def _aware_updated_at(row: FinanceLiabilityRow) -> datetime:
+    value = row.updated_at
+    if value is None:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 def _merge_liability_fields(keeper: FinanceLiabilityRow, donor: FinanceLiabilityRow) -> None:
     """Copy missing useful fields from an archived duplicate onto the keeper."""
+    # Keep the fresher balance so a richer stale duplicate cannot win on metadata
+    # and leave an outdated amount on the surviving row.
+    if _aware_updated_at(donor) > _aware_updated_at(keeper):
+        keeper.balance_gbp = donor.balance_gbp
     if not keeper.interest_rate_pct and donor.interest_rate_pct:
         keeper.interest_rate_pct = donor.interest_rate_pct
     if getattr(keeper, "interest_rate_known", True) is False and getattr(
@@ -126,6 +139,15 @@ def _debt_types_compatible(left: str, right: str) -> bool:
     return left in loanish and right in loanish
 
 
+def _name_dedupe_account_compatible(
+    left: FinanceLiabilityRow, right: FinanceLiabilityRow
+) -> bool:
+    """Name dedupe may link manual↔mirrored, but not two distinct accounts."""
+    if left.account_id is not None and right.account_id is not None:
+        return left.account_id == right.account_id
+    return True
+
+
 class FinanceLiabilitiesService:
     async def list_liabilities(
         self,
@@ -159,7 +181,8 @@ class FinanceLiabilitiesService:
         Rules:
         * one active liability per linked ``account_id``
         * near-duplicates with the same scope + normalised name (compatible
-          debt_type) collapse onto the preferred row (account-linked first)
+          debt_type) collapse onto the preferred row (account-linked first),
+          but never collapse two rows linked to different ``account_id`` values
         """
         rows = list(
             (
@@ -208,14 +231,21 @@ class FinanceLiabilitiesService:
             if len(group) < 2:
                 continue
             # Partition by compatible debt type so e.g. mortgage + card stay separate.
+            # Also keep distinct linked accounts apart even when names match.
             clusters: list[list[FinanceLiabilityRow]] = []
             for row in group:
                 placed = False
                 for cluster in clusters:
-                    if _debt_types_compatible(cluster[0].debt_type, row.debt_type):
-                        cluster.append(row)
-                        placed = True
-                        break
+                    if not _debt_types_compatible(cluster[0].debt_type, row.debt_type):
+                        continue
+                    if not all(
+                        _name_dedupe_account_compatible(existing, row)
+                        for existing in cluster
+                    ):
+                        continue
+                    cluster.append(row)
+                    placed = True
+                    break
                 if not placed:
                     clusters.append([row])
             for cluster in clusters:
