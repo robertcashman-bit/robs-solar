@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
-
 import { BudgetStudio } from "@/components/finance/BudgetStudio";
 import { FinanceIntegrityPanel } from "@/components/finance/FinanceIntegrityPanel";
 import { HistoryStatsPanel } from "@/components/finance/HistoryStatsPanel";

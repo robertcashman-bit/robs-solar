@@ -218,6 +218,6 @@ def pytest_collection_modifyitems(config, items) -> None:  # noqa: ARG001
         reason="Energy/solar public API removed — see backend/ENERGY_FOLLOWUP.md"
     )
     for item in items:
-        path = getattr(item.fspath, "basename", lambda: "")()
+        path = Path(str(item.fspath)).name
         if path in _ENERGY_ROUTE_TEST_FILES:
             item.add_marker(skip)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { MetricTile } from "@/components/finance/MetricTile";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";

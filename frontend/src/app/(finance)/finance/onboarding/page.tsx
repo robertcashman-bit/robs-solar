@@ -62,7 +62,7 @@ const STEPS = [
 ];
 
 export default function OnboardingPage() {
-  const { user, gated, redirecting } = useRequireAuth();
+  const { gated, redirecting } = useRequireAuth();
   const [step, setStep] = useState(0);
 
   if (gated) {

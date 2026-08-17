@@ -24,7 +24,8 @@ async def lifespan(_: FastAPI):
     warn_if_default_passwords()
     if settings.app_env.lower() == "production" and settings.adapter_mode.lower() == "simulator":
         logger.info(
-            "APP_ENV=production with ADAPTER_MODE=simulator — solar adapter unused; finance uses Neon/local data"
+            "APP_ENV=production with ADAPTER_MODE=simulator — "
+            "solar adapter unused; finance uses Neon/local data"
         )
     await init_db()
     await _restore_finance_if_empty()

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
 import { notifyFinanceOverviewReady } from "@/lib/finance-events";
@@ -26,6 +26,13 @@ const LAST_TXNS_KEY = "robs-finance-last-transactions";
 type CachedTxns = {
   filter: string;
   q: string;
+  rows: FinanceTxn[];
+  categories: string[];
+  hasMore: boolean;
+};
+
+type FetchedTxns = {
+  key: string;
   rows: FinanceTxn[];
   categories: string[];
   hasMore: boolean;
@@ -59,14 +66,27 @@ export function useFinanceTransactions(
   q: string,
 ) {
   const enabled = Boolean(user);
-  const cached = enabled ? readLastTxns(filter, q.trim()) : null;
-  const [rows, setRows] = useState<FinanceTxn[]>(cached?.rows ?? []);
-  const [categories, setCategories] = useState<string[]>(cached?.categories ?? []);
-  const [loading, setLoading] = useState(!cached);
-  const [hasMore, setHasMore] = useState(Boolean(cached?.hasMore));
+  const trimmedQ = q.trim();
+  const cacheKey = `${filter}|${trimmedQ}`;
+  const cached = enabled ? readLastTxns(filter, trimmedQ) : null;
+  const [fetched, setFetched] = useState<FetchedTxns | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const loadedCount = useRef(cached?.rows.length ?? 0);
   const { refreshing } = useFinanceBackgroundLiveRefresh(user);
+
+  const fromFetch = fetched?.key === cacheKey ? fetched : null;
+  const active = fromFetch
+    ?? (cached
+      ? {
+          key: cacheKey,
+          rows: cached.rows,
+          categories: cached.categories,
+          hasMore: cached.hasMore,
+        }
+      : null);
+  const rows = active?.rows ?? [];
+  const categories = active?.categories ?? [];
+  const hasMore = Boolean(active?.hasMore);
+  const loading = Boolean(enabled && !active);
 
   const load = useCallback(
     async (append = false) => {
@@ -79,20 +99,25 @@ export function useFinanceTransactions(
         } else if (filter !== "all") {
           params.set("filter", filter);
         }
-        if (q.trim()) params.set("q", q.trim());
+        if (trimmedQ) params.set("q", trimmedQ);
         params.set("limit", String(FINANCE_TXN_PAGE_SIZE));
-        params.set("offset", String(append ? loadedCount.current : 0));
+        const offset = append && fetched?.key === cacheKey ? fetched.rows.length : 0;
+        params.set("offset", String(offset));
         const [data, cats] = await Promise.all([
           apiClient.get<FinanceTxn[]>(`/finance/transactions?${params}`),
           apiClient.get<Array<{ parent: string }>>("/finance/categories"),
         ]);
-        setRows((prev) => (append ? [...prev, ...data] : data));
-        loadedCount.current = append ? loadedCount.current + data.length : data.length;
-        const nextHasMore = data.length === FINANCE_TXN_PAGE_SIZE;
-        setHasMore(nextHasMore);
         const nextCategories = [...new Set(cats.map((item) => item.parent).filter(Boolean))];
-        setCategories(nextCategories);
-        if (!append && filter === "all" && !q.trim()) {
+        const nextHasMore = data.length === FINANCE_TXN_PAGE_SIZE;
+        const nextRows =
+          append && fetched?.key === cacheKey ? [...fetched.rows, ...data] : data;
+        setFetched({
+          key: cacheKey,
+          rows: nextRows,
+          categories: nextCategories,
+          hasMore: nextHasMore,
+        });
+        if (!append && filter === "all" && !trimmedQ) {
           writeLastTxns({
             filter,
             q: "",
@@ -104,22 +129,10 @@ export function useFinanceTransactions(
         notifyFinanceOverviewReady();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load transactions");
-      } finally {
-        setLoading(false);
       }
     },
-    [enabled, filter, q],
+    [enabled, filter, trimmedQ, cacheKey, fetched],
   );
-
-  useEffect(() => {
-    if (!enabled) return;
-    const next = readLastTxns(filter, q.trim());
-    setRows(next?.rows ?? []);
-    setCategories(next?.categories ?? []);
-    setHasMore(Boolean(next?.hasMore));
-    loadedCount.current = next?.rows.length ?? 0;
-    setLoading(!next);
-  }, [enabled, filter, q]);
 
   useFinanceReload(() => load(false), enabled);
 

@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
-
 import { BankImportCard } from "@/components/finance/BankImportCard";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
