@@ -172,6 +172,8 @@ class HealthResponse(BaseModel):
     read_only: bool
     timestamp: datetime
     plant_id: Optional[str] = None
+    quickfile_env_configured: bool = False
+    lunchflow_env_configured: bool = False
 
 
 class AuditOutcome(str, Enum):

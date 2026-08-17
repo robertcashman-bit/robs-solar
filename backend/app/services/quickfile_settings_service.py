@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -11,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.models import AppSettingRow
 from app.schemas.finance import QuickFileConfig, QuickFileConfigStatus
+from app.services.settings_crypto import open_json, seal_json
 
 _QUICKFILE_KEY = "quickfile"
 _LAST_SYNC_KEY = "quickfile_last_sync_at"
@@ -33,10 +33,10 @@ class QuickFileSettingsService:
 
     async def get_config(self, db: AsyncSession) -> QuickFileConfig:
         row = await self._get_row(db, _QUICKFILE_KEY)
-        if row is None:
-            return self._env_config()
-        stored = QuickFileConfig.model_validate(json.loads(row.value))
         env = self._env_config()
+        if row is None or not (row.value or "").strip():
+            return env
+        stored = QuickFileConfig.model_validate(open_json(row.value))
         return QuickFileConfig(
             account_number=stored.account_number or env.account_number,
             api_key=stored.api_key or env.api_key,
@@ -65,7 +65,7 @@ class QuickFileSettingsService:
         if not config.api_key:
             config.api_key = current.api_key
         row = await self._get_row(db, _QUICKFILE_KEY)
-        payload = json.dumps(config.model_dump())
+        payload = seal_json(config.model_dump())
         if row is None:
             db.add(AppSettingRow(key=_QUICKFILE_KEY, value=payload))
         else:
