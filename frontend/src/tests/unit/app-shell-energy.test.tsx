@@ -12,19 +12,20 @@ vi.mock("@/lib/auth-context", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/energy",
+  usePathname: () => "/",
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-describe("AppShell energy context", () => {
-  it("shows energy branding on energy routes", () => {
+describe("AppShell finance navigation", () => {
+  it("stays on the finance dashboard and hides Energy / Solar", () => {
     render(
       <AppShell>
-        <p>Energy content</p>
+        <p>Finance content</p>
       </AppShell>,
     );
-    expect(screen.getByText("Energy & Solar")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Energy & Solar/i })).toHaveAttribute("href", "/energy");
+    expect(screen.getByText("Finance Dashboard")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Energy" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Energy & Solar")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Skip to main content" })).toHaveAttribute(
       "href",
       "#main-content",

@@ -17,12 +17,14 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
-      { source: "/analytics", destination: "/energy/analytics", permanent: true },
-      { source: "/octopus", destination: "/energy/octopus", permanent: true },
-      { source: "/forecast", destination: "/energy/forecast", permanent: true },
-      { source: "/scheduler", destination: "/energy/scheduler", permanent: true },
-      { source: "/controls", destination: "/energy/controls", permanent: true },
-      { source: "/assistant", destination: "/energy/assistant", permanent: true },
+      { source: "/energy", destination: "/", permanent: false },
+      { source: "/energy/:path*", destination: "/", permanent: false },
+      { source: "/analytics", destination: "/", permanent: false },
+      { source: "/octopus", destination: "/", permanent: false },
+      { source: "/forecast", destination: "/", permanent: false },
+      { source: "/scheduler", destination: "/", permanent: false },
+      { source: "/controls", destination: "/", permanent: false },
+      { source: "/assistant", destination: "/", permanent: false },
     ];
   },
   async rewrites() {

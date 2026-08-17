@@ -6,14 +6,11 @@ export default function NotFound() {
       <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">404</p>
       <h1 className="mt-2 text-2xl font-semibold text-[var(--foreground)]">Page not found</h1>
       <p className="mt-2 max-w-md text-sm text-[var(--muted)]">
-        That route does not exist. Head back to finance overview or energy dashboard.
+        That route does not exist. Head back to the finance overview.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
         <Link href="/" className="solar-btn-primary">
           Finance overview
-        </Link>
-        <Link href="/energy" className="solar-btn-secondary">
-          Energy dashboard
         </Link>
       </div>
     </div>

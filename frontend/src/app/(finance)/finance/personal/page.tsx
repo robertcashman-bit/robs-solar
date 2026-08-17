@@ -22,7 +22,7 @@ import {
   type PersonalFinanceSnapshot,
 } from "@/lib/finance-schemas";
 import { isSandboxFinanceAccount } from "@/components/finance/finance-item-utils";
-import { currentMonthKey, financeRoleForAccountBalance, parseRequiredNumber } from "@/lib/money";
+import { currentMonthKey, financeRoleForAccountBalance, formatGbp, parseRequiredNumber } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
 
 export default function PersonalFinancePage() {
@@ -35,6 +35,7 @@ export default function PersonalFinancePage() {
     name: "",
     balance_gbp: "",
     account_type: "current",
+    credit_limit_gbp: "",
   });
   const [snapshotForm, setSnapshotForm] = useState({
     monthly_income_gbp: "",
@@ -94,8 +95,12 @@ export default function PersonalFinancePage() {
         account_type: form.account_type,
         name: form.name,
         balance_gbp: parseRequiredNumber(form.balance_gbp, "Balance"),
+        credit_limit_gbp:
+          form.account_type === "credit_card" && form.credit_limit_gbp.trim()
+            ? parseRequiredNumber(form.credit_limit_gbp, "Credit limit")
+            : null,
       });
-      setForm({ name: "", balance_gbp: "", account_type: "current" });
+      setForm({ name: "", balance_gbp: "", account_type: "current", credit_limit_gbp: "" });
       setError(null);
       await load();
     } catch (err) {
@@ -153,6 +158,11 @@ export default function PersonalFinancePage() {
               <span>
                 {a.name}{" "}
                 <span className="text-[var(--muted)]">({a.account_type.replaceAll("_", " ")})</span>
+                {a.credit_limit_gbp ? (
+                  <span className="text-[var(--muted)]"> · limit {formatGbp(a.credit_limit_gbp)}</span>
+                ) : a.account_type === "credit_card" ? (
+                  <span className="text-[var(--muted)]"> · add a credit limit for available credit</span>
+                ) : null}
                 {a.is_historic ? <HistoricBadge /> : null}
               </span>
               <FinanceAmount
@@ -206,6 +216,16 @@ export default function PersonalFinancePage() {
             onChange={(e) => setForm({ ...form, balance_gbp: e.target.value })}
             required
           />
+          {form.account_type === "credit_card" ? (
+            <input
+              className="solar-input"
+              type="number"
+              step="0.01"
+              placeholder="Credit limit GBP"
+              value={form.credit_limit_gbp}
+              onChange={(e) => setForm({ ...form, credit_limit_gbp: e.target.value })}
+            />
+          ) : null}
           <button type="submit" className="solar-btn-primary">
             Add account
           </button>

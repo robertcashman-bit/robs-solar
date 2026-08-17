@@ -4,13 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { EnergySubNav } from "@/components/shared/EnergySubNav";
 import {
   AlertIcon,
   ChartIcon,
   GaugeIcon,
   SettingsIcon,
-  SunIcon,
   WalletIcon,
 } from "@/components/shared/icons";
 import { useAuth } from "@/lib/auth-context";
@@ -27,7 +25,6 @@ const navItems = [
   { href: "/finance/budget", label: "Budget", icon: ChartIcon },
   { href: "/finance/reports", label: "Reports", icon: ChartIcon },
   { href: "/finance/assistant", label: "AI assistant", icon: ChartIcon },
-  { href: "/energy", label: "Energy", icon: SunIcon },
   { href: "/audit", label: "Audit", icon: AlertIcon, adminOnly: true },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
@@ -44,9 +41,6 @@ function isNavActive(pathname: string, href: string): boolean {
   if (href === "/") {
     return pathname === "/";
   }
-  if (href === "/energy") {
-    return pathname === "/energy" || pathname.startsWith("/energy/");
-  }
   if (href === "/finance/connect") {
     return (
       pathname === href ||
@@ -57,15 +51,10 @@ function isNavActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function isEnergySection(pathname: string): boolean {
-  return pathname === "/energy" || pathname.startsWith("/energy/");
-}
-
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { user, logout, loading } = useAuth();
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const inEnergySection = isEnergySection(pathname);
 
   useEffect(() => {
     setTheme(readStoredTheme());
@@ -105,31 +94,16 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
       <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface-elevated)]/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <Link
-            href={inEnergySection ? "/energy" : "/"}
-            className="group flex items-center gap-3"
-          >
-            <div
-              className={`flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-md transition-transform group-hover:scale-105 ${
-                inEnergySection
-                  ? "bg-gradient-to-br from-amber-400 to-orange-600"
-                  : "bg-gradient-to-br from-emerald-400 to-teal-600"
-              }`}
-            >
-              {inEnergySection ? <SunIcon size={20} /> : <WalletIcon size={20} />}
+          <Link href="/" className="group flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-md transition-transform group-hover:scale-105">
+              <WalletIcon size={20} />
             </div>
             <div>
-              <p
-                className={`text-[0.65rem] font-bold uppercase tracking-[0.14em] ${
-                  inEnergySection
-                    ? "text-amber-700 dark:text-amber-400"
-                    : "text-emerald-700 dark:text-emerald-400"
-                }`}
-              >
+              <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400">
                 Rob&apos;s Finance
               </p>
               <p className="text-sm font-semibold leading-tight tracking-tight">
-                {inEnergySection ? "Energy & Solar" : "Finance Dashboard"}
+                Finance Dashboard
               </p>
             </div>
           </Link>
@@ -196,16 +170,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">
         {user ? <InstallAppBanner /> : null}
-        {user ? <EnergySubNav /> : null}
         {children}
       </main>
 
       <footer className="border-t border-[var(--border)] py-5 text-center">
         <p className="text-xs text-[var(--muted)]">
-          Rob&apos;s Finance — personal &amp; business tracking · Energy / Solar in{" "}
-          <Link href="/energy" className="underline">
-            Energy section
-          </Link>
+          Rob&apos;s Finance — personal and business tracking
         </p>
       </footer>
     </div>

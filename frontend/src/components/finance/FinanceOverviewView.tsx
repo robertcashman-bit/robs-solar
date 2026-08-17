@@ -208,7 +208,6 @@ export function FinanceOverviewView({
             ["/finance/cash-flow", "Cash flow"],
             ["/finance/budget", "Budget"],
             ["/finance/reports", "Reports"],
-            ["/energy", "Energy / Solar"],
           ].map(([href, label]) => (
             <Link key={href} href={href} className="solar-btn-ghost text-sm">
               {label}

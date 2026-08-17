@@ -10,8 +10,6 @@ import { financeIntegrationsReconnectResultSchema } from "@/lib/finance-schemas"
 
 const integrations = [
   { id: "manual", label: "Manual entry", status: "Active", detail: "Enter balances and transactions yourself." },
-  { id: "octopus", label: "Octopus Energy", status: "Active", detail: "Configured in Energy settings." },
-  { id: "sunsynk", label: "Sunsynk Connect", status: "Active", detail: "Live inverter data in Energy section." },
 ];
 
 type FinanceSettingsPanelProps = {

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { AccountStatements } from "@/components/finance/AccountStatements";
@@ -28,7 +27,7 @@ import {
   type FinanceOverview,
   type FinanceReports,
 } from "@/lib/finance-schemas";
-import { formatGbp, formatMonthLabel, currentMonthKey } from "@/lib/money";
+import { formatMonthLabel, currentMonthKey } from "@/lib/money";
 import { z } from "zod";
 
 export default function ReportsPage() {
@@ -153,19 +152,6 @@ export default function ReportsPage() {
               <MetricTile label="Net worth" value={reports.net_worth_gbp} amountRole="signed" />
               <MetricTile label="Total debt" value={Math.abs(reports.total_debt_gbp)} amountRole="debt" />
             </div>
-          </section>
-
-          <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
-              Energy savings
-            </h2>
-            <p className="mt-2 text-sm">
-              {reports.energy_savings_vs_forecast} — {formatGbp(reports.energy_savings_gbp)} saved
-              this month.
-            </p>
-            <Link href="/energy/analytics" className="mt-3 inline-block text-sm underline">
-              Open energy analytics
-            </Link>
           </section>
         </div>
       ) : (

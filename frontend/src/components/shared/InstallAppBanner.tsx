@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 const DISMISS_KEY = "robs-finance-install-dismissed";
@@ -43,17 +44,22 @@ function readInstallEligibility(): { eligible: boolean; iosHint: boolean } {
   if (isIosSafari()) {
     return { eligible: true, iosHint: true };
   }
-  return { eligible: false, iosHint: false };
+  return { eligible: true, iosHint: false };
 }
 
 export function InstallAppBanner() {
   const [initial] = useState(readInstallEligibility);
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return localStorage.getItem(DISMISS_KEY) === "1";
+  });
   const [androidEligible, setAndroidEligible] = useState(false);
 
   useEffect(() => {
-    if (initial.eligible || dismissed) {
+    if (dismissed || localStorage.getItem(DISMISS_KEY) === "1") {
       return;
     }
 
@@ -90,17 +96,18 @@ export function InstallAppBanner() {
   }
 
   return (
-    <div className="mx-auto mb-4 max-w-3xl rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-950 dark:text-emerald-100">
+    <div className="mx-auto mb-4 max-w-3xl rounded-xl border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-semibold">Add Rob&apos;s Finance to your Dock or Home Screen</p>
+          <p className="font-semibold">Install Rob&apos;s Finance on your phone</p>
           {initial.iosHint ? (
             <p className="mt-1 text-xs opacity-90">
               Tap Share, then &quot;Add to Home Screen&quot; to open the app like a native app.
             </p>
           ) : (
             <p className="mt-1 text-xs opacity-90">
-              Install for quick access from your Dock (Mac) or home screen with the finance app icon.
+              Add a Dock, Desktop, or home-screen shortcut. Settings → App shortcut restores the
+              Mac launcher if it disappeared.
             </p>
           )}
         </div>
@@ -109,7 +116,11 @@ export function InstallAppBanner() {
             <button type="button" className="solar-btn-primary text-xs" onClick={() => void install()}>
               Install app
             </button>
-          ) : null}
+          ) : (
+            <Link href="/settings#app-shortcut" className="solar-btn-primary text-xs">
+              App shortcut
+            </Link>
+          )}
           <button type="button" className="solar-btn-ghost text-xs" onClick={dismiss}>
             Dismiss
           </button>

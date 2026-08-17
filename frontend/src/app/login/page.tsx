@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { ErrorBanner } from "@/components/shared/Banners";
 import { PageLoading } from "@/components/shared/PageLoading";
-import { SunIcon, WalletIcon } from "@/components/shared/icons";
+import { WalletIcon } from "@/components/shared/icons";
 import { useAuth } from "@/lib/auth-context";
 import { readLastEmail, rememberLastEmail } from "@/lib/last-email";
 
@@ -100,13 +100,8 @@ export default function LoginPage() {
         style={{ boxShadow: "var(--shadow-lg)" }}
       >
         <div className="flex flex-col items-center text-center">
-          <div className="flex items-center gap-2">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-lg">
-              <WalletIcon size={24} />
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 text-white shadow-lg">
-              <SunIcon size={24} />
-            </div>
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-lg">
+            <WalletIcon size={28} />
           </div>
           <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
             Rob&apos;s Finance

@@ -37,6 +37,7 @@ export default function BusinessFinancePage() {
     name: "",
     balance_gbp: "",
     account_type: "current",
+    credit_limit_gbp: "",
   });
   const [snapshotForm, setSnapshotForm] = useState({
     turnover_gbp: "",
@@ -110,8 +111,12 @@ export default function BusinessFinancePage() {
         account_type: form.account_type,
         name: form.name,
         balance_gbp: Number(form.balance_gbp),
+        credit_limit_gbp:
+          form.account_type === "capital_on_tap" && form.credit_limit_gbp.trim()
+            ? Number(form.credit_limit_gbp)
+            : null,
       });
-      setForm({ name: "", balance_gbp: "", account_type: "current" });
+      setForm({ name: "", balance_gbp: "", account_type: "current", credit_limit_gbp: "" });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add account");
@@ -235,6 +240,16 @@ export default function BusinessFinancePage() {
               onChange={(e) => setForm({ ...form, balance_gbp: e.target.value })}
               required
             />
+            {form.account_type === "capital_on_tap" ? (
+              <input
+                className="solar-input"
+                type="number"
+                step="0.01"
+                placeholder="Credit limit GBP"
+                value={form.credit_limit_gbp}
+                onChange={(e) => setForm({ ...form, credit_limit_gbp: e.target.value })}
+              />
+            ) : null}
             <button type="submit" className="solar-btn-primary" disabled={saving}>
               {saving ? "Saving…" : "Add account"}
             </button>
