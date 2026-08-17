@@ -24,6 +24,7 @@ from app.services.finance.finance_audit_service import finance_audit_service
 from app.services.finance.finance_ledger_service import finance_ledger_service
 from app.services.finance.money import quantize_gbp
 from app.services.lunchflow_settings_service import lunchflow_settings_service
+from app.services.quickfile_settings_service import quickfile_settings_service
 from app.services.truelayer_settings_service import truelayer_settings_service
 
 
@@ -88,10 +89,14 @@ class FinanceHealthService:
         )
         db.add(event)
         await db.commit()
+        qf = await quickfile_settings_service.get_status(db)
+        lf = await lunchflow_settings_service.get_status(db)
+        tl = await truelayer_settings_service.get_status(db)
         return {
             "ok": writable,
             "db_read": True,
             "db_write": writable,
+            "data_source": "finance",
             "database_backend": "postgres" if is_postgres_url(effective_url) else "sqlite",
             "ephemeral_database": ephemeral,
             "web_backup_configured": bool(settings.blob_read_write_token),
@@ -102,6 +107,25 @@ class FinanceHealthService:
             "consistency": consistency,
             "repaired": False,
             "needs_review": consistency["needs_review"] or ephemeral,
+            "integrations": {
+                "quickfile": {
+                    "configured": bool(qf.configured),
+                    "last_sync_at": qf.last_sync_at,
+                },
+                "lunchflow": {
+                    "configured": bool(lf.configured),
+                    "connected": bool(lf.connected),
+                    "last_sync_at": lf.last_sync_at,
+                },
+                "truelayer": {
+                    "configured": bool(tl.configured),
+                    "connected": bool(tl.connected),
+                    "last_sync_at": tl.last_sync_at,
+                },
+            },
+            "finance_bank_reads_ready": bool(
+                qf.configured or lf.configured or tl.configured
+            ),
         }
 
     async def consistency_flags(self, db: AsyncSession) -> dict[str, Any]:

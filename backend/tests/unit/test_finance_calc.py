@@ -343,6 +343,17 @@ def test_resolve_monthly_flow_prefers_snapshot_then_open_banking() -> None:
     assert spending == 950
 
 
+def test_monthly_flow_note_labels_actual_vs_budget() -> None:
+    from app.services.finance.finance_calc import monthly_flow_note
+
+    assert "snapshot" in monthly_flow_note("snapshot").lower()
+    assert "open banking" in monthly_flow_note("open_banking").lower()
+    assert "budget plan" in monthly_flow_note("budget").lower()
+    assert "not live" in monthly_flow_note("budget").lower()
+    assert "no live" in monthly_flow_note("none").lower()
+    assert "transfers excluded" in monthly_flow_note("transactions").lower()
+
+
 def test_pick_open_banking_flow_uses_newest_nonempty_source() -> None:
     empty = MonthlyFlow()
     lunchflow = MonthlyFlow(income_gbp=1000, spending_gbp=200, as_of="2026-08-01T10:00:00+00:00")

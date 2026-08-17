@@ -174,6 +174,11 @@ class HealthResponse(BaseModel):
     plant_id: Optional[str] = None
     quickfile_env_configured: bool = False
     lunchflow_env_configured: bool = False
+    truelayer_env_configured: bool = False
+    # Finance bank reads are independent of solar adapter_mode / READ_ONLY.
+    finance_bank_reads_ready: bool = False
+    # READ_ONLY / ENABLE_LIVE_WRITES only gate leftover solar control writes.
+    solar_control_writes_gated: bool = True
 
 
 class AuditOutcome(str, Enum):

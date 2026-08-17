@@ -4,8 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.finance.finance_calc import FinanceTotals, LiabilityView, SnapshotView
+from app.services.finance.finance_calc import (
+    FinanceTotals,
+    LiabilityView,
+    SnapshotView,
+    monthly_flow_note,
+)
 from app.services.finance.money import quantize_gbp
+
+# Sources that represent actual cash movement (not a budget plan).
+_LIVE_FLOW_SOURCES = frozenset({"snapshot", "open_banking", "cashflow", "transactions"})
 
 
 def _money(value: float) -> float:
@@ -20,10 +28,42 @@ def compute_safe_to_spend(
     liabilities: list[LiabilityView],
     personal_buffer_gbp: float = 1000.0,
     business_buffer_gbp: float = 2000.0,
+    flow_source: str = "none",
+    resolved_income_gbp: float | None = None,
+    resolved_spending_gbp: float | None = None,
+    resolved_bills_gbp: float | None = None,
 ) -> dict[str, Any]:
-    personal_income = float(getattr(personal, "monthly_income_gbp", 0) or 0)
-    household = float(getattr(personal, "household_bills_gbp", 0) or 0)
-    personal_spend = float(getattr(personal, "monthly_spending_gbp", 0) or 0)
+    source = (flow_source or "none").strip().lower()
+    snap_income = float(getattr(personal, "monthly_income_gbp", 0) or 0)
+    snap_spend = float(getattr(personal, "monthly_spending_gbp", 0) or 0)
+    snap_bills = float(getattr(personal, "household_bills_gbp", 0) or 0)
+
+    if source in _LIVE_FLOW_SOURCES:
+        personal_income = (
+            float(resolved_income_gbp)
+            if resolved_income_gbp is not None
+            else snap_income
+        )
+        personal_spend = (
+            float(resolved_spending_gbp)
+            if resolved_spending_gbp is not None
+            else snap_spend
+        )
+        household = (
+            float(resolved_bills_gbp)
+            if resolved_bills_gbp is not None
+            else snap_bills
+        )
+    elif source == "budget":
+        # Keep plan figures for transparency, but do not treat them as earned cash.
+        personal_income = 0.0
+        personal_spend = 0.0
+        household = 0.0
+    else:
+        personal_income = snap_income
+        personal_spend = snap_spend
+        household = snap_bills
+
     personal_debt_mins = sum(
         float(item.minimum_payment_gbp or 0)
         for item in liabilities
@@ -53,11 +93,29 @@ def compute_safe_to_spend(
 
     personal_committed = essentials + personal_debt_mins + personal_buffer_gbp
     personal_safe = _money(personal_income - personal_committed)
-    if personal_income <= 0 and personal_spend <= 0:
+    flow_note = monthly_flow_note(source)
+    if source == "budget":
+        personal_safe = 0.0
+        personal_note = (
+            "Budget plan only — not live income. "
+            "Connect Open Banking or save a personal snapshot for Safe to Spend."
+        )
+    elif personal_income <= 0 and personal_spend <= 0:
         personal_safe = 0.0
         personal_note = "No transaction history available"
     else:
-        personal_note = "expected income − essentials − debt minimums − cash buffer"
+        personal_note = f"{flow_note} − essentials − debt minimums − cash buffer"
+
+    planned_income = (
+        float(resolved_income_gbp)
+        if source == "budget" and resolved_income_gbp is not None
+        else snap_income if source == "budget" else None
+    )
+    planned_spending = (
+        float(resolved_spending_gbp)
+        if source == "budget" and resolved_spending_gbp is not None
+        else snap_spend if source == "budget" else None
+    )
 
     business_cash = float(totals.business_cash_gbp or 0)
     business_available = _money(
@@ -82,19 +140,35 @@ def compute_safe_to_spend(
             return "CAUTION"
         return "HEALTHY"
 
+    personal_status = (
+        "BUDGET_PLAN_ONLY"
+        if source == "budget"
+        else status(
+            float(totals.personal_cash_gbp or 0), personal_buffer_gbp, personal_safe
+        )
+    )
+
+    personal_breakdown: dict[str, Any] = {
+        "expected_income_gbp": _money(personal_income),
+        "essential_bills_gbp": _money(essentials),
+        "debt_minimums_gbp": _money(personal_debt_mins),
+        "cash_buffer_gbp": _money(personal_buffer_gbp),
+        "formula": personal_note,
+        "flow_source": source,
+        "flow_note": flow_note,
+    }
+    if planned_income is not None:
+        personal_breakdown["budget_plan_income_gbp"] = _money(planned_income)
+    if planned_spending is not None:
+        personal_breakdown["budget_plan_spending_gbp"] = _money(planned_spending)
+
     return {
         "personal": {
             "safe_to_spend_gbp": max(personal_safe, 0.0),
-            "status": status(
-                float(totals.personal_cash_gbp or 0), personal_buffer_gbp, personal_safe
-            ),
-            "breakdown": {
-                "expected_income_gbp": _money(personal_income),
-                "essential_bills_gbp": _money(essentials),
-                "debt_minimums_gbp": _money(personal_debt_mins),
-                "cash_buffer_gbp": _money(personal_buffer_gbp),
-                "formula": personal_note,
-            },
+            "status": personal_status,
+            "flow_source": source,
+            "flow_note": flow_note if source != "none" else personal_note,
+            "breakdown": personal_breakdown,
         },
         "business": {
             "available_business_cash_gbp": business_available,
@@ -119,10 +193,16 @@ def compute_safe_to_spend(
         },
         "combined": {
             "safe_to_spend_gbp": max(combined_safe, 0.0),
-            "status": status(
-                float(totals.available_cash_gbp or 0),
-                personal_buffer_gbp + business_buffer_gbp,
-                combined_safe,
+            "status": (
+                "BUDGET_PLAN_ONLY"
+                if source == "budget"
+                else status(
+                    float(totals.available_cash_gbp or 0),
+                    personal_buffer_gbp + business_buffer_gbp,
+                    combined_safe,
+                )
             ),
+            "flow_source": source,
+            "flow_note": flow_note,
         },
     }

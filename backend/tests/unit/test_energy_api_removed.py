@@ -36,3 +36,6 @@ async def test_finance_health_has_no_plant_id(client: AsyncClient) -> None:
     assert body["status"] == "ok"
     assert body["data_source"] == "finance"
     assert body.get("plant_id") in (None, "")
+    assert body["solar_control_writes_gated"] is True
+    assert isinstance(body["finance_bank_reads_ready"], bool)
+    assert isinstance(body["truelayer_env_configured"], bool)

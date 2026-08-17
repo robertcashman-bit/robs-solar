@@ -38,12 +38,16 @@ export function SavedFiguresBanner({
       {updated ? (
         <p>
           Data updated: {updated}
-          {cached ? " (saved figures)" : ""}
+          {cached
+            ? " — last saved overview (may be stale until live sync finishes)"
+            : " — live overview"}
         </p>
       ) : null}
       {quickfile ? <p>QuickFile synced: {quickfile}</p> : null}
       {lunchflow ? <p>Lunch Flow synced: {lunchflow}</p> : null}
-      {refreshing ? <p>Showing saved figures — updating live balances…</p> : null}
+      {refreshing ? (
+        <p>Showing last saved figures — refreshing live QuickFile / Lunch Flow balances…</p>
+      ) : null}
     </div>
   );
 }
