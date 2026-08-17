@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { FINANCE_LAST_OVERVIEW_KEY } from "@/lib/finance-local-cache";
 import { financeOverviewSchema } from "@/lib/finance-schemas";
 import { useFinanceOverview } from "@/lib/use-finance-overview";
 
@@ -62,7 +63,7 @@ describe("useFinanceOverview", () => {
   });
 
   it("paints last saved figures immediately without a loading wait", async () => {
-    window.localStorage.setItem("robs-finance-last-overview", JSON.stringify(stored));
+    window.localStorage.setItem(FINANCE_LAST_OVERVIEW_KEY, JSON.stringify(stored));
     get.mockImplementation(
       () =>
         new Promise(() => {

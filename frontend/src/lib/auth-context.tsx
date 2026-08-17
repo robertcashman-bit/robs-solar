@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { apiClient, setCsrfToken } from "@/lib/api-client";
+import { clearFinanceLocalCaches } from "@/lib/finance-local-cache";
 import {
   loginResponseSchema,
   magicCodeRequestResponseSchema,
@@ -149,6 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Clear the local session even if the server is unreachable.
     }
+    clearFinanceLocalCaches();
     setUser(null);
     setCsrfToken(null);
   }, []);

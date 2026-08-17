@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
+import { FINANCE_LAST_TRANSACTIONS_KEY } from "@/lib/finance-local-cache";
 import { notifyFinanceOverviewReady } from "@/lib/finance-events";
 import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
 import { useFinanceReload } from "@/lib/use-finance-reload";
@@ -21,7 +22,7 @@ export type FinanceTxn = {
 };
 
 export const FINANCE_TXN_PAGE_SIZE = 50;
-const LAST_TXNS_KEY = "robs-finance-last-transactions";
+const LAST_TXNS_KEY = FINANCE_LAST_TRANSACTIONS_KEY;
 
 type CachedTxns = {
   filter: string;

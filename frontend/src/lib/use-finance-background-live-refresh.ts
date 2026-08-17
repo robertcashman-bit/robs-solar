@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { FINANCE_LIVE_REFRESH_AT_KEY } from "@/lib/finance-local-cache";
 import { apiClient } from "@/lib/api-client";
 import { FINANCE_OVERVIEW_READY_EVENT, notifyFinanceChanged } from "@/lib/finance-events";
 import { canWrite } from "@/lib/permissions";
 import type { UserInfo } from "@/lib/schemas";
 
-const COOLDOWN_KEY = "robs-finance-live-refresh-at";
+const COOLDOWN_KEY = FINANCE_LIVE_REFRESH_AT_KEY;
 const COOLDOWN_MS = 15 * 60 * 1000;
 const FALLBACK_MS = 1800;
 

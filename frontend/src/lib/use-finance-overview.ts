@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
+import { FINANCE_LAST_OVERVIEW_KEY } from "@/lib/finance-local-cache";
 import { FINANCE_CHANGED_EVENT, notifyFinanceOverviewReady } from "@/lib/finance-events";
 import { financeOverviewSchema, type FinanceOverview } from "@/lib/finance-schemas";
 import { currentMonthKey } from "@/lib/money";
 import type { UserInfo } from "@/lib/schemas";
 import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
 
-const LAST_OVERVIEW_KEY = "robs-finance-last-overview";
+const LAST_OVERVIEW_KEY = FINANCE_LAST_OVERVIEW_KEY;
 
 function readLastOverview(): FinanceOverview | null {
   if (typeof window === "undefined") {
