@@ -45,7 +45,11 @@ def _debt_lines(liabilities: list[Any], *, scope: str) -> list[ReportDebtLine]:
         debt_scope = getattr(getattr(debt, "scope", None), "value", getattr(debt, "scope", ""))
         if str(debt_scope) != scope:
             continue
-        debt_type = getattr(getattr(debt, "debt_type", None), "value", getattr(debt, "debt_type", ""))
+        debt_type = getattr(
+            getattr(debt, "debt_type", None),
+            "value",
+            getattr(debt, "debt_type", ""),
+        )
         if debt_type == "directors_loan":
             continue
         lines.append(
