@@ -278,9 +278,9 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 hint="Personal cards only"
               />
               <MetricTile
-                label="Personal available credit"
+                label="Available credit"
                 value={overview.available_credit_gbp}
-                hint="Unused personal card limits"
+                hint="Unused revolving credit limits (all scopes)"
               />
               <MetricTile
                 label="Personal cash after bills"
@@ -331,10 +331,10 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 }
               />
               <MetricTile
-                label="Personal high-interest debt"
+                label="High-interest debt"
                 value={overview.high_interest_debt_gbp}
                 warning={(overview.high_interest_debt_gbp ?? 0) > 0}
-                hint="APR 15% or more — pay this first"
+                hint="APR 15% or more across all debts — pay this first"
               />
             </div>
           </section>
@@ -397,8 +397,9 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 hint="Amounts owed to the company"
               />
               <MetricTile
-                label="Business loans"
+                label="Loans"
                 value={overview.loan_balances_gbp}
+                hint="Personal and business loans"
               />
               <MetricTile
                 label="Business director's loan"

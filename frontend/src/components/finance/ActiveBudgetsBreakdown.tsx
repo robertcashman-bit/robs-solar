@@ -189,8 +189,26 @@ export function ActiveBudgetsBreakdown({
   let personalIncome = personalPlan?.income_gbp ?? 0;
   let businessIncome = businessPlan?.income_gbp ?? 0;
   if (samePlan) {
-    personalIncome = personalPlan!.income_gbp;
-    businessIncome = 0;
+    // Combined plans carry a single income_gbp for all lines. Split that income
+    // by scoped spending so each column's surplus is consistent and the two
+    // surpluses sum to income − all lines (the plan's real surplus).
+    const personalSpend = scopeLines(personalPlan, "personal").reduce(
+      (sum, line) => sum + (Number(line.amount_gbp) || 0),
+      0,
+    );
+    const businessSpend = scopeLines(businessPlan, "business").reduce(
+      (sum, line) => sum + (Number(line.amount_gbp) || 0),
+      0,
+    );
+    const totalSpend = personalSpend + businessSpend;
+    const income = personalPlan!.income_gbp;
+    if (totalSpend <= 0) {
+      personalIncome = income;
+      businessIncome = 0;
+    } else {
+      personalIncome = Math.round(((income * personalSpend) / totalSpend) * 100) / 100;
+      businessIncome = Math.round((income - personalIncome) * 100) / 100;
+    }
   } else {
     if (personalPlan?.active_scope === "business") personalIncome = 0;
     if (businessPlan?.active_scope === "personal") businessIncome = 0;

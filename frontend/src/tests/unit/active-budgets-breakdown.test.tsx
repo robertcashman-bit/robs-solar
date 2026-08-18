@@ -199,5 +199,17 @@ describe("ActiveBudgetsBreakdown", () => {
     expect(screen.getByText("Software / IT")).toBeInTheDocument();
     expect(screen.getByText("Personal income")).toBeInTheDocument();
     expect(screen.getByText("Business income")).toBeInTheDocument();
+
+    // Personal spend £430 + business spend £420 = £850. Income £4250 splits
+    // proportionally so neither column invents a false shortfall and the two
+    // surpluses sum to the plan surplus (£4250 − £850 = £3400).
+    const personalSection = screen.getByLabelText("Personal active budget");
+    const businessSection = screen.getByLabelText("DLS Ltd active budget");
+    expect(personalSection).toHaveTextContent("£2,150.00"); // income share
+    expect(personalSection).toHaveTextContent("£430.00"); // personal spending
+    expect(personalSection).toHaveTextContent("Surplus £1,720.00");
+    expect(businessSection).toHaveTextContent("£2,100.00"); // income share
+    expect(businessSection).toHaveTextContent("£420.00"); // business spending
+    expect(businessSection).toHaveTextContent("Surplus £1,680.00");
   });
 });
