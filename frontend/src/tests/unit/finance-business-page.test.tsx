@@ -53,6 +53,12 @@ vi.mock("@/lib/api-client", () => ({
           coverage_note: "No stored transactions in last month.",
         };
       }
+      if (path.startsWith("/finance/pnl-compare")) {
+        return { scope: "business", as_of: "2026-08-18", rows: [] };
+      }
+      if (path.startsWith("/finance/integrations/quickfile/reports")) {
+        return {};
+      }
       if (path === "/finance/snapshots/business") {
         return [
           {

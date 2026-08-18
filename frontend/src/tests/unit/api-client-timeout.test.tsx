@@ -4,6 +4,7 @@ import {
   ApiError,
   COLD_START_GET_TIMEOUT_MS,
   DEFAULT_GET_TIMEOUT_MS,
+  REPORTS_GET_TIMEOUT_MS,
   apiClient,
   resolveTimeoutMs,
 } from "@/lib/api-client";
@@ -40,6 +41,11 @@ describe("apiClient timeouts", () => {
     expect(resolveTimeoutMs("/health")).toBe(COLD_START_GET_TIMEOUT_MS);
     expect(resolveTimeoutMs("/auth/magic-code/status")).toBe(COLD_START_GET_TIMEOUT_MS);
     expect(resolveTimeoutMs("/finance/overview")).toBe(DEFAULT_GET_TIMEOUT_MS);
+  });
+
+  it("gives finance reports a longer GET timeout", () => {
+    expect(resolveTimeoutMs("/finance/reports")).toBe(REPORTS_GET_TIMEOUT_MS);
+    expect(resolveTimeoutMs("/finance/reports?month=2026-08")).toBe(REPORTS_GET_TIMEOUT_MS);
   });
 
   it("surfaces abort as 504, not 401", async () => {

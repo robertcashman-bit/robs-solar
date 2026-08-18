@@ -596,6 +596,7 @@ class FinanceOverviewResponse(BaseModel):
     credit_card_balances_gbp: float
     personal_credit_card_balances_gbp: float = 0.0
     loan_balances_gbp: float
+    personal_loan_balances_gbp: float = 0.0
     mortgage_balance_gbp: float
     pension_value_gbp: float
     directors_loan_gbp: float

@@ -47,13 +47,38 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
   const personalFlow = overview.personal_period_flow;
   const businessFlow = overview.business_period_flow;
   const useLedgerPeriod = Boolean(personalFlow && personalFlow.transaction_count > 0);
-  const periodIncome = useLedgerPeriod ? personalFlow!.income_gbp : overview.monthly_income_gbp;
-  const periodSpending = useLedgerPeriod ? personalFlow!.spending_gbp : overview.monthly_spending_gbp;
-  const periodSurplus = useLedgerPeriod ? personalFlow!.surplus_gbp : overview.monthly_surplus_gbp;
+  const budgetSurplus = overview.active_budget?.surplus_gbp;
+  const periodIncome = useLedgerPeriod
+    ? personalFlow!.income_gbp
+    : overview.monthly_flow_source === "open_banking"
+      ? null
+      : overview.monthly_income_gbp;
+  const periodSpending = useLedgerPeriod
+    ? personalFlow!.spending_gbp
+    : overview.monthly_flow_source === "open_banking"
+      ? null
+      : overview.monthly_spending_gbp;
+  // Prefer period ledger, then typical budget — never a thin OB 30-day window as surplus.
+  const periodSurplus = useLedgerPeriod
+    ? personalFlow!.surplus_gbp
+    : overview.monthly_flow_source === "budget"
+      ? (budgetSurplus ?? overview.monthly_surplus_gbp)
+      : overview.monthly_flow_source === "open_banking"
+        ? (budgetSurplus ?? null)
+        : overview.monthly_flow_source === "none"
+          ? null
+          : overview.monthly_surplus_gbp;
   const periodFlowHint = useLedgerPeriod
     ? (personalFlow!.coverage_note || `${personalFlow!.label} · stored transactions`)
-    : monthlyFlowHint(overview.monthly_flow_source);
-  const hasPeriodFlow = useLedgerPeriod || overview.monthly_flow_source !== "none";
+    : overview.monthly_flow_source === "budget"
+      ? monthlyFlowHint("budget")
+      : monthlyFlowHint(overview.monthly_flow_source);
+  const hasPeriodFlow =
+    useLedgerPeriod
+    || overview.monthly_flow_source === "budget"
+    || overview.monthly_flow_source === "cashflow"
+    || overview.monthly_flow_source === "transactions"
+    || (overview.monthly_flow_source === "snapshot" && periodSurplus != null);
   const incomeLabel = useLedgerPeriod
     ? flowLabel("Personal income", personalFlow!.label)
     : overview.monthly_flow_source === "budget"
@@ -69,6 +94,11 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
     : overview.monthly_flow_source === "budget"
       ? "Personal planned surplus"
       : "Personal monthly surplus";
+  const surplusHint = useLedgerPeriod
+    ? periodFlowHint
+    : overview.monthly_flow_source === "budget"
+      ? "Typical personal budget plan surplus"
+      : periodFlowHint;
 
   const showPersonal = scopeView === "combined" || scopeView === "personal";
   const showBusiness = scopeView === "combined" || scopeView === "business";
@@ -278,6 +308,12 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 hint="Subset of personal debts"
               />
               <MetricTile
+                label="Of which personal loans"
+                value={overview.personal_loan_balances_gbp}
+                warning={(overview.personal_loan_balances_gbp ?? 0) > 0}
+                hint="Subset of personal debts — not mortgage"
+              />
+              <MetricTile
                 label="Available credit"
                 value={overview.available_credit_gbp}
                 hint="Unused revolving credit limits (all scopes)"
@@ -398,9 +434,10 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 hint="Amounts owed to the company"
               />
               <MetricTile
-                label="Loans"
+                label="Of which business loans"
                 value={overview.loan_balances_gbp}
-                hint="Personal and business loans"
+                warning={(overview.loan_balances_gbp ?? 0) > 0}
+                hint="Business-scope loans only — personal loans are on the personal stack"
               />
               <MetricTile
                 label="Business director's loan"
@@ -426,18 +463,14 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               label={
                 useLedgerPeriod
                   ? flowLabel("Personal cashflow", personalFlow!.label)
-                  : "Personal monthly cashflow"
+                  : overview.monthly_flow_source === "budget"
+                    ? "Personal planned cashflow"
+                    : "Personal monthly cashflow"
               }
               value={hasPeriodFlow ? periodSurplus : null}
-              positive={periodSurplus >= 0}
-              warning={periodSurplus < 0}
-              hint={
-                useLedgerPeriod
-                  ? periodFlowHint
-                  : overview.monthly_flow_source === "budget"
-                    ? "Budget plan estimate — not live cashflow"
-                    : monthlyFlowHint(overview.monthly_flow_source)
-              }
+              positive={(periodSurplus ?? 0) >= 0}
+              warning={(periodSurplus ?? 0) < 0}
+              hint={surplusHint}
             />
             <MetricTile
               label="Combined est. monthly interest"
@@ -536,9 +569,9 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
           <MetricTile
             label={surplusLabel}
             value={hasPeriodFlow ? periodSurplus : null}
-            positive={periodSurplus >= 0}
-            warning={periodSurplus < 0}
-            hint={periodFlowHint}
+            positive={(periodSurplus ?? 0) >= 0}
+            warning={(periodSurplus ?? 0) < 0}
+            hint={surplusHint}
           />
         </div>
         {businessFlow ? (

@@ -73,6 +73,7 @@ export const financeOverviewSchema = z.object({
   credit_card_balances_gbp: z.number(),
   personal_credit_card_balances_gbp: z.number().optional().default(0),
   loan_balances_gbp: z.number(),
+  personal_loan_balances_gbp: z.number().optional().default(0),
   mortgage_balance_gbp: z.number(),
   pension_value_gbp: z.number(),
   directors_loan_gbp: z.number(),

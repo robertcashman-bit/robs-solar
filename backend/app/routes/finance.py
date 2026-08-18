@@ -1226,6 +1226,17 @@ async def period_flow(
     )
 
 
+@router.get("/pnl-compare")
+async def pnl_compare(
+    scope: FinanceScope = FinanceScope.PERSONAL,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    from app.services.finance.finance_pnl_compare_service import finance_pnl_compare_service
+
+    return await finance_pnl_compare_service.compare(db, scope=scope.value)
+
+
 @router.get("/history-stats")
 async def history_stats(
     scope: FinanceScope = FinanceScope.PERSONAL,

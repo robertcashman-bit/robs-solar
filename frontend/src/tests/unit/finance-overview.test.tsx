@@ -104,6 +104,7 @@ describe("FinanceOverviewView", () => {
     expect(
       screen.getByText("APR 15% or more across all debts — pay this first"),
     ).toBeInTheDocument();
+    expect(screen.getByText("Of which business loans")).toBeInTheDocument();
     expect(
       screen.getByText(/Mortgage and cards below are of which, not extra/),
     ).toBeInTheDocument();

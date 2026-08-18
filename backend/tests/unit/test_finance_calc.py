@@ -48,13 +48,30 @@ def test_personal_and_business_debt_stay_separate() -> None:
         [
             LiabilityView(1, "personal", "MBNA", "credit_card", 800, 22.9, 25),
             LiabilityView(2, "business", "Van finance", "business_loan", 4000, 8.0, 180),
+            LiabilityView(3, "personal", "Lloyds loan", "loan", 10923.14, 6.0, 200),
+            LiabilityView(4, "personal", "House", "mortgage", 175000, 4.0, 900),
         ],
     )
-    assert totals.personal_debt_gbp == 800
+    assert totals.personal_debt_gbp == 800 + 10923.14 + 175000
     assert totals.business_debt_gbp == 4000
     assert totals.credit_card_gbp == 800
     assert totals.personal_credit_card_gbp == 800
     assert totals.loan_gbp == 4000
+    assert totals.personal_loan_gbp == 10923.14
+    assert totals.mortgage_gbp == 175000
+
+
+def test_loan_balances_exclude_personal_from_business_total() -> None:
+    totals = compute_totals(
+        [],
+        [
+            LiabilityView(1, "personal", "Lloyds 58315", "loan", 10923.14, 6.0, 200),
+            LiabilityView(2, "personal", "Lloyds 6888", "loan", 11966.54, 6.0, 200),
+            LiabilityView(3, "business", "Lloyds business", "loan", 12104.44, 6.0, 200),
+        ],
+    )
+    assert totals.loan_gbp == 12104.44
+    assert totals.personal_loan_gbp == round(10923.14 + 11966.54, 2)
 
 
 def test_personal_credit_cards_exclude_business_cards() -> None:
@@ -361,7 +378,7 @@ def test_house_and_mortgage_move_personal_and_combined_not_business() -> None:
     assert personal_from(after) == personal_from(before) + 350000 - 175000
 
 
-def test_resolve_monthly_flow_prefers_snapshot_then_open_banking() -> None:
+def test_resolve_monthly_flow_prefers_snapshot_then_budget_over_open_banking() -> None:
     income, spending, _bills, _repay, source, configured = resolve_monthly_flow(
         snapshot_present=True,
         snapshot_income=3000,
@@ -372,6 +389,15 @@ def test_resolve_monthly_flow_prefers_snapshot_then_open_banking() -> None:
     assert source == "snapshot"
     assert configured is True
     assert income == 3000
+    income, spending, _bills, _repay, source, configured = resolve_monthly_flow(
+        snapshot_present=False,
+        open_banking_income=215.48,
+        open_banking_spending=900,
+        budget_income=5364,
+        budget_spending=3892,
+    )
+    assert source == "budget"
+    assert income == 5364
     income, spending, _bills, _repay, source, configured = resolve_monthly_flow(
         snapshot_present=False,
         open_banking_income=2800,
