@@ -28,6 +28,21 @@ type StoredOverview = {
   data: unknown;
 };
 
+type FetchedOverview = {
+  key: string;
+  overview: FinanceOverview;
+};
+
+type FetchMeta = {
+  key: string;
+  status: "loading" | "ready" | "error";
+  error: string | null;
+};
+
+function periodKey(personalPeriod: string, businessPeriod: string): string {
+  return `${personalPeriod}|${businessPeriod}`;
+}
+
 function readLastOverview(
   personalPeriod: string,
   businessPeriod: string,
@@ -88,28 +103,30 @@ export function useFinanceOverview(
   const enabled = Boolean(user);
   const personalPeriod = opts?.personalPeriod ?? "1m";
   const businessPeriod = opts?.businessPeriod ?? "1m";
+  const key = periodKey(personalPeriod, businessPeriod);
   const cached = enabled
     ? readLastOverview(personalPeriod, businessPeriod)
     : null;
-  const [overview, setOverview] = useState<FinanceOverview | null>(cached);
-  const [loading, setLoading] = useState(!cached);
-  const [error, setError] = useState<string | null>(null);
+
+  const [fetched, setFetched] = useState<FetchedOverview | null>(null);
+  const [fetchMeta, setFetchMeta] = useState<FetchMeta | null>(null);
   const { refreshing: backgroundRefreshing } =
     useFinanceBackgroundLiveRefresh(user);
   const [manualRefreshing, setManualRefreshing] = useState(false);
-  const overviewRef = useRef<FinanceOverview | null>(cached);
+  const overviewRef = useRef<FinanceOverview | null>(null);
   const requestIdRef = useRef(0);
-  const periodsRef = useRef({ personalPeriod, businessPeriod });
-  periodsRef.current = { personalPeriod, businessPeriod };
+
+  const overview =
+    fetched?.key === key ? fetched.overview : cached;
+  const meta = fetchMeta?.key === key ? fetchMeta : null;
+  const error = meta?.error ?? null;
+  const loading = Boolean(
+    enabled && !overview && meta?.status !== "error" && meta?.status !== "ready",
+  );
 
   useEffect(() => {
-    const next = enabled
-      ? readLastOverview(personalPeriod, businessPeriod)
-      : null;
-    overviewRef.current = next;
-    setOverview(next);
-    setLoading(Boolean(enabled && !next));
-  }, [enabled, personalPeriod, businessPeriod]);
+    overviewRef.current = overview;
+  }, [overview]);
 
   const refresh = useCallback(
     async (refreshOpts?: { live?: boolean; fresh?: boolean }) => {
@@ -119,15 +136,15 @@ export function useFinanceOverview(
       const requestId = ++requestIdRef.current;
       const requestedPersonal = personalPeriod;
       const requestedBusiness = businessPeriod;
+      const requestedKey = periodKey(requestedPersonal, requestedBusiness);
       const cacheEpoch = financeCacheWriteEpoch();
       const live = Boolean(refreshOpts?.live);
       const fresh = Boolean(refreshOpts?.fresh);
       if (live) {
         setManualRefreshing(true);
       } else if (!overviewRef.current) {
-        setLoading(true);
+        setFetchMeta({ key: requestedKey, status: "loading", error: null });
       }
-      setError(null);
       try {
         const month = currentMonthKey();
         const params = new URLSearchParams({ month });
@@ -141,28 +158,29 @@ export function useFinanceOverview(
         const parsed = financeOverviewSchema.parse(data);
         if (
           requestId !== requestIdRef.current ||
-          periodsRef.current.personalPeriod !== requestedPersonal ||
-          periodsRef.current.businessPeriod !== requestedBusiness ||
           !isFinanceCacheWriteCurrent(cacheEpoch)
         ) {
           return;
         }
         overviewRef.current = parsed;
-        setOverview(parsed);
+        setFetched({ key: requestedKey, overview: parsed });
+        setFetchMeta({ key: requestedKey, status: "ready", error: null });
         writeLastOverview(parsed, requestedPersonal, requestedBusiness);
         notifyFinanceOverviewReady();
       } catch (err) {
         if (requestId !== requestIdRef.current) {
           return;
         }
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load finance overview",
-        );
+        setFetchMeta({
+          key: requestedKey,
+          status: "error",
+          error:
+            err instanceof Error
+              ? err.message
+              : "Failed to load finance overview",
+        });
       } finally {
         if (requestId === requestIdRef.current) {
-          setLoading(false);
           setManualRefreshing(false);
         }
       }

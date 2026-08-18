@@ -78,7 +78,6 @@ export function useFinancePeriod(options: Options = {}) {
   const [prefs, setPrefs] = useState<FinancePeriodPrefs>(() => readPrefs(options));
 
   useEffect(() => {
-    setPrefs(readPrefs(options));
     const onPop = () => setPrefs(readPrefs(options));
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
