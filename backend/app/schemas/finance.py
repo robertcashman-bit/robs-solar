@@ -564,7 +564,24 @@ class FinanceInsight(BaseModel):
     created_at: datetime
 
 
+class PeriodFlowSummary(BaseModel):
+    period: str
+    scope: str
+    label: str
+    date_from: str
+    date_to: str
+    months_requested: int = 1
+    months_with_data: int = 0
+    transaction_count: int = 0
+    income_gbp: float = 0.0
+    spending_gbp: float = 0.0
+    surplus_gbp: float = 0.0
+    history_partial: bool = False
+    coverage_note: str = ""
+
+
 class FinanceOverviewResponse(BaseModel):
+
     personal_bank_balance_gbp: float
     business_bank_balance_gbp: float
     total_personal_debt_gbp: float
@@ -628,6 +645,8 @@ class FinanceOverviewResponse(BaseModel):
     personal_long_term_debt_gbp: float = 0.0
     business_short_term_debt_gbp: float = 0.0
     business_long_term_debt_gbp: float = 0.0
+    personal_period_flow: PeriodFlowSummary | None = None
+    business_period_flow: PeriodFlowSummary | None = None
 
 
 class CashflowScopeColumn(BaseModel):
@@ -650,6 +669,10 @@ class CashflowForecastResponse(BaseModel):
 
 class FinanceReportsResponse(BaseModel):
     month: str
+    period: str = "1m"
+    scope: str = "both"
+    personal_period_flow: PeriodFlowSummary | None = None
+    business_period_flow: PeriodFlowSummary | None = None
     personal_snapshot: PersonalFinanceSnapshot | None = None
     business_snapshot: BusinessFinanceSnapshot | None = None
     net_worth_gbp: float | None = None

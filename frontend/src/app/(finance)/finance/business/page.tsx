@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { z } from "zod";
 
 import { AccountManager } from "@/components/finance/AccountManager";
+import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { MetricTile } from "@/components/finance/MetricTile";
 import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
@@ -16,12 +17,15 @@ import { useRequireAuth } from "@/lib/use-require-auth";
 import {
   businessFinanceSnapshotSchema,
   financeAccountSchema,
+  periodFlowSummarySchema,
   quickFileReportsSchema,
   type BusinessFinanceSnapshot,
   type FinanceAccount,
+  type PeriodFlowSummary,
   type QuickFileReports,
 } from "@/lib/finance-schemas";
 import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
+import { useFinancePeriod } from "@/lib/use-finance-period";
 import { useFinanceReload } from "@/lib/use-finance-reload";
 import { currentMonthKey, isCurrentMonthSnapshot, parseGbp } from "@/lib/money";
 import { notifyFinanceChanged } from "@/lib/finance-events";
@@ -55,14 +59,21 @@ export default function BusinessFinancePage() {
     debtors_gbp: "",
     creditors_gbp: "",
   });
+  const periodState = useFinancePeriod({ fixedScope: "business" });
+  const [periodFlow, setPeriodFlow] = useState<PeriodFlowSummary | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [accts, snaps, qfReports] = await Promise.all([
+      const [accts, snaps, qfReports, flow] = await Promise.all([
         apiClient.get<unknown>("/finance/accounts?scope=business"),
         apiClient.get<unknown>("/finance/snapshots/business"),
         apiClient.get<unknown>("/finance/integrations/quickfile/reports"),
+        apiClient.get<unknown>(
+          `/finance/period-flow?period=${periodState.period}&scope=business`,
+        ),
       ]);
+      const parsedFlow = periodFlowSummarySchema.safeParse(flow);
+      setPeriodFlow(parsedFlow.success ? parsedFlow.data : null);
       setAccounts(z.array(financeAccountSchema).parse(accts));
       const parsed = z.array(businessFinanceSnapshotSchema).parse(snaps);
       const parsedReports = quickFileReportsSchema.safeParse(qfReports);
@@ -83,7 +94,7 @@ export default function BusinessFinancePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load business finance");
     }
-  }, []);
+  }, [periodState.period]);
 
 
   useFinanceReload(load, Boolean(user));
@@ -147,12 +158,69 @@ export default function BusinessFinancePage() {
       <div className="mt-4">
         <SavedFiguresBanner refreshing={refreshing} />
       </div>
+      <div className="mt-6">
+        <FinancePeriodScopeControl
+          period={periodState.period}
+          onPeriodChange={periodState.setPeriod}
+          showScope={false}
+          coverageNote={periodFlow?.coverage_note || null}
+        />
+      </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricTile label="Business bank" value={bankBalance} hint="Positive current accounts" />
-        <MetricTile label="Turnover (month)" value={snapshot?.turnover_gbp} />
-        <MetricTile label="Expenses (month)" value={snapshot?.expenses_gbp} />
-        <MetricTile label="Profit estimate" value={snapshot?.profit_estimate_gbp} positive />
-        <MetricTile label="VAT reserve" value={vatReserveGbp} hint="Cash in VAT pot" />
+        <MetricTile label="Business bank (current)" value={bankBalance} hint="Positive current accounts" />
+        <MetricTile
+          label={
+            periodFlow && periodFlow.transaction_count > 0
+              ? `Turnover (${periodFlow.label})`
+              : "Turnover (month)"
+          }
+          value={
+            periodFlow && periodFlow.transaction_count > 0
+              ? periodFlow.income_gbp
+              : snapshot?.turnover_gbp
+          }
+          hint={
+            periodFlow && periodFlow.transaction_count > 0
+              ? periodFlow.coverage_note || "Stored transactions"
+              : "Snapshot / QuickFile month"
+          }
+        />
+        <MetricTile
+          label={
+            periodFlow && periodFlow.transaction_count > 0
+              ? `Expenses (${periodFlow.label})`
+              : "Expenses (month)"
+          }
+          value={
+            periodFlow && periodFlow.transaction_count > 0
+              ? periodFlow.spending_gbp
+              : snapshot?.expenses_gbp
+          }
+          hint={
+            periodFlow && periodFlow.transaction_count > 0
+              ? periodFlow.coverage_note || "Stored transactions"
+              : "Snapshot / QuickFile month"
+          }
+        />
+        <MetricTile
+          label={
+            periodFlow && periodFlow.transaction_count > 0
+              ? `Profit (${periodFlow.label})`
+              : "Profit estimate"
+          }
+          value={
+            periodFlow && periodFlow.transaction_count > 0
+              ? periodFlow.surplus_gbp
+              : snapshot?.profit_estimate_gbp
+          }
+          positive
+          hint={
+            periodFlow && periodFlow.transaction_count > 0
+              ? periodFlow.coverage_note || "Stored transactions"
+              : "Snapshot"
+          }
+        />
+        <MetricTile label="VAT reserve (current)" value={vatReserveGbp} hint="Cash in VAT pot" />
         <MetricTile label="Corp tax reserve" value={snapshot?.corp_tax_reserve_gbp} />
         <MetricTile label="Debtors" value={snapshot?.debtors_gbp} />
         <MetricTile
@@ -166,8 +234,9 @@ export default function BusinessFinancePage() {
       <section className="mt-8">
         <h2 className="solar-section-title">Live QuickFile statements</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Pulled from QuickFile on sync. This fills the monthly snapshot so Company and Reports
-          show the same live turnover, expenses, debtors, and VAT.
+          Pulled from QuickFile on sync (month and YTD columns). Multi-month period chips above
+          use stored business transactions for the historical window — they do not invent a
+          custom QuickFile report.
         </p>
         <div className="mt-4">
           <QuickFileStatements

@@ -31,6 +31,8 @@ const LAST_TXNS_KEY = FINANCE_LAST_TRANSACTIONS_KEY;
 type CachedTxns = {
   filter: string;
   q: string;
+  dateFrom: string;
+  dateTo: string;
   rows: FinanceTxn[];
   categories: string[];
   hasMore: boolean;
@@ -43,13 +45,25 @@ type FetchedTxns = {
   hasMore: boolean;
 };
 
-function readLastTxns(filter: string, q: string): CachedTxns | null {
+function readLastTxns(
+  filter: string,
+  q: string,
+  dateFrom: string,
+  dateTo: string,
+): CachedTxns | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(LAST_TXNS_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CachedTxns;
-    if (parsed.filter !== filter || parsed.q !== q) return null;
+    if (
+      parsed.filter !== filter
+      || parsed.q !== q
+      || (parsed.dateFrom || "") !== dateFrom
+      || (parsed.dateTo || "") !== dateTo
+    ) {
+      return null;
+    }
     if (!Array.isArray(parsed.rows)) return null;
     return parsed;
   } catch {
@@ -69,11 +83,15 @@ export function useFinanceTransactions(
   user: UserInfo | null | undefined,
   filter: string,
   q: string,
+  dateFrom?: string,
+  dateTo?: string,
 ) {
   const enabled = Boolean(user);
   const trimmedQ = q.trim();
-  const cacheKey = `${filter}|${trimmedQ}`;
-  const cached = enabled ? readLastTxns(filter, trimmedQ) : null;
+  const from = dateFrom ?? "";
+  const to = dateTo ?? "";
+  const cacheKey = `${filter}|${trimmedQ}|${from}|${to}`;
+  const cached = enabled ? readLastTxns(filter, trimmedQ, from, to) : null;
   const [fetched, setFetched] = useState<FetchedTxns | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { refreshing } = useFinanceBackgroundLiveRefresh(user);
@@ -106,6 +124,8 @@ export function useFinanceTransactions(
           params.set("filter", filter);
         }
         if (trimmedQ) params.set("q", trimmedQ);
+        if (from) params.set("date_from", from);
+        if (to) params.set("date_to", to);
         params.set("limit", String(FINANCE_TXN_PAGE_SIZE));
         const offset = append && fetched?.key === cacheKey ? fetched.rows.length : 0;
         params.set("offset", String(offset));
@@ -126,10 +146,12 @@ export function useFinanceTransactions(
           categories: nextCategories,
           hasMore: nextHasMore,
         });
-        if (!append && filter === "all" && !trimmedQ) {
+        if (!append && filter === "all" && !trimmedQ && !from && !to) {
           writeLastTxns({
             filter,
             q: "",
+            dateFrom: "",
+            dateTo: "",
             rows: data,
             categories: nextCategories,
             hasMore: nextHasMore,
@@ -140,7 +162,7 @@ export function useFinanceTransactions(
         setError(err instanceof Error ? err.message : "Failed to load transactions");
       }
     },
-    [enabled, filter, trimmedQ, cacheKey, fetched],
+    [enabled, filter, trimmedQ, from, to, cacheKey, fetched],
   );
 
   useFinanceReload(() => load(false), enabled);

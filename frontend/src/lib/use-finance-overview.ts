@@ -37,8 +37,13 @@ function writeLastOverview(overview: FinanceOverview): void {
   }
 }
 
-export function useFinanceOverview(user: UserInfo | null | undefined) {
+export function useFinanceOverview(
+  user: UserInfo | null | undefined,
+  opts?: { personalPeriod?: string; businessPeriod?: string },
+) {
   const enabled = Boolean(user);
+  const personalPeriod = opts?.personalPeriod ?? "1m";
+  const businessPeriod = opts?.businessPeriod ?? "1m";
   const cached = enabled ? readLastOverview() : null;
   const [overview, setOverview] = useState<FinanceOverview | null>(cached);
   const [loading, setLoading] = useState(!cached);
@@ -48,13 +53,13 @@ export function useFinanceOverview(user: UserInfo | null | undefined) {
   const overviewRef = useRef<FinanceOverview | null>(cached);
 
   const refresh = useCallback(
-    async (opts?: { live?: boolean; fresh?: boolean }) => {
+    async (refreshOpts?: { live?: boolean; fresh?: boolean }) => {
       if (!enabled) {
         return;
       }
       const cacheEpoch = financeCacheWriteEpoch();
-      const live = Boolean(opts?.live);
-      const fresh = Boolean(opts?.fresh);
+      const live = Boolean(refreshOpts?.live);
+      const fresh = Boolean(refreshOpts?.fresh);
       if (live) {
         setManualRefreshing(true);
       } else if (!overviewRef.current) {
@@ -64,6 +69,8 @@ export function useFinanceOverview(user: UserInfo | null | undefined) {
       try {
         const month = currentMonthKey();
         const params = new URLSearchParams({ month });
+        params.set("personal_period", personalPeriod);
+        params.set("business_period", businessPeriod);
         if (live) params.set("live", "1");
         if (fresh) params.set("fresh", "1");
         const data = await apiClient.get<unknown>(`/finance/overview?${params.toString()}`);
@@ -82,7 +89,7 @@ export function useFinanceOverview(user: UserInfo | null | undefined) {
         setManualRefreshing(false);
       }
     },
-    [enabled],
+    [enabled, personalPeriod, businessPeriod],
   );
 
   useEffect(() => {

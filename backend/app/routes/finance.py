@@ -117,11 +117,24 @@ async def get_overview(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     live: bool = Query(default=False),
     fresh: bool = Query(default=False),
+    period: str | None = Query(default=None, pattern=r"^(1m|3m|6m|12m)$"),
+    personal_period: str | None = Query(default=None, pattern=r"^(1m|3m|6m|12m)$"),
+    business_period: str | None = Query(default=None, pattern=r"^(1m|3m|6m|12m)$"),
+    scope: str | None = Query(default=None, pattern=r"^(personal|business|both)$"),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> FinanceOverviewResponse:
+    # `period` is the shared default; personal/business can override independently.
+    personal = personal_period or period or "1m"
+    business = business_period or period or "1m"
+    _ = scope  # accepted for clients; overview always returns both period flows
     return await finance_overview_service.get_overview(
-        db, month=month, refresh_live=live, fresh=fresh
+        db,
+        month=month,
+        refresh_live=live,
+        fresh=fresh,
+        personal_period=personal,
+        business_period=business,
     )
 
 
@@ -667,10 +680,14 @@ async def dismiss_insight(
 @router.get("/reports", response_model=FinanceReportsResponse)
 async def get_reports(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
+    period: str = Query(default="1m", pattern=r"^(1m|3m|6m|12m)$"),
+    scope: str | None = Query(default=None, pattern=r"^(personal|business|both)$"),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> FinanceReportsResponse:
-    return await finance_reports_service.get_reports(db, month=month)
+    return await finance_reports_service.get_reports(
+        db, month=month, period=period, scope=scope
+    )
 
 
 @router.get("/integrations")
@@ -1186,6 +1203,20 @@ async def detect_transfers(
     from app.services.finance.finance_transfer_service import finance_transfer_service
 
     return await finance_transfer_service.detect_and_mark(db)
+
+
+@router.get("/period-flow")
+async def period_flow(
+    period: str = Query(default="1m", pattern=r"^(1m|3m|6m|12m)$"),
+    scope: FinanceScope = FinanceScope.PERSONAL,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    from app.services.finance.finance_ledger_service import finance_ledger_service
+
+    return await finance_ledger_service.period_flow_totals(
+        db, period=period, scope=scope.value
+    )
 
 
 @router.get("/history-stats")

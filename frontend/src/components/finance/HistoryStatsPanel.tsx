@@ -101,6 +101,7 @@ export function HistoryStatsPanel() {
                 <th className="px-3 py-2">Category</th>
                 <th className="px-3 py-2">Last mo</th>
                 <th className="px-3 py-2">3m avg</th>
+                <th className="px-3 py-2">6m avg</th>
                 <th className="px-3 py-2">12m avg</th>
                 <th className="px-3 py-2">Median</th>
                 <th className="px-3 py-2">Recommended</th>
@@ -115,6 +116,9 @@ export function HistoryStatsPanel() {
                   <td className="px-3 py-2 tabular-nums">{formatGbp(row.last_month_gbp)}</td>
                   <td className="px-3 py-2 tabular-nums">
                     {row.avg_3m_gbp == null ? "—" : formatGbp(row.avg_3m_gbp)}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums">
+                    {row.avg_6m_gbp == null ? "—" : formatGbp(row.avg_6m_gbp)}
                   </td>
                   <td className="px-3 py-2 tabular-nums">
                     {row.avg_12m_gbp == null ? "—" : formatGbp(row.avg_12m_gbp)}

@@ -42,6 +42,22 @@ export const financeInsightSchema = z.object({
   created_at: z.string(),
 });
 
+export const periodFlowSummarySchema = z.object({
+  period: z.string(),
+  scope: z.string(),
+  label: z.string(),
+  date_from: z.string(),
+  date_to: z.string(),
+  months_requested: z.number().optional().default(1),
+  months_with_data: z.number().optional().default(0),
+  transaction_count: z.number().optional().default(0),
+  income_gbp: z.number().optional().default(0),
+  spending_gbp: z.number().optional().default(0),
+  surplus_gbp: z.number().optional().default(0),
+  history_partial: z.boolean().optional().default(false),
+  coverage_note: z.string().optional().default(""),
+});
+
 export const financeOverviewSchema = z.object({
   personal_bank_balance_gbp: z.number(),
   business_bank_balance_gbp: z.number(),
@@ -143,6 +159,8 @@ export const financeOverviewSchema = z.object({
   personal_long_term_debt_gbp: z.number().optional().default(0),
   business_short_term_debt_gbp: z.number().optional().default(0),
   business_long_term_debt_gbp: z.number().optional().default(0),
+  personal_period_flow: periodFlowSummarySchema.nullable().optional(),
+  business_period_flow: periodFlowSummarySchema.nullable().optional(),
   active_budget: activeBudgetSummarySchema.nullable().optional(),
   insights: z.array(financeInsightSchema),
 });
@@ -559,6 +577,10 @@ export const businessFinanceReportSchema = z.object({
 
 export const financeReportsSchema = z.object({
   month: z.string(),
+  period: z.string().optional().default("1m"),
+  scope: z.string().optional().default("both"),
+  personal_period_flow: periodFlowSummarySchema.nullable().optional(),
+  business_period_flow: periodFlowSummarySchema.nullable().optional(),
   personal_snapshot: personalFinanceSnapshotSchema.nullable().optional(),
   business_snapshot: businessFinanceSnapshotSchema.nullable().optional(),
   net_worth_gbp: z.number().nullable(),
@@ -684,6 +706,7 @@ export const oidcStatusSchema = z.object({
 });
 
 export type ActiveBudgetSummary = z.infer<typeof activeBudgetSummarySchema>;
+export type PeriodFlowSummary = z.infer<typeof periodFlowSummarySchema>;
 export type FinanceOverview = z.infer<typeof financeOverviewSchema>;
 export type FinanceAccount = z.infer<typeof financeAccountSchema>;
 export type FinanceLiability = z.infer<typeof financeLiabilitySchema>;

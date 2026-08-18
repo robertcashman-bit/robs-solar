@@ -95,12 +95,26 @@ def _expense_rows(rows: list[dict[str, Any]]) -> list[ReportExpenseLine]:
 
 class FinanceReportsService:
     async def get_reports(
-        self, db: AsyncSession, month: str | None = None
+        self,
+        db: AsyncSession,
+        month: str | None = None,
+        *,
+        period: str = "1m",
+        scope: str | None = None,
     ) -> FinanceReportsResponse:
+        from app.schemas.finance import PeriodFlowSummary
+        from app.services.finance.finance_period import parse_period, parse_scope
+
         if month is None:
             month = datetime.now(timezone.utc).strftime("%Y-%m")
+        period_key = parse_period(period)
+        scope_key = parse_scope(scope, default="both")
         overview = await finance_overview_service.get_overview(
-            db, month=month, refresh_live=False
+            db,
+            month=month,
+            refresh_live=False,
+            personal_period=period_key,
+            business_period=period_key,
         )
         personal = await finance_overview_service.personal_snapshot_for_month(db, month)
         business = await finance_overview_service.business_snapshot_for_month(db, month)
@@ -168,6 +182,13 @@ class FinanceReportsService:
                 profit_gbp=profit,
             )
 
+        personal_flow = await finance_ledger_service.period_flow_totals(
+            db, period=period_key, scope="personal"
+        )
+        business_flow = await finance_ledger_service.period_flow_totals(
+            db, period=period_key, scope="business"
+        )
+
         personal_report = await self._build_personal_report(
             db,
             month=month,
@@ -177,6 +198,7 @@ class FinanceReportsService:
             liabilities=liabilities,
             account_views=account_views,
             liability_views=liability_views,
+            period_flow=personal_flow,
         )
         business_report = await self._build_business_report(
             db,
@@ -188,10 +210,19 @@ class FinanceReportsService:
             account_views=account_views,
             liability_views=liability_views,
             qf_reports=qf_reports,
+            period_flow=business_flow,
         )
 
         return FinanceReportsResponse(
             month=month,
+            period=period_key,
+            scope=scope_key,
+            personal_period_flow=PeriodFlowSummary(
+                **{k: v for k, v in personal_flow.items() if k != "month_keys"}
+            ),
+            business_period_flow=PeriodFlowSummary(
+                **{k: v for k, v in business_flow.items() if k != "month_keys"}
+            ),
             personal_snapshot=personal,
             business_snapshot=business,
             net_worth_gbp=net_worth,
@@ -222,6 +253,7 @@ class FinanceReportsService:
         liabilities: list[Any],
         account_views: list[Any],
         liability_views: list[Any],
+        period_flow: dict[str, Any] | None = None,
     ) -> PersonalFinanceReport:
         director_owes, company_owes = directors_loan_sides(account_views, liability_views)
         personal_bank = round(totals.personal_cash_gbp - totals.personal_overdraft_gbp, 2)
@@ -232,17 +264,53 @@ class FinanceReportsService:
             director_owes_company=director_owes,
             company_owes_director=company_owes,
         )
-        tx = await finance_ledger_service.month_flow_totals(db, month, scope="personal")
-        categories = await finance_ledger_service.spending_by_category(
-            db, month, scope="personal"
+        period_flow = period_flow or {}
+        use_period = int(period_flow.get("months_requested") or 1) > 1 or bool(
+            period_flow.get("transaction_count")
         )
-        expenses = await finance_ledger_service.largest_expenses(db, month, scope="personal")
+        if use_period and period_flow:
+            tx = {
+                "transaction_count": int(period_flow.get("transaction_count") or 0),
+                "income_gbp": float(period_flow.get("income_gbp") or 0),
+                "spending_gbp": float(period_flow.get("spending_gbp") or 0),
+                "net_gbp": float(period_flow.get("surplus_gbp") or 0),
+            }
+            categories = await finance_ledger_service.spending_by_category_range(
+                db,
+                date_from=str(period_flow["date_from"]),
+                date_to=str(period_flow["date_to"]),
+                scope="personal",
+            )
+            expenses = await finance_ledger_service.largest_expenses_range(
+                db,
+                date_from=str(period_flow["date_from"]),
+                date_to=str(period_flow["date_to"]),
+                scope="personal",
+            )
+        else:
+            tx = await finance_ledger_service.month_flow_totals(db, month, scope="personal")
+            categories = await finance_ledger_service.spending_by_category(
+                db, month, scope="personal"
+            )
+            expenses = await finance_ledger_service.largest_expenses(
+                db, month, scope="personal"
+            )
 
         income = spending = surplus = None
         household = repayments = None
         flow_source = "none"
         flow_note = monthly_flow_note("none")
-        if personal is not None and (
+        if use_period and tx["transaction_count"] > 0:
+            income = tx["income_gbp"]
+            spending = tx["spending_gbp"]
+            surplus = tx["net_gbp"]
+            flow_source = "transactions"
+            note = str(period_flow.get("coverage_note") or "")
+            flow_note = (
+                f"{period_flow.get('label', 'Period')} from stored transactions"
+                + (f". {note}" if note else ".")
+            )
+        elif personal is not None and (
             personal.monthly_income_gbp > 0 or personal.monthly_spending_gbp > 0
         ):
             income = round(personal.monthly_income_gbp, 2)
@@ -346,6 +414,7 @@ class FinanceReportsService:
         account_views: list[Any],
         liability_views: list[Any],
         qf_reports: Any,
+        period_flow: dict[str, Any] | None = None,
     ) -> BusinessFinanceReport:
         director_owes, company_owes = directors_loan_sides(account_views, liability_views)
         business_bank = round(totals.business_cash_gbp - totals.business_overdraft_gbp, 2)
@@ -358,13 +427,37 @@ class FinanceReportsService:
             director_owes_company=director_owes,
             company_owes_director=company_owes,
         )
-        tx = await finance_ledger_service.month_flow_totals(db, month, scope="business")
-        categories = await finance_ledger_service.spending_by_category(
-            db, month, scope="business"
+        period_flow = period_flow or {}
+        use_period = int(period_flow.get("months_requested") or 1) > 1 or bool(
+            period_flow.get("transaction_count")
         )
-        expenses_rows = await finance_ledger_service.largest_expenses(
-            db, month, scope="business"
-        )
+        if use_period and period_flow:
+            tx = {
+                "transaction_count": int(period_flow.get("transaction_count") or 0),
+                "income_gbp": float(period_flow.get("income_gbp") or 0),
+                "spending_gbp": float(period_flow.get("spending_gbp") or 0),
+                "net_gbp": float(period_flow.get("surplus_gbp") or 0),
+            }
+            categories = await finance_ledger_service.spending_by_category_range(
+                db,
+                date_from=str(period_flow["date_from"]),
+                date_to=str(period_flow["date_to"]),
+                scope="business",
+            )
+            expenses_rows = await finance_ledger_service.largest_expenses_range(
+                db,
+                date_from=str(period_flow["date_from"]),
+                date_to=str(period_flow["date_to"]),
+                scope="business",
+            )
+        else:
+            tx = await finance_ledger_service.month_flow_totals(db, month, scope="business")
+            categories = await finance_ledger_service.spending_by_category(
+                db, month, scope="business"
+            )
+            expenses_rows = await finance_ledger_service.largest_expenses(
+                db, month, scope="business"
+            )
 
         turnover = expenses = profit = None
         pl_source = "none"
@@ -374,7 +467,19 @@ class FinanceReportsService:
         qf_month = getattr(qf_reports, "profit_and_loss_month", None) if qf_reports else None
         qf_ytd = getattr(qf_reports, "profit_and_loss_ytd", None) if qf_reports else None
         qf_bs = getattr(qf_reports, "balance_sheet", None) if qf_reports else None
-        if qf_month is not None and (qf_month.turnover_gbp > 0 or qf_month.expenses_gbp > 0):
+        # Multi-month lookbacks prefer stored ledger totals for the window so we
+        # do not invent a QuickFile custom-period report that does not exist.
+        if use_period and int(period_flow.get("months_requested") or 1) > 1 and tx["transaction_count"] > 0:
+            turnover = tx["income_gbp"]
+            expenses = tx["spending_gbp"]
+            profit = tx["net_gbp"]
+            pl_source = "transactions"
+            note = str(period_flow.get("coverage_note") or "")
+            pl_note = (
+                f"{period_flow.get('label', 'Period')} from stored business transactions"
+                + (f". {note}" if note else ".")
+            )
+        elif qf_month is not None and (qf_month.turnover_gbp > 0 or qf_month.expenses_gbp > 0):
             turnover = round(qf_month.turnover_gbp, 2)
             expenses = round(qf_month.expenses_gbp, 2)
             profit = round(qf_month.net_profit_gbp, 2)

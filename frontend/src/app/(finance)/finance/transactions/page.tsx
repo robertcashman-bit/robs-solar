@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
@@ -11,6 +12,8 @@ import { apiClient } from "@/lib/api-client";
 import { notifyFinanceChanged } from "@/lib/finance-events";
 import { formatGbp } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
+import { periodDateRange } from "@/lib/finance-period";
+import { useFinancePeriod } from "@/lib/use-finance-period";
 import { useFinanceTransactions } from "@/lib/use-finance-transactions";
 import { useRequireAuth } from "@/lib/use-require-auth";
 
@@ -35,6 +38,14 @@ export default function TransactionsPage() {
   const [category, setCategory] = useState("Food");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const periodState = useFinancePeriod({ defaultScope: "both" });
+  const range = periodDateRange(periodState.period);
+  const effectiveFilter =
+    periodState.scope === "both"
+      ? filter
+      : periodState.scope === "personal" || periodState.scope === "business"
+        ? periodState.scope
+        : filter;
   const {
     rows,
     categories,
@@ -45,7 +56,7 @@ export default function TransactionsPage() {
     loadMore,
     reload,
     setError,
-  } = useFinanceTransactions(user, filter, q);
+  } = useFinanceTransactions(user, effectiveFilter, q, range.dateFrom, range.dateTo);
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -92,6 +103,12 @@ export default function TransactionsPage() {
         {error ? <ErrorBanner message={error} /> : null}
         {message ? <SuccessBanner message={message} /> : null}
         <SavedFiguresBanner refreshing={refreshing} />
+        <FinancePeriodScopeControl
+          period={periodState.period}
+          onPeriodChange={periodState.setPeriod}
+          scope={periodState.scope}
+          onScopeChange={periodState.setScope}
+        />
         <div className="flex flex-wrap gap-2">
           {FILTERS.map((item) => (
             <button
