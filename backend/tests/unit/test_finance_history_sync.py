@@ -29,6 +29,13 @@ class _Db:
     async def scalar(self, _stmt):
         return None
 
+    async def scalars(self, _stmt):
+        class _Result:
+            def all(self):
+                return []
+
+        return _Result()
+
     def add(self, _row) -> None:
         return None
 

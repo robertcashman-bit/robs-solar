@@ -280,11 +280,25 @@ class FinanceImportService:
         return set(rows.all())
 
     async def _account_map(self, db: AsyncSession) -> dict[str, FinanceAccountRow]:
+        from app.services.finance.lunchflow_account_ids import (
+            is_lunchflow_source,
+            normalize_lunchflow_external_id,
+        )
+
         rows = (await db.scalars(select(FinanceAccountRow))).all()
         mapping: dict[str, FinanceAccountRow] = {}
         for row in rows:
             if row.external_id:
                 mapping[row.external_id] = row
+                if is_lunchflow_source(row.source):
+                    canonical = normalize_lunchflow_external_id(row.external_id)
+                    if canonical:
+                        # Prefer an active canonical row when aliases collide.
+                        existing = mapping.get(canonical)
+                        if existing is None or (
+                            not existing.is_active and row.is_active
+                        ):
+                            mapping[canonical] = row
             mapping[row.name] = row
         return mapping
 
