@@ -99,6 +99,8 @@ describe("ReportsPage", () => {
     expect(screen.getByText("No active personal plan yet.")).toBeInTheDocument();
     expect(screen.getByText("No active business plan yet.")).toBeInTheDocument();
     expect(screen.getByText("Budget vs actual")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Personal P&L compare" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Business P&L compare" })).toBeInTheDocument();
     expect(screen.getByText("QuickFile statements")).toBeInTheDocument();
     expect(screen.getByText("Company P&L history")).toBeInTheDocument();
     expect(screen.getByText("Account statements")).toBeInTheDocument();

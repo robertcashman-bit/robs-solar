@@ -197,11 +197,10 @@ export default function ReportsPage() {
       </div>
       {reports ? (
         <div className="mt-6 space-y-8">
-          <ActiveBudgetCard budget={reports.active_budget} />
-          <BudgetVsActualPanel
-            variance={reports.budget_vs_actual}
-            activeBudget={reports.active_budget}
-          />
+          <div className="grid gap-8 lg:grid-cols-2">
+            <PlComparePanel scope="personal" title="Personal P&L compare" />
+            <PlComparePanel scope="business" title="Business P&L compare" />
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <MetricTile
               label="Net worth"
@@ -224,11 +223,12 @@ export default function ReportsPage() {
               }
             />
           </div>
+          <ActiveBudgetCard budget={reports.active_budget} />
+          <BudgetVsActualPanel
+            variance={reports.budget_vs_actual}
+            activeBudget={reports.active_budget}
+          />
           <PersonalReportPanel report={reports.personal_report} />
-          <div className="grid gap-8 lg:grid-cols-2">
-            <PlComparePanel scope="personal" title="Personal P&L compare" />
-            <PlComparePanel scope="business" title="Business P&L compare" />
-          </div>
           <FinanceHistoryCharts reports={reports} />
           <section>
             <h2 className="solar-section-title">QuickFile statements</h2>

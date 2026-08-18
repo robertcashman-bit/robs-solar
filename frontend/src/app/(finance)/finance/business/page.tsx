@@ -6,6 +6,7 @@ import { z } from "zod";
 import { AccountManager } from "@/components/finance/AccountManager";
 import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { MetricTile } from "@/components/finance/MetricTile";
+import { MetricWithOfWhich } from "@/components/finance/OfWhichBreakdown";
 import { PlComparePanel } from "@/components/finance/PlComparePanel";
 import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
@@ -18,17 +19,19 @@ import { useRequireAuth } from "@/lib/use-require-auth";
 import {
   businessFinanceSnapshotSchema,
   financeAccountSchema,
+  financeLiabilitySchema,
   periodFlowSummarySchema,
   quickFileReportsSchema,
   type BusinessFinanceSnapshot,
   type FinanceAccount,
+  type FinanceLiability,
   type PeriodFlowSummary,
   type QuickFileReports,
 } from "@/lib/finance-schemas";
 import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
 import { useFinancePeriod } from "@/lib/use-finance-period";
 import { useFinanceReload } from "@/lib/use-finance-reload";
-import { currentMonthKey, isCurrentMonthSnapshot, parseGbp } from "@/lib/money";
+import { currentMonthKey, formatGbp, isCurrentMonthSnapshot, parseGbp } from "@/lib/money";
 import { notifyFinanceChanged } from "@/lib/finance-events";
 import { canWrite } from "@/lib/permissions";
 
@@ -47,6 +50,7 @@ const ACCOUNT_OPTIONS = [
 export default function BusinessFinancePage() {
   const { user, gated, redirecting } = useRequireAuth();
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
+  const [liabilities, setLiabilities] = useState<FinanceLiability[]>([]);
   const [snapshot, setSnapshot] = useState<BusinessFinanceSnapshot | null>(null);
   const [quickfileReports, setQuickfileReports] = useState<QuickFileReports | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,8 +73,9 @@ export default function BusinessFinancePage() {
 
   const load = useCallback(async () => {
     try {
-      const [accts, snaps, flow] = await Promise.all([
+      const [accts, debts, snaps, flow] = await Promise.all([
         apiClient.get<unknown>("/finance/accounts?scope=business"),
+        apiClient.get<unknown>("/finance/liabilities?scope=business"),
         apiClient.get<unknown>("/finance/snapshots/business"),
         apiClient.get<unknown>(
           `/finance/period-flow?period=${periodState.period}&scope=business`,
@@ -79,6 +84,7 @@ export default function BusinessFinancePage() {
       const parsedFlow = periodFlowSummarySchema.safeParse(flow);
       setPeriodFlow(parsedFlow.success ? parsedFlow.data : null);
       setAccounts(z.array(financeAccountSchema).parse(accts));
+      setLiabilities(z.array(financeLiabilitySchema).parse(debts));
       const parsed = z.array(businessFinanceSnapshotSchema).parse(snaps);
       const current = parsed.find((item) => isCurrentMonthSnapshot(item.snapshot_date)) ?? null;
       setSnapshot(current);
@@ -145,9 +151,31 @@ export default function BusinessFinancePage() {
   const bankBalance = accounts
     .filter((account) => account.account_type === "current")
     .reduce((sum, account) => sum + Math.max(account.balance_gbp, 0), 0);
+  const overdraft = accounts
+    .filter((account) => account.account_type === "current" && account.balance_gbp < 0)
+    .reduce((sum, account) => sum + Math.abs(account.balance_gbp), 0);
   const directorsLoan = accounts
     .filter((account) => account.account_type === "directors_loan")
     .reduce((sum, account) => sum + account.balance_gbp, 0);
+  const activeBusinessDebts = liabilities.filter(
+    (d) => d.is_active && d.scope === "business" && d.debt_type !== "directors_loan",
+  );
+  const loanAccountBalance = accounts
+    .filter(
+      (a) =>
+        a.is_active
+        && (a.account_type === "loan" || a.account_type === "capital_on_tap"),
+    )
+    .reduce((sum, a) => sum + Math.max(a.balance_gbp, 0), 0);
+  const businessLoansFromDebts = activeBusinessDebts
+    .filter((d) => d.debt_type === "loan" || d.debt_type === "business_loan")
+    .reduce((sum, d) => sum + d.balance_gbp, 0);
+  // Prefer liability register; fall back to loan / Capital on Tap accounts.
+  const businessLoans =
+    businessLoansFromDebts > 0 ? businessLoansFromDebts : loanAccountBalance;
+  const businessDebts =
+    activeBusinessDebts.reduce((sum, d) => sum + d.balance_gbp, 0)
+    || businessLoans;
   const vatReserveAccounts = accounts.filter(
     (account) => account.account_type === "vat_reserve",
   );
@@ -157,13 +185,20 @@ export default function BusinessFinancePage() {
     vatReserveAccounts.length > 0
       ? vatReserveAccounts.reduce((sum, account) => sum + account.balance_gbp, 0)
       : snapshot?.vat_reserve_gbp;
+  const usePeriod = Boolean(periodFlow && periodFlow.transaction_count > 0);
+  const dlaHint =
+    directorsLoan > 0
+      ? "Company owes Robert — cancels in combined net worth"
+      : directorsLoan < 0
+        ? `Robert owes the company ${formatGbp(Math.abs(directorsLoan))}. Cancels in combined net worth.`
+        : "Internal Robert ↔ company. Excluded from combined net worth.";
 
   return (
     <AppShell>
       <PageHeader
         eyebrow="Finance"
         title="Business Finance"
-        description="Turnover, expenses, tax reserves, and the director's loan the company owes you."
+        description="Turnover, expenses, tax reserves, and company cash position."
       />
       {error ? <div className="mt-4"><ErrorBanner message={error} /></div> : null}
       {status ? <div className="mt-4"><SuccessBanner message={status} /></div> : null}
@@ -178,74 +213,116 @@ export default function BusinessFinancePage() {
           coverageNote={periodFlow?.coverage_note || null}
         />
       </div>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricTile label="Business bank" value={bankBalance} hint="Positive current accounts" />
-        <MetricTile
-          label={
-            periodFlow && periodFlow.transaction_count > 0
-              ? `Business turnover (${periodFlow.label})`
-              : "Business turnover (month)"
-          }
-          value={
-            periodFlow && periodFlow.transaction_count > 0
-              ? periodFlow.income_gbp
-              : snapshot?.turnover_gbp
-          }
-          hint={
-            periodFlow && periodFlow.transaction_count > 0
-              ? periodFlow.coverage_note || "Stored transactions"
-              : "Snapshot / QuickFile month"
-          }
-        />
-        <MetricTile
-          label={
-            periodFlow && periodFlow.transaction_count > 0
-              ? `Business expenses (${periodFlow.label})`
-              : "Business expenses (month)"
-          }
-          value={
-            periodFlow && periodFlow.transaction_count > 0
-              ? periodFlow.spending_gbp
-              : snapshot?.expenses_gbp
-          }
-          hint={
-            periodFlow && periodFlow.transaction_count > 0
-              ? periodFlow.coverage_note || "Stored transactions"
-              : "Snapshot / QuickFile month"
-          }
-        />
-        <MetricTile
-          label={
-            periodFlow && periodFlow.transaction_count > 0
-              ? `Business profit (${periodFlow.label})`
-              : "Business profit estimate"
-          }
-          value={
-            periodFlow && periodFlow.transaction_count > 0
-              ? periodFlow.surplus_gbp
-              : snapshot?.profit_estimate_gbp
-          }
-          positive
-          hint={
-            periodFlow && periodFlow.transaction_count > 0
-              ? periodFlow.coverage_note || "Stored transactions"
-              : "Snapshot"
-          }
-        />
-        <MetricTile label="Business VAT pot" value={vatReserveGbp} hint="Cash in VAT pot" />
-        <MetricTile label="Business corp tax reserve" value={snapshot?.corp_tax_reserve_gbp} />
-        <MetricTile label="Business debtors" value={snapshot?.debtors_gbp} />
-        <MetricTile
-          label="Business director's loan"
-          value={directorsLoan}
-          positive={directorsLoan > 0}
-          hint="Owed to you — cancels in combined net worth"
-        />
-        <MetricTile label="Business cash to draw" value={snapshot?.cash_available_to_draw_gbp} />
-      </div>
+
+      {/* Hero: MTD / selected period P&L (period label is the control heading above) */}
+      <section className="mt-8" aria-label="This period cashflow">
+        <h2 className="solar-section-title">Turnover, spend &amp; profit</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          For the selected window above. Source labelled on each tile.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <MetricTile
+            label={
+              usePeriod
+                ? `Business turnover (${periodFlow!.label})`
+                : "Business turnover (month)"
+            }
+            value={usePeriod ? periodFlow!.income_gbp : snapshot?.turnover_gbp}
+            positive
+            hint={
+              usePeriod
+                ? periodFlow!.coverage_note || "Stored transactions"
+                : "Snapshot / QuickFile month"
+            }
+          />
+          <MetricTile
+            label={
+              usePeriod
+                ? `Business expenses (${periodFlow!.label})`
+                : "Business expenses (month)"
+            }
+            value={usePeriod ? periodFlow!.spending_gbp : snapshot?.expenses_gbp}
+            hint={
+              usePeriod
+                ? periodFlow!.coverage_note || "Stored transactions"
+                : "Snapshot / QuickFile month"
+            }
+          />
+          <MetricTile
+            label={
+              usePeriod
+                ? `Business profit (${periodFlow!.label})`
+                : "Business profit estimate"
+            }
+            value={usePeriod ? periodFlow!.surplus_gbp : snapshot?.profit_estimate_gbp}
+            positive={(usePeriod ? periodFlow!.surplus_gbp : snapshot?.profit_estimate_gbp ?? 0) >= 0}
+            warning={(usePeriod ? periodFlow!.surplus_gbp : snapshot?.profit_estimate_gbp ?? 0) < 0}
+            hint={
+              usePeriod
+                ? periodFlow!.coverage_note || "Stored transactions"
+                : "Snapshot"
+            }
+          />
+        </div>
+      </section>
+
+      {/* Position */}
+      <section className="mt-8" aria-label="Business position">
+        <h2 className="solar-section-title">Position</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Cash, debts, VAT, and debtors. Of-which business loans only — no personal loans here.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <MetricWithOfWhich
+            ariaLabel="Business bank of which"
+            items={
+              overdraft > 0
+                ? [{ label: "Of which business overdraft", value: overdraft }]
+                : []
+            }
+          >
+            <MetricTile
+              label="Business bank"
+              value={bankBalance}
+              warning={overdraft > 0}
+              hint="Positive current accounts"
+            />
+          </MetricWithOfWhich>
+          <MetricWithOfWhich
+            ariaLabel="Business debts of which"
+            items={[
+              {
+                label: "Of which business loans",
+                value: businessLoans > 0 ? businessLoans : null,
+                hint: "Business-scope loans only — personal loans stay on Personal",
+              },
+            ]}
+          >
+            <MetricTile
+              label="Business debts"
+              value={businessDebts}
+              warning={businessDebts > 0}
+              hint="Company external debts — of which rows are subsets"
+            />
+          </MetricWithOfWhich>
+          <MetricTile label="Business VAT pot" value={vatReserveGbp} hint="Cash in VAT pot" />
+          <MetricTile label="Business corp tax reserve" value={snapshot?.corp_tax_reserve_gbp} />
+          <MetricTile label="Business debtors" value={snapshot?.debtors_gbp} />
+          <MetricTile
+            label="Business director's loan"
+            value={directorsLoan}
+            positive={directorsLoan > 0}
+            warning={directorsLoan < 0}
+            hint={dlaHint}
+          />
+          <MetricTile label="Business cash to draw" value={snapshot?.cash_available_to_draw_gbp} />
+        </div>
+      </section>
+
       <div className="mt-8">
         <PlComparePanel scope="business" title="Business profit & loss compare" />
       </div>
+
       <section className="mt-8">
         <h2 className="solar-section-title">QuickFile statements</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
