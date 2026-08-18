@@ -331,10 +331,10 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 }
               />
               <MetricTile
-                label="Of which high-interest debt"
+                label="High-interest debt"
                 value={overview.high_interest_debt_gbp}
                 warning={(overview.high_interest_debt_gbp ?? 0) > 0}
-                hint="APR 15% or more — subset of the debts above, pay this first"
+                hint="APR 15% or more across all debts — pay this first"
               />
             </div>
           </section>

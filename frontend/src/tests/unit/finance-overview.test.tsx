@@ -100,7 +100,10 @@ describe("FinanceOverviewView", () => {
     expect(screen.getByText("Of which house mortgage (placeholder)")).toBeInTheDocument();
     expect(screen.getByText("Placeholder £175,000 for now.")).toBeInTheDocument();
     expect(screen.getByText("Of which personal credit cards")).toBeInTheDocument();
-    expect(screen.getByText("Of which high-interest debt")).toBeInTheDocument();
+    expect(screen.getByText("High-interest debt")).toBeInTheDocument();
+    expect(
+      screen.getByText("APR 15% or more across all debts — pay this first"),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/Mortgage and cards below are of which, not extra/),
     ).toBeInTheDocument();
