@@ -203,7 +203,10 @@ class QuickFileSettingsService:
         return count, span
 
     def history_is_substantial(self, count: int, span_days: int) -> bool:
-        return count >= QUICKFILE_SUBSTANTIAL_TX_MIN and span_days >= QUICKFILE_SUBSTANTIAL_SPAN_DAYS
+        return (
+            count >= QUICKFILE_SUBSTANTIAL_TX_MIN
+            and span_days >= QUICKFILE_SUBSTANTIAL_SPAN_DAYS
+        )
 
     async def get_status(self, db: AsyncSession) -> QuickFileConfigStatus:
         config = await self.get_config(db)
