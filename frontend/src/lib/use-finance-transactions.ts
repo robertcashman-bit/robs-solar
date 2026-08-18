@@ -30,6 +30,7 @@ const LAST_TXNS_KEY = FINANCE_LAST_TRANSACTIONS_KEY;
 
 type CachedTxns = {
   filter: string;
+  scope: string;
   q: string;
   dateFrom: string;
   dateTo: string;
@@ -50,6 +51,7 @@ function readLastTxns(
   q: string,
   dateFrom: string,
   dateTo: string,
+  scope: string,
 ): CachedTxns | null {
   if (typeof window === "undefined") return null;
   try {
@@ -57,10 +59,11 @@ function readLastTxns(
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CachedTxns;
     if (
-      parsed.filter !== filter
-      || parsed.q !== q
-      || (parsed.dateFrom || "") !== dateFrom
-      || (parsed.dateTo || "") !== dateTo
+      parsed.filter !== filter ||
+      (parsed.scope || "both") !== scope ||
+      parsed.q !== q ||
+      (parsed.dateFrom || "") !== dateFrom ||
+      (parsed.dateTo || "") !== dateTo
     ) {
       return null;
     }
@@ -85,20 +88,25 @@ export function useFinanceTransactions(
   q: string,
   dateFrom?: string,
   dateTo?: string,
+  scope?: string | null,
 ) {
   const enabled = Boolean(user);
   const trimmedQ = q.trim();
   const from = dateFrom ?? "";
   const to = dateTo ?? "";
-  const cacheKey = `${filter}|${trimmedQ}|${from}|${to}`;
-  const cached = enabled ? readLastTxns(filter, trimmedQ, from, to) : null;
+  const scopeKey = scope && scope !== "both" ? scope : "both";
+  const cacheKey = `${filter}|${scopeKey}|${trimmedQ}|${from}|${to}`;
+  const cached = enabled
+    ? readLastTxns(filter, trimmedQ, from, to, scopeKey)
+    : null;
   const [fetched, setFetched] = useState<FetchedTxns | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { refreshing } = useFinanceBackgroundLiveRefresh(user);
 
   const fromFetch = fetched?.key === cacheKey ? fetched : null;
-  const active = fromFetch
-    ?? (cached
+  const active =
+    fromFetch ??
+    (cached
       ? {
           key: cacheKey,
           rows: cached.rows,
@@ -118,16 +126,24 @@ export function useFinanceTransactions(
       setError(null);
       try {
         const params = new URLSearchParams();
-        if (filter === "personal" || filter === "business") {
+        if (scopeKey === "personal" || scopeKey === "business") {
+          params.set("scope", scopeKey);
+        } else if (filter === "personal" || filter === "business") {
           params.set("scope", filter);
-        } else if (filter !== "all") {
+        }
+        if (
+          filter !== "all" &&
+          filter !== "personal" &&
+          filter !== "business"
+        ) {
           params.set("filter", filter);
         }
         if (trimmedQ) params.set("q", trimmedQ);
         if (from) params.set("date_from", from);
         if (to) params.set("date_to", to);
         params.set("limit", String(FINANCE_TXN_PAGE_SIZE));
-        const offset = append && fetched?.key === cacheKey ? fetched.rows.length : 0;
+        const offset =
+          append && fetched?.key === cacheKey ? fetched.rows.length : 0;
         params.set("offset", String(offset));
         const [data, cats] = await Promise.all([
           apiClient.get<FinanceTxn[]>(`/finance/transactions?${params}`),
@@ -136,19 +152,31 @@ export function useFinanceTransactions(
         if (!isFinanceCacheWriteCurrent(cacheEpoch)) {
           return;
         }
-        const nextCategories = [...new Set(cats.map((item) => item.parent).filter(Boolean))];
+        const nextCategories = [
+          ...new Set(cats.map((item) => item.parent).filter(Boolean)),
+        ];
         const nextHasMore = data.length === FINANCE_TXN_PAGE_SIZE;
         const nextRows =
-          append && fetched?.key === cacheKey ? [...fetched.rows, ...data] : data;
+          append && fetched?.key === cacheKey
+            ? [...fetched.rows, ...data]
+            : data;
         setFetched({
           key: cacheKey,
           rows: nextRows,
           categories: nextCategories,
           hasMore: nextHasMore,
         });
-        if (!append && filter === "all" && !trimmedQ && !from && !to) {
+        if (
+          !append &&
+          filter === "all" &&
+          scopeKey === "both" &&
+          !trimmedQ &&
+          !from &&
+          !to
+        ) {
           writeLastTxns({
             filter,
+            scope: scopeKey,
             q: "",
             dateFrom: "",
             dateTo: "",
@@ -159,10 +187,12 @@ export function useFinanceTransactions(
         }
         notifyFinanceOverviewReady();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load transactions");
+        setError(
+          err instanceof Error ? err.message : "Failed to load transactions",
+        );
       }
     },
-    [enabled, filter, trimmedQ, from, to, cacheKey, fetched],
+    [enabled, filter, scopeKey, trimmedQ, from, to, cacheKey, fetched],
   );
 
   useFinanceReload(() => load(false), enabled);

@@ -8,30 +8,74 @@ import {
   financeCacheWriteEpoch,
   isFinanceCacheWriteCurrent,
 } from "@/lib/finance-local-cache";
-import { FINANCE_CHANGED_EVENT, notifyFinanceOverviewReady } from "@/lib/finance-events";
-import { financeOverviewSchema, type FinanceOverview } from "@/lib/finance-schemas";
+import {
+  FINANCE_CHANGED_EVENT,
+  notifyFinanceOverviewReady,
+} from "@/lib/finance-events";
+import {
+  financeOverviewSchema,
+  type FinanceOverview,
+} from "@/lib/finance-schemas";
 import { currentMonthKey } from "@/lib/money";
 import type { UserInfo } from "@/lib/schemas";
 import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
 
 const LAST_OVERVIEW_KEY = FINANCE_LAST_OVERVIEW_KEY;
 
-function readLastOverview(): FinanceOverview | null {
+type StoredOverview = {
+  personalPeriod: string;
+  businessPeriod: string;
+  data: unknown;
+};
+
+function readLastOverview(
+  personalPeriod: string,
+  businessPeriod: string,
+): FinanceOverview | null {
   if (typeof window === "undefined") {
     return null;
   }
   try {
     const raw = window.localStorage.getItem(LAST_OVERVIEW_KEY);
     if (!raw) return null;
-    return financeOverviewSchema.parse(JSON.parse(raw));
+    const parsed = JSON.parse(raw) as StoredOverview | FinanceOverview;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "data" in parsed &&
+      "personalPeriod" in parsed &&
+      "businessPeriod" in parsed
+    ) {
+      if (
+        parsed.personalPeriod !== personalPeriod ||
+        parsed.businessPeriod !== businessPeriod
+      ) {
+        return null;
+      }
+      return financeOverviewSchema.parse(parsed.data);
+    }
+    // Legacy unkeyed payload: only reuse for the default 1m/1m lookback.
+    if (personalPeriod === "1m" && businessPeriod === "1m") {
+      return financeOverviewSchema.parse(parsed);
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-function writeLastOverview(overview: FinanceOverview): void {
+function writeLastOverview(
+  overview: FinanceOverview,
+  personalPeriod: string,
+  businessPeriod: string,
+): void {
   try {
-    window.localStorage.setItem(LAST_OVERVIEW_KEY, JSON.stringify(overview));
+    const payload: StoredOverview = {
+      personalPeriod,
+      businessPeriod,
+      data: overview,
+    };
+    window.localStorage.setItem(LAST_OVERVIEW_KEY, JSON.stringify(payload));
   } catch {
     // ignore private mode / quota
   }
@@ -44,19 +88,37 @@ export function useFinanceOverview(
   const enabled = Boolean(user);
   const personalPeriod = opts?.personalPeriod ?? "1m";
   const businessPeriod = opts?.businessPeriod ?? "1m";
-  const cached = enabled ? readLastOverview() : null;
+  const cached = enabled
+    ? readLastOverview(personalPeriod, businessPeriod)
+    : null;
   const [overview, setOverview] = useState<FinanceOverview | null>(cached);
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState<string | null>(null);
-  const { refreshing: backgroundRefreshing } = useFinanceBackgroundLiveRefresh(user);
+  const { refreshing: backgroundRefreshing } =
+    useFinanceBackgroundLiveRefresh(user);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const overviewRef = useRef<FinanceOverview | null>(cached);
+  const requestIdRef = useRef(0);
+  const periodsRef = useRef({ personalPeriod, businessPeriod });
+  periodsRef.current = { personalPeriod, businessPeriod };
+
+  useEffect(() => {
+    const next = enabled
+      ? readLastOverview(personalPeriod, businessPeriod)
+      : null;
+    overviewRef.current = next;
+    setOverview(next);
+    setLoading(Boolean(enabled && !next));
+  }, [enabled, personalPeriod, businessPeriod]);
 
   const refresh = useCallback(
     async (refreshOpts?: { live?: boolean; fresh?: boolean }) => {
       if (!enabled) {
         return;
       }
+      const requestId = ++requestIdRef.current;
+      const requestedPersonal = personalPeriod;
+      const requestedBusiness = businessPeriod;
       const cacheEpoch = financeCacheWriteEpoch();
       const live = Boolean(refreshOpts?.live);
       const fresh = Boolean(refreshOpts?.fresh);
@@ -69,24 +131,40 @@ export function useFinanceOverview(
       try {
         const month = currentMonthKey();
         const params = new URLSearchParams({ month });
-        params.set("personal_period", personalPeriod);
-        params.set("business_period", businessPeriod);
+        params.set("personal_period", requestedPersonal);
+        params.set("business_period", requestedBusiness);
         if (live) params.set("live", "1");
         if (fresh) params.set("fresh", "1");
-        const data = await apiClient.get<unknown>(`/finance/overview?${params.toString()}`);
+        const data = await apiClient.get<unknown>(
+          `/finance/overview?${params.toString()}`,
+        );
         const parsed = financeOverviewSchema.parse(data);
-        if (!isFinanceCacheWriteCurrent(cacheEpoch)) {
+        if (
+          requestId !== requestIdRef.current ||
+          periodsRef.current.personalPeriod !== requestedPersonal ||
+          periodsRef.current.businessPeriod !== requestedBusiness ||
+          !isFinanceCacheWriteCurrent(cacheEpoch)
+        ) {
           return;
         }
         overviewRef.current = parsed;
         setOverview(parsed);
-        writeLastOverview(parsed);
+        writeLastOverview(parsed, requestedPersonal, requestedBusiness);
         notifyFinanceOverviewReady();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load finance overview");
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load finance overview",
+        );
       } finally {
-        setLoading(false);
-        setManualRefreshing(false);
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+          setManualRefreshing(false);
+        }
       }
     },
     [enabled, personalPeriod, businessPeriod],

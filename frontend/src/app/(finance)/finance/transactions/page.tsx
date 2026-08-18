@@ -40,12 +40,6 @@ export default function TransactionsPage() {
   const [busy, setBusy] = useState(false);
   const periodState = useFinancePeriod({ defaultScope: "both" });
   const range = periodDateRange(periodState.period);
-  const effectiveFilter =
-    periodState.scope === "both"
-      ? filter
-      : periodState.scope === "personal" || periodState.scope === "business"
-        ? periodState.scope
-        : filter;
   const {
     rows,
     categories,
@@ -56,7 +50,14 @@ export default function TransactionsPage() {
     loadMore,
     reload,
     setError,
-  } = useFinanceTransactions(user, effectiveFilter, q, range.dateFrom, range.dateTo);
+  } = useFinanceTransactions(
+    user,
+    filter,
+    q,
+    range.dateFrom,
+    range.dateTo,
+    periodState.scope,
+  );
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -72,11 +73,14 @@ export default function TransactionsPage() {
     setBusy(true);
     setError(null);
     try {
-      const result = await apiClient.post<{ updated: number }>("/finance/transactions/bulk-category", {
-        ids: [...selected],
-        category,
-        create_rule: createRule,
-      });
+      const result = await apiClient.post<{ updated: number }>(
+        "/finance/transactions/bulk-category",
+        {
+          ids: [...selected],
+          category,
+          create_rule: createRule,
+        },
+      );
       setMessage(`Updated ${result.updated} transaction(s)`);
       setSelected(new Set());
       notifyFinanceChanged();
@@ -170,7 +174,11 @@ export default function TransactionsPage() {
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void apiClient.post("/finance/transfers/detect").then(() => reload())}
+                onClick={() =>
+                  void apiClient
+                    .post("/finance/transfers/detect")
+                    .then(() => reload())
+                }
                 className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
               >
                 Detect transfers
@@ -205,7 +213,10 @@ export default function TransactionsPage() {
                 </tr>
               ) : (
                 rows.map((row) => (
-                  <tr key={row.id} className="border-b border-[var(--border)]/50">
+                  <tr
+                    key={row.id}
+                    className="border-b border-[var(--border)]/50"
+                  >
                     <td className="px-3 py-2">
                       <input
                         type="checkbox"
@@ -214,11 +225,15 @@ export default function TransactionsPage() {
                         disabled={!writable}
                       />
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">{row.posted_on}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {row.posted_on}
+                    </td>
                     <td className="px-3 py-2">
                       {row.description}
                       {row.is_transfer ? (
-                        <span className="ml-2 text-xs text-amber-700">transfer</span>
+                        <span className="ml-2 text-xs text-amber-700">
+                          transfer
+                        </span>
                       ) : null}
                     </td>
                     <td className="px-3 py-2">{formatGbp(row.amount_gbp)}</td>
