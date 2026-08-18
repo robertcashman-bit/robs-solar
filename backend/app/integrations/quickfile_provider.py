@@ -9,6 +9,10 @@ from app.integrations.base import BaseFinanceProvider, IntegrationNotConfiguredE
 from app.integrations.quickfile_client import QuickFileClient, QuickFileError, _nominal_code_key
 from app.integrations.quickfile_reports import parse_balance_sheet_full
 from app.schemas.finance import FinanceAccountType, FinanceScope, QuickFileConfig
+from app.services.finance.sync_lookback import (
+    QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS,
+    lookback_date_chunks,
+)
 
 
 def _map_account_type(raw: str, name: str) -> FinanceAccountType:
@@ -237,10 +241,18 @@ class QuickFileProvider(BaseFinanceProvider):
         document and are not bulk-imported). Document rows use distinct external_id
         prefixes (``qf-inv:`` / ``qf-bill:``) so fingerprints never collide with bank
         lines; history budgets that include both may over-count the same economic event.
+
+        Date ranges longer than one year are walked in year-sized chunks so a single
+        Bank_Search / Invoice_Search / Purchase_Search call never covers a huge window.
         """
         self._ensure_configured()
-        cutoff = since or (datetime.now(timezone.utc) - timedelta(days=365)).date().isoformat()
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(timezone.utc).date()
+        if since:
+            cutoff = since[:10]
+        else:
+            cutoff = (today - timedelta(days=QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS)).isoformat()
+        until = today.isoformat()
+        windows = lookback_date_chunks(cutoff, until)
         collected: list[dict[str, Any]] = []
         try:
             accounts = await self._client.fetch_bank_accounts()
@@ -252,25 +264,29 @@ class QuickFileProvider(BaseFinanceProvider):
             if not code:
                 continue
             name = _account_name(record)
-            rows = await self._client.fetch_bank_transactions(code, from_date=cutoff, to_date=today)
-            for item in rows:
-                normalized = _normalize_bank_line(
-                    item, nominal_code=code, account_name=name, cutoff=cutoff
+            for from_date, to_date in windows:
+                rows = await self._client.fetch_bank_transactions(
+                    code, from_date=from_date, to_date=to_date
                 )
+                for item in rows:
+                    normalized = _normalize_bank_line(
+                        item, nominal_code=code, account_name=name, cutoff=cutoff
+                    )
+                    if normalized:
+                        collected.append(normalized)
+
+        for from_date, to_date in windows:
+            invoices = await self._client.fetch_invoices(from_date=from_date, to_date=to_date)
+            for item in invoices:
+                normalized = _normalize_invoice(item, cutoff=cutoff)
                 if normalized:
                     collected.append(normalized)
 
-        invoices = await self._client.fetch_invoices(from_date=cutoff, to_date=today)
-        for item in invoices:
-            normalized = _normalize_invoice(item, cutoff=cutoff)
-            if normalized:
-                collected.append(normalized)
-
-        purchases = await self._client.fetch_purchases(from_date=cutoff, to_date=today)
-        for item in purchases:
-            normalized = _normalize_purchase(item, cutoff=cutoff)
-            if normalized:
-                collected.append(normalized)
+            purchases = await self._client.fetch_purchases(from_date=from_date, to_date=to_date)
+            for item in purchases:
+                normalized = _normalize_purchase(item, cutoff=cutoff)
+                if normalized:
+                    collected.append(normalized)
 
         return collected
 

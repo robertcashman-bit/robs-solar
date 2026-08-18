@@ -784,13 +784,20 @@ async def quickfile_reports(
 @router.post("/integrations/quickfile/sync", response_model=QuickFileSyncResult)
 async def quickfile_sync(
     request: Request,
+    force_full: bool = Query(
+        default=False,
+        description=(
+            "Clear QuickFile full-import markers so this sync uses the deep "
+            "lookback window. Existing transactions are not deleted."
+        ),
+    ),
     session: SessionData = Depends(require_admin_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> QuickFileSyncResult:
     await enforce_write_rate_limit(request)
     config = await quickfile_settings_service.get_config(db)
     try:
-        return await quickfile_sync_service.sync(db, config)
+        return await quickfile_sync_service.sync(db, config, force_full=force_full)
     except IntegrationNotConfiguredError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

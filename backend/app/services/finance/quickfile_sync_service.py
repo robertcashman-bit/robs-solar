@@ -19,7 +19,7 @@ from app.schemas.finance import (
 )
 from app.services.finance.finance_import_service import finance_import_service
 from app.services.finance.quickfile_reports_service import quickfile_reports_service
-from app.services.finance.sync_lookback import lookback_since
+from app.services.finance.sync_lookback import quickfile_lookback_days, quickfile_lookback_since
 from app.services.quickfile_settings_service import quickfile_settings_service
 
 logger = logging.getLogger(__name__)
@@ -33,10 +33,13 @@ class QuickFileSyncService:
         *,
         include_reports: bool = True,
         backup: bool = True,
+        force_full: bool = False,
     ) -> QuickFileSyncResult:
         provider = QuickFileProvider(config)
+        if force_full:
+            await quickfile_settings_service.clear_full_history_import(db)
         first_sync = await quickfile_settings_service.needs_full_history_import(db)
-        since = lookback_since(first_sync=first_sync)
+        since = quickfile_lookback_since(first_sync=first_sync)
         try:
             accounts = await provider.sync_accounts()
             debtors_gbp = await provider.fetch_debtors_gbp()
@@ -80,7 +83,8 @@ class QuickFileSyncService:
         if first_sync:
             await quickfile_settings_service.mark_full_history_imported(db)
         await quickfile_settings_service.mark_synced(db)
-        window = "365-day first sync" if first_sync else "90-day incremental"
+        days = quickfile_lookback_days(first_sync=first_sync)
+        window = f"{days}-day first sync" if first_sync else f"{days}-day incremental"
         message = (
             f"Synced {synced} QuickFile account(s); "
             f"imported {imported.get('imported', 0)} transaction(s) ({window})"
