@@ -133,40 +133,52 @@ async def test_quickfile_provider_sync_transactions_collects_all_types(
     provider = QuickFileProvider(
         QuickFileConfig(account_number="1", api_key="k", application_id="a")
     )
+    bank_windows: list[tuple[str | None, str | None]] = []
+    invoice_windows: list[tuple[str | None, str | None]] = []
+    purchase_windows: list[tuple[str | None, str | None]] = []
 
     async def fake_accounts():
         return [{"NominalCode": 1200, "Name": "Business Current", "BankType": "CURRENT"}]
 
     async def fake_bank(code, *, from_date=None, to_date=None):
         assert str(code) == "1200"
-        return [
-            {
-                "TransactionDate": "2026-07-01",
-                "Amount": -10,
-                "Reference": "CARD",
-                "TransactionID": "b1",
-            }
-        ]
+        bank_windows.append((from_date, to_date))
+        if from_date == "2026-06-01":
+            return [
+                {
+                    "TransactionDate": "2026-07-01",
+                    "Amount": -10,
+                    "Reference": "CARD",
+                    "TransactionID": "b1",
+                }
+            ]
+        return []
 
     async def fake_invoices(*, from_date=None, to_date=None, status=None):
-        return [
-            {
-                "IssueDate": "2026-07-02",
-                "InvoiceID": 1,
-                "InvoiceNumber": "INV1",
-                "Total": 50,
-            }
-        ]
+        invoice_windows.append((from_date, to_date))
+        if from_date == "2026-06-01":
+            return [
+                {
+                    "IssueDate": "2026-07-02",
+                    "InvoiceID": 1,
+                    "InvoiceNumber": "INV1",
+                    "Total": 50,
+                }
+            ]
+        return []
 
     async def fake_purchases(*, from_date=None, to_date=None):
-        return [
-            {
-                "ReceiptDate": "2026-07-03",
-                "PurchaseID": 2,
-                "ReceiptNumber": "R1",
-                "Total": 8,
-            }
-        ]
+        purchase_windows.append((from_date, to_date))
+        if from_date == "2026-06-01":
+            return [
+                {
+                    "ReceiptDate": "2026-07-03",
+                    "PurchaseID": 2,
+                    "ReceiptNumber": "R1",
+                    "Total": 8,
+                }
+            ]
+        return []
 
     monkeypatch.setattr(provider._client, "fetch_bank_accounts", fake_accounts)
     monkeypatch.setattr(provider._client, "fetch_bank_transactions", fake_bank)
@@ -177,3 +189,45 @@ async def test_quickfile_provider_sync_transactions_collects_all_types(
     assert len(rows) == 3
     sources = {item["account_external_id"] for item in rows}
     assert sources == {"1200", "quickfile-invoices", "quickfile-purchases"}
+    assert bank_windows == invoice_windows == purchase_windows
+    assert bank_windows[0][0] == "2026-06-01"
+    assert bank_windows[-1][1] is not None
+
+
+@pytest.mark.asyncio
+async def test_quickfile_provider_chunks_multi_year_lookback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = QuickFileProvider(
+        QuickFileConfig(account_number="1", api_key="k", application_id="a")
+    )
+    bank_windows: list[tuple[str | None, str | None]] = []
+
+    async def fake_accounts():
+        return [{"NominalCode": 1200, "Name": "Business Current", "BankType": "CURRENT"}]
+
+    async def fake_bank(code, *, from_date=None, to_date=None):
+        bank_windows.append((from_date, to_date))
+        return []
+
+    async def fake_invoices(*, from_date=None, to_date=None, status=None):
+        return []
+
+    async def fake_purchases(*, from_date=None, to_date=None):
+        return []
+
+    monkeypatch.setattr(provider._client, "fetch_bank_accounts", fake_accounts)
+    monkeypatch.setattr(provider._client, "fetch_bank_transactions", fake_bank)
+    monkeypatch.setattr(provider._client, "fetch_invoices", fake_invoices)
+    monkeypatch.setattr(provider._client, "fetch_purchases", fake_purchases)
+
+    await provider.sync_transactions(since="2016-08-22")
+    assert len(bank_windows) >= 10
+    assert bank_windows[0][0] == "2016-08-22"
+    # Year-sized steps — no single window spans more than 365 days.
+    from datetime import date
+
+    for start, end in bank_windows:
+        assert start is not None and end is not None
+        span = (date.fromisoformat(end) - date.fromisoformat(start)).days
+        assert span <= 364

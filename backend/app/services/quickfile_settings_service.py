@@ -11,11 +11,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.models import AppSettingRow
 from app.schemas.finance import QuickFileConfig, QuickFileConfigStatus
+from app.services.finance.sync_lookback import QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
 from app.services.settings_crypto import open_json, seal_json
 
 _QUICKFILE_KEY = "quickfile"
 _LAST_SYNC_KEY = "quickfile_last_sync_at"
 _FULL_IMPORT_KEY = "quickfile_full_import_at"
+# Days covered by the last successful long-lookback import. Missing or smaller than
+# QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS marks the prior full import as stale so the next
+# sync re-runs deep history (fingerprints keep existing txs idempotent).
+_FULL_IMPORT_LOOKBACK_KEY = "quickfile_full_import_lookback_days"
 _BUDGET_ACCOUNTS_KEY = "quickfile_budget_account_ids"
 
 
@@ -104,20 +109,54 @@ class QuickFileSettingsService:
         await self._set_timestamp(db, _LAST_SYNC_KEY)
 
     async def needs_full_history_import(self, db: AsyncSession) -> bool:
-        """True until a successful long-lookback bank-line import has completed."""
+        """True until a successful long-lookback bank-line import has completed.
+
+        Also true when a prior full import used a shorter lookback than
+        ``QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS`` (stale flag). Clearing via
+        ``clear_full_history_import`` is the documented one-shot to force another
+        deep pass; existing transaction fingerprints stay idempotent.
+        """
         row = await self._get_row(db, _FULL_IMPORT_KEY)
-        return row is None or not (row.value or "").strip()
+        if row is None or not (row.value or "").strip():
+            return True
+        lookback_row = await self._get_row(db, _FULL_IMPORT_LOOKBACK_KEY)
+        if lookback_row is None or not (lookback_row.value or "").strip():
+            return True
+        try:
+            stored_days = int(str(lookback_row.value).strip())
+        except ValueError:
+            return True
+        return stored_days < QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
 
     async def mark_full_history_imported(self, db: AsyncSession) -> None:
         await self._set_timestamp(db, _FULL_IMPORT_KEY)
+        await self._set_value(
+            db, _FULL_IMPORT_LOOKBACK_KEY, str(QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS)
+        )
+
+    async def clear_full_history_import(self, db: AsyncSession) -> None:
+        """One-shot: drop full-import markers so the next sync uses deep lookback.
+
+        Does not delete finance transactions. Call via ``sync(..., force_full=True)``
+        or by clearing ``quickfile_full_import_at`` /
+        ``quickfile_full_import_lookback_days`` in app_settings.
+        """
+        for key in (_FULL_IMPORT_KEY, _FULL_IMPORT_LOOKBACK_KEY):
+            row = await self._get_row(db, key)
+            if row is not None:
+                await db.delete(row)
+        await db.commit()
 
     async def _set_timestamp(self, db: AsyncSession, key: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
+        await self._set_value(db, key, now)
+
+    async def _set_value(self, db: AsyncSession, key: str, value: str) -> None:
         row = await self._get_row(db, key)
         if row is None:
-            db.add(AppSettingRow(key=key, value=now))
+            db.add(AppSettingRow(key=key, value=value))
         else:
-            row.value = now
+            row.value = value
         await db.commit()
 
 

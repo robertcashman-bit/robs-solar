@@ -120,6 +120,8 @@ async def reset_integration_settings(setup_db: None) -> AsyncGenerator[None, Non
                     [
                         "quickfile",
                         "quickfile_last_sync_at",
+                        "quickfile_full_import_at",
+                        "quickfile_full_import_lookback_days",
                         "truelayer",
                         "truelayer_tokens",
                         "truelayer_last_sync_at",
@@ -128,6 +130,7 @@ async def reset_integration_settings(setup_db: None) -> AsyncGenerator[None, Non
                         "lunchflow_last_sync_at",
                         "lunchflow_last_test_at",
                         "lunchflow_monthly_flow",
+                        "lunchflow_full_import_at",
                         "funding_circle",
                         "funding_circle_last_sync_at",
                         "tesla",

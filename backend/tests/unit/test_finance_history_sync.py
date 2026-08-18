@@ -197,7 +197,7 @@ async def test_lunchflow_incremental_uses_90_day_since(
 
 
 @pytest.mark.asyncio
-async def test_quickfile_first_sync_commits_with_365_day_lookback(
+async def test_quickfile_first_sync_commits_with_deep_lookback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -301,8 +301,104 @@ async def test_quickfile_first_sync_commits_with_365_day_lookback(
     assert isinstance(result, QuickFileSyncResult)
     assert result.imported == 1
     assert captured["marked_full"] is True
-    expected = (datetime.now(timezone.utc) - timedelta(days=365)).date().isoformat()
+    from app.services.finance.sync_lookback import QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
+
+    expected = (
+        datetime.now(timezone.utc) - timedelta(days=QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS)
+    ).date().isoformat()
     assert captured["since"] == expected
+    assert f"{QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS}-day" in result.message
+
+
+@pytest.mark.asyncio
+async def test_quickfile_force_full_clears_markers_before_sync(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {"cleared": False}
+
+    class FakeProvider:
+        def __init__(self, _config) -> None:
+            pass
+
+        async def sync_accounts(self):
+            return []
+
+        async def fetch_debtors_gbp(self) -> float:
+            return 0.0
+
+        async def sync_transactions(self, *, since=None):
+            captured["since"] = since
+            return []
+
+    async def clear_full(_db) -> None:
+        captured["cleared"] = True
+
+    async def needs_full(_db) -> bool:
+        return bool(captured["cleared"])
+
+    async def mark_full(_db) -> None:
+        captured["marked_full"] = True
+
+    async def noop(_db) -> None:
+        return None
+
+    async def budget_ids(_db):
+        return []
+
+    async def commit(db, rows, *, source, actor="import", persist=True):
+        return {"imported": 0, "duplicate_count": 0, "rejected_count": 0}
+
+    async def fake_backup(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_sync_service.QuickFileProvider", FakeProvider
+    )
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_sync_service.quickfile_settings_service.clear_full_history_import",
+        clear_full,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_sync_service.quickfile_settings_service.needs_full_history_import",
+        needs_full,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_sync_service.quickfile_settings_service.mark_full_history_imported",
+        mark_full,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_sync_service.quickfile_settings_service.mark_synced",
+        noop,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_sync_service.quickfile_settings_service.get_budget_account_ids",
+        budget_ids,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_sync_service.finance_import_service.commit",
+        commit,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_sync_service._safe_backup",
+        fake_backup,
+    )
+
+    result = await QuickFileSyncService().sync(
+        _Db(),
+        QuickFileConfig(account_number="1", api_key="k", application_id="a"),
+        include_reports=False,
+        backup=False,
+        force_full=True,
+    )
+    from app.services.finance.sync_lookback import QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
+
+    assert captured["cleared"] is True
+    assert captured["marked_full"] is True
+    expected = (
+        datetime.now(timezone.utc) - timedelta(days=QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS)
+    ).date().isoformat()
+    assert captured["since"] == expected
+    assert f"{QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS}-day" in result.message
 
 
 @pytest.mark.asyncio
