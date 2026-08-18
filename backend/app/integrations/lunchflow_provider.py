@@ -142,9 +142,7 @@ class LunchFlowProvider(BaseFinanceProvider):
             if provider_name and provider_name.lower() not in display_name.lower():
                 display_name = f"{provider_name} — {display_name}"
             credit_limit = _optional_amount(
-                record.get("creditLimit")
-                or record.get("credit_limit")
-                or record.get("limit")
+                record.get("creditLimit") or record.get("credit_limit") or record.get("limit")
             )
             normalized.append(
                 {
@@ -172,17 +170,12 @@ class LunchFlowProvider(BaseFinanceProvider):
             account_id = str(record.get("id") or record.get("accountId") or "")
             if not account_id:
                 continue
-            try:
-                transactions = await self._client.fetch_transactions(account_id, since=cutoff)
-            except LunchFlowError:
-                continue
+            transactions = await self._client.fetch_transactions(account_id, since=cutoff)
             account_name = str(record.get("name") or record.get("displayName") or "")
             for item in transactions:
                 item = dict(item)
                 item.setdefault("account_id", account_id)
-                normalized_tx = _normalize_transaction(
-                    item, cutoff, account_name=account_name
-                )
+                normalized_tx = _normalize_transaction(item, cutoff, account_name=account_name)
                 if normalized_tx:
                     collected.append(normalized_tx)
         return collected

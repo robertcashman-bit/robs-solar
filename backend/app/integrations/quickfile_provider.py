@@ -98,10 +98,7 @@ def _normalize_bank_line(
         return None
     reference = str(record.get("Reference") or record.get("Notes") or "").strip()
     external = str(
-        record.get("TransactionID")
-        or record.get("Id")
-        or record.get("BankTransactionID")
-        or ""
+        record.get("TransactionID") or record.get("Id") or record.get("BankTransactionID") or ""
     ).strip()
     if not external:
         external = f"bank:{nominal_code}:{dated}:{amount}:{reference}"[:128]
@@ -118,15 +115,11 @@ def _normalize_bank_line(
     }
 
 
-def _normalize_invoice(
-    record: dict[str, Any], *, cutoff: str
-) -> dict[str, Any] | None:
+def _normalize_invoice(record: dict[str, Any], *, cutoff: str) -> dict[str, Any] | None:
     dated = _parse_date(record, "IssueDate", "InvoiceDate", "Date")
     if dated and cutoff and dated < cutoff:
         return None
-    amount = _parse_amount(
-        record, "Total", "GrossAmount", "Amount", "InvoiceTotal", "TotalAmount"
-    )
+    amount = _parse_amount(record, "Total", "GrossAmount", "Amount", "InvoiceTotal", "TotalAmount")
     if amount is None or amount == 0:
         return None
     invoice_id = str(
@@ -150,22 +143,15 @@ def _normalize_invoice(
     }
 
 
-def _normalize_purchase(
-    record: dict[str, Any], *, cutoff: str
-) -> dict[str, Any] | None:
+def _normalize_purchase(record: dict[str, Any], *, cutoff: str) -> dict[str, Any] | None:
     dated = _parse_date(record, "ReceiptDate", "PurchaseDate", "Date", "IssueDate")
     if dated and cutoff and dated < cutoff:
         return None
-    amount = _parse_amount(
-        record, "Total", "GrossAmount", "Amount", "PurchaseTotal", "TotalAmount"
-    )
+    amount = _parse_amount(record, "Total", "GrossAmount", "Amount", "PurchaseTotal", "TotalAmount")
     if amount is None or amount == 0:
         return None
     purchase_id = str(
-        record.get("PurchaseID")
-        or record.get("Id")
-        or record.get("ReceiptNumber")
-        or ""
+        record.get("PurchaseID") or record.get("Id") or record.get("ReceiptNumber") or ""
     ).strip()
     number = str(record.get("ReceiptNumber") or purchase_id or "bill").strip()
     supplier = str(record.get("SupplierName") or "").strip()
@@ -194,9 +180,7 @@ class QuickFileProvider(BaseFinanceProvider):
 
     def _ensure_configured(self) -> None:
         if not (
-            self._config.account_number
-            and self._config.api_key
-            and self._config.application_id
+            self._config.account_number and self._config.api_key and self._config.application_id
         ):
             raise IntegrationNotConfiguredError(
                 "QuickFile is not configured. Set QUICKFILE_* env vars or save "
@@ -255,9 +239,7 @@ class QuickFileProvider(BaseFinanceProvider):
         lines; history budgets that include both may over-count the same economic event.
         """
         self._ensure_configured()
-        cutoff = since or (
-            datetime.now(timezone.utc) - timedelta(days=365)
-        ).date().isoformat()
+        cutoff = since or (datetime.now(timezone.utc) - timedelta(days=365)).date().isoformat()
         today = datetime.now(timezone.utc).date().isoformat()
         collected: list[dict[str, Any]] = []
         try:
@@ -270,12 +252,7 @@ class QuickFileProvider(BaseFinanceProvider):
             if not code:
                 continue
             name = _account_name(record)
-            try:
-                rows = await self._client.fetch_bank_transactions(
-                    code, from_date=cutoff, to_date=today
-                )
-            except QuickFileError:
-                continue
+            rows = await self._client.fetch_bank_transactions(code, from_date=cutoff, to_date=today)
             for item in rows:
                 normalized = _normalize_bank_line(
                     item, nominal_code=code, account_name=name, cutoff=cutoff
@@ -283,21 +260,13 @@ class QuickFileProvider(BaseFinanceProvider):
                 if normalized:
                     collected.append(normalized)
 
-        try:
-            invoices = await self._client.fetch_invoices(from_date=cutoff, to_date=today)
-        except QuickFileError:
-            invoices = []
+        invoices = await self._client.fetch_invoices(from_date=cutoff, to_date=today)
         for item in invoices:
             normalized = _normalize_invoice(item, cutoff=cutoff)
             if normalized:
                 collected.append(normalized)
 
-        try:
-            purchases = await self._client.fetch_purchases(
-                from_date=cutoff, to_date=today
-            )
-        except QuickFileError:
-            purchases = []
+        purchases = await self._client.fetch_purchases(from_date=cutoff, to_date=today)
         for item in purchases:
             normalized = _normalize_purchase(item, cutoff=cutoff)
             if normalized:

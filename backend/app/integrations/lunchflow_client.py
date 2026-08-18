@@ -74,10 +74,7 @@ class LunchFlowClient:
         self, account_id: str, *, since: str | None = None
     ) -> list[dict[str, Any]]:
         params = {"start_date": since} if since else None
-        try:
-            body = await self._get(f"/accounts/{account_id}/transactions", params=params)
-        except LunchFlowError:
-            return []
+        body = await self._get(f"/accounts/{account_id}/transactions", params=params)
         transactions = body.get("transactions")
         if isinstance(transactions, list):
             return transactions
