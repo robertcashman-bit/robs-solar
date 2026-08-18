@@ -6,6 +6,7 @@ from app.services.finance.sync_lookback import (
     FIRST_SYNC_LOOKBACK_DAYS,
     INCREMENTAL_LOOKBACK_DAYS,
     QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS,
+    QUICKFILE_INITIAL_LOOKBACK_DAYS,
     lookback_date_chunks,
     lookback_days,
     lookback_since,
@@ -26,12 +27,18 @@ def test_incremental_lookback_is_90_days() -> None:
     assert lookback_since(first_sync=False, now=now) == "2026-05-20"
 
 
-def test_quickfile_first_sync_lookback_is_about_ten_years() -> None:
+def test_quickfile_initial_lookback_is_one_year() -> None:
     now = datetime(2026, 8, 18, 12, 0, tzinfo=timezone.utc)
-    assert quickfile_lookback_days(first_sync=True) == QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
-    assert QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS >= 5 * 365
-    assert quickfile_lookback_since(first_sync=True, now=now) == "2016-08-20"
+    assert quickfile_lookback_days(first_sync=True) == QUICKFILE_INITIAL_LOOKBACK_DAYS
+    assert quickfile_lookback_since(first_sync=True, now=now) == "2025-08-18"
     assert quickfile_lookback_since(first_sync=False, now=now) == "2026-05-20"
+
+
+def test_quickfile_force_full_lookback_is_about_ten_years() -> None:
+    now = datetime(2026, 8, 18, 12, 0, tzinfo=timezone.utc)
+    assert quickfile_lookback_days(force_full=True) == QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
+    assert QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS >= 5 * 365
+    assert quickfile_lookback_since(force_full=True, now=now) == "2016-08-20"
 
 
 def test_lookback_date_chunks_cover_range_in_year_windows() -> None:

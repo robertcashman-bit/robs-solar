@@ -1,16 +1,22 @@
-"""QuickFile full-import flag stale detection and one-shot clear."""
+"""QuickFile full-import flag — satisfied year history, not auto-3650."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
-from app.services.finance.sync_lookback import QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
+from app.services.finance.sync_lookback import (
+    QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS,
+    QUICKFILE_SATISFIED_LOOKBACK_DAYS,
+)
 from app.services.quickfile_settings_service import (
     _FULL_IMPORT_KEY,
     _FULL_IMPORT_LOOKBACK_KEY,
+    is_quickfile_quota_error,
     quickfile_settings_service,
+    quota_blocked_until_tomorrow_utc,
 )
 
 
@@ -22,8 +28,6 @@ class _FakeDb:
         self.commits = 0
 
     async def scalar(self, stmt):  # noqa: ANN001
-        # stmt is a SQLAlchemy select; inspect compiled WHERE is awkward — use
-        # the key captured via monkeypatched _get_row instead.
         return None
 
     def add(self, row) -> None:  # noqa: ANN001
@@ -44,31 +48,51 @@ class _FakeDb:
 
 
 @pytest.mark.asyncio
-async def test_needs_full_when_marker_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_needs_full_when_marker_missing_and_no_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def fake_get(_db, key: str):
         return None
 
     monkeypatch.setattr(quickfile_settings_service, "_get_row", fake_get)
+    monkeypatch.setattr(
+        quickfile_settings_service,
+        "existing_quickfile_history",
+        AsyncMock(return_value=(0, 0)),
+    )
     assert await quickfile_settings_service.needs_full_history_import(_FakeDb()) is True
 
 
 @pytest.mark.asyncio
-async def test_needs_full_when_lookback_days_missing(
+async def test_needs_full_false_when_lookback_days_missing_but_history_exists(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Missing lookback marker + substantial Neon txs must not trigger 3650."""
+
     async def fake_get(_db, key: str):
-        if key == _FULL_IMPORT_KEY:
-            return SimpleNamespace(key=key, value="2026-08-18T00:00:00+00:00")
         return None
 
+    marked = AsyncMock()
     monkeypatch.setattr(quickfile_settings_service, "_get_row", fake_get)
-    assert await quickfile_settings_service.needs_full_history_import(_FakeDb()) is True
+    monkeypatch.setattr(
+        quickfile_settings_service,
+        "existing_quickfile_history",
+        AsyncMock(return_value=(1382, 365)),
+    )
+    monkeypatch.setattr(
+        quickfile_settings_service, "mark_full_history_imported", marked
+    )
+    assert await quickfile_settings_service.needs_full_history_import(_FakeDb()) is False
+    marked.assert_awaited_once()
+    assert marked.await_args.kwargs["lookback_days"] >= QUICKFILE_SATISFIED_LOOKBACK_DAYS
 
 
 @pytest.mark.asyncio
-async def test_needs_full_when_prior_lookback_shorter(
+async def test_needs_full_false_when_prior_lookback_is_one_year(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A recorded 365-day import is enough — do not auto-upgrade to 3650."""
+
     async def fake_get(_db, key: str):
         if key == _FULL_IMPORT_KEY:
             return SimpleNamespace(key=key, value="2026-08-18T00:00:00+00:00")
@@ -77,7 +101,7 @@ async def test_needs_full_when_prior_lookback_shorter(
         return None
 
     monkeypatch.setattr(quickfile_settings_service, "_get_row", fake_get)
-    assert await quickfile_settings_service.needs_full_history_import(_FakeDb()) is True
+    assert await quickfile_settings_service.needs_full_history_import(_FakeDb()) is False
 
 
 @pytest.mark.asyncio
@@ -116,6 +140,11 @@ async def test_mark_full_history_stores_lookback_days(
     monkeypatch.setattr(quickfile_settings_service, "_set_value", fake_set)
     await quickfile_settings_service.mark_full_history_imported(db)
     assert _FULL_IMPORT_KEY in stored
+    assert stored[_FULL_IMPORT_LOOKBACK_KEY] == str(QUICKFILE_SATISFIED_LOOKBACK_DAYS)
+
+    await quickfile_settings_service.mark_full_history_imported(
+        db, lookback_days=QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
+    )
     assert stored[_FULL_IMPORT_LOOKBACK_KEY] == str(QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS)
 
 
@@ -139,3 +168,47 @@ async def test_clear_full_history_import_removes_markers(
     assert _FULL_IMPORT_KEY not in db.rows
     assert _FULL_IMPORT_LOOKBACK_KEY not in db.rows
     assert db.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_quota_error_sets_last_error_keeps_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.quickfile_settings_service.settings.quickfile_account_number",
+        "env-account",
+    )
+    monkeypatch.setattr(
+        "app.services.quickfile_settings_service.settings.quickfile_api_key",
+        "env-key",
+    )
+    monkeypatch.setattr(
+        "app.services.quickfile_settings_service.settings.quickfile_application_id",
+        "env-app",
+    )
+    stored: dict[str, str] = {}
+
+    async def fake_get(_db, key: str):
+        if key in stored:
+            return SimpleNamespace(key=key, value=stored[key])
+        return None
+
+    async def fake_set(_db, key: str, value: str) -> None:
+        stored[key] = value
+
+    monkeypatch.setattr(quickfile_settings_service, "_get_row", fake_get)
+    monkeypatch.setattr(quickfile_settings_service, "_set_value", fake_set)
+    monkeypatch.setattr(
+        quickfile_settings_service, "_persist_config", AsyncMock()
+    )
+
+    assert is_quickfile_quota_error("API request limit exceeded (1000)")
+    await quickfile_settings_service.record_error(
+        _FakeDb(), "API request limit exceeded (1000)"
+    )
+    status = await quickfile_settings_service.get_status(_FakeDb())
+    assert status.configured is True
+    assert status.connected is True
+    assert status.last_error and "API request limit exceeded" in status.last_error
+    assert status.quota_exhausted_at
+    assert quota_blocked_until_tomorrow_utc(status.quota_exhausted_at) is True

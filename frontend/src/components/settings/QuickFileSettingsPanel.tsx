@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
 import { notifyFinanceChanged } from "@/lib/finance-events";
@@ -27,15 +27,13 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
   const [busy, setBusy] = useState<"save" | "test" | "sync" | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [showKeyForm, setShowKeyForm] = useState(false);
+  const didInitialStatusLoad = useRef(false);
 
   const applyStatus = useCallback((parsed: QuickFileConfigStatus) => {
     setStatus(parsed);
     setAccountNumber(parsed.account_number);
     setApplicationId(parsed.application_id);
     setKeyAlreadySet(parsed.api_key_set);
-    if (parsed.configured || parsed.connected) {
-      setShowKeyForm(false);
-    }
   }, []);
 
   const load = useCallback(async () => {
@@ -87,6 +85,15 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
           return;
         }
         applyStatus(parsed.data);
+        // Hide keys on the first successful status load only — never clobber
+        // an intentional "Update keys" reveal from a late/strict-mode reload.
+        if (
+          !didInitialStatusLoad.current
+          && (parsed.data.configured || parsed.data.connected)
+        ) {
+          setShowKeyForm(false);
+        }
+        didInitialStatusLoad.current = true;
       } catch (err) {
         if (!active) return;
         setStatus(null);
@@ -123,6 +130,7 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
       }
       applyStatus(parsed.data);
       setApiKey("");
+      setShowKeyForm(false);
       setMessage("QuickFile settings saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -178,12 +186,18 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
   }
 
   const connected = Boolean(status?.connected || status?.configured);
+  const quotaHit = Boolean(
+    status?.quota_exhausted_at
+      || (status?.last_error && /API request limit exceeded/i.test(status.last_error)),
+  );
   const badgeLabel = loadingStatus
     ? "Loading…"
     : status == null
       ? "Status unavailable"
       : connected
-        ? "Connected"
+        ? quotaHit
+          ? "Connected · quota paused"
+          : "Connected"
         : "Not configured";
 
   return (
@@ -200,7 +214,9 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
         <span
           className={`rounded-full px-3 py-1 text-xs font-medium ${
             connected
-              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+              ? quotaHit
+                ? "bg-amber-500/15 text-amber-800 dark:text-amber-200"
+                : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
               : status == null && !loadingStatus
                 ? "bg-rose-500/15 text-rose-800 dark:text-rose-200"
                 : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
@@ -216,6 +232,18 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
         </p>
       ) : connected ? (
         <p className="text-xs text-[var(--muted)]">Connected — no sync recorded yet.</p>
+      ) : null}
+
+      {quotaHit ? (
+        <p className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+          QuickFile API daily quota exceeded (1000 requests). Keys are still saved —
+          retry after midnight UTC.{" "}
+          {status?.last_error ? `Detail: ${status.last_error}` : null}
+        </p>
+      ) : status?.last_error ? (
+        <p className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+          Last QuickFile error: {status.last_error}
+        </p>
       ) : null}
 
       {error ? (

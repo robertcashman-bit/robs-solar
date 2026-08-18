@@ -240,7 +240,7 @@ async def test_quickfile_first_sync_commits_with_deep_lookback(
     async def needs_full(_db) -> bool:
         return True
 
-    async def mark_full(_db) -> None:
+    async def mark_full(_db, **_kwargs) -> None:
         captured["marked_full"] = True
 
     async def noop(_db) -> None:
@@ -301,13 +301,13 @@ async def test_quickfile_first_sync_commits_with_deep_lookback(
     assert isinstance(result, QuickFileSyncResult)
     assert result.imported == 1
     assert captured["marked_full"] is True
-    from app.services.finance.sync_lookback import QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
+    from app.services.finance.sync_lookback import QUICKFILE_INITIAL_LOOKBACK_DAYS
 
     expected = (
-        datetime.now(timezone.utc) - timedelta(days=QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS)
+        datetime.now(timezone.utc) - timedelta(days=QUICKFILE_INITIAL_LOOKBACK_DAYS)
     ).date().isoformat()
     assert captured["since"] == expected
-    assert f"{QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS}-day" in result.message
+    assert f"{QUICKFILE_INITIAL_LOOKBACK_DAYS}-day" in result.message
 
 
 @pytest.mark.asyncio
@@ -336,7 +336,7 @@ async def test_quickfile_force_full_clears_markers_before_sync(
     async def needs_full(_db) -> bool:
         return bool(captured["cleared"])
 
-    async def mark_full(_db) -> None:
+    async def mark_full(_db, **_kwargs) -> None:
         captured["marked_full"] = True
 
     async def noop(_db) -> None:

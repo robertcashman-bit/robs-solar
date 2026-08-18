@@ -639,6 +639,8 @@ export const quickFileConfigStatusSchema = z
     connected: z.boolean().optional().default(false),
     last_sync_at: z.string().nullable().optional(),
     budget_account_external_ids: z.array(z.string()).optional().default([]),
+    last_error: z.string().nullable().optional(),
+    quota_exhausted_at: z.string().nullable().optional(),
   })
   .transform((value) => ({
     ...value,

@@ -121,10 +121,30 @@ describe("QuickFileSettingsPanel", () => {
     });
 
     render(<QuickFileSettingsPanel />);
-    await screen.findByText("Connected");
+    const updateKeys = await screen.findByRole("button", { name: /Update keys/i });
+    expect(screen.queryByText("Account number")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /Update keys/i }));
-    expect(screen.getByText("Account number")).toBeInTheDocument();
+    await user.click(updateKeys);
+    expect(await screen.findByText("Account number")).toBeInTheDocument();
+  });
+
+  it("shows quota banner while staying Connected", async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      account_number: "6111393904",
+      api_key_set: true,
+      application_id: "app-id",
+      configured: true,
+      connected: true,
+      last_sync_at: "2026-08-18T12:00:00Z",
+      budget_account_external_ids: [],
+      last_error: "API request limit exceeded (1000)",
+      quota_exhausted_at: "2026-08-18T17:00:00Z",
+    });
+
+    render(<QuickFileSettingsPanel />);
+    expect(await screen.findByText(/Connected · quota paused/i)).toBeInTheDocument();
+    expect(screen.getByText(/retry after midnight UTC/i)).toBeInTheDocument();
+    expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
   });
 
   it("never renders Not configured for a configured:true payload", async () => {
