@@ -859,8 +859,12 @@ class QuickFileConfigStatus(BaseModel):
     api_key_set: bool = False
     application_id: str = ""
     configured: bool = False
+    # QuickFile auth is per-request MD5 — no OAuth token. Connected == configured.
+    connected: bool = False
     last_sync_at: str | None = None
     budget_account_external_ids: list[str] = Field(default_factory=list)
+    last_error: str | None = None
+    quota_exhausted_at: str | None = None
 
 
 class QuickFileBudgetAccountsUpdate(BaseModel):

@@ -55,7 +55,9 @@ async def test_daily_sync_runs_configured_providers(monkeypatch: pytest.MonkeyPa
     async def fake_lf_config(_db):
         return object()
 
-    async def fake_qf_sync(_db, _config):
+    async def fake_qf_sync(_db, _config, **kwargs):
+        assert kwargs.get("incremental_only") is True
+        assert kwargs.get("force_full") is not True
         return QuickFileSyncResult(accounts_synced=2, debtors_gbp=1.0, message="qf ok")
 
     async def fake_lf_sync(_db, _config):

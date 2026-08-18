@@ -9,12 +9,17 @@ from datetime import date, datetime, timedelta, timezone
 FIRST_SYNC_LOOKBACK_DAYS = 365
 INCREMENTAL_LOOKBACK_DAYS = 90
 
-# QuickFile Bank_Search defaults to ~2 years without dates, but accepts an explicit
-# FromDate/ToDate for older lines (vault archives typically hide 6+ year entries).
-# Invoice_Search / Purchase_Search have no documented range ceiling. Use ~10 years
-# and walk in year-sized chunks so large windows stay pageable and resilient.
+# QuickFile Bank_Search accepts FromDate/ToDate. A ~10-year pass is reserved for
+# explicit force_full=true only — never for live refresh or daily cron.
+# Automatic first import uses one year; incremental syncs use ~90 days.
 QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS = 3650
+QUICKFILE_INITIAL_LOOKBACK_DAYS = 365
+QUICKFILE_SATISFIED_LOOKBACK_DAYS = 365
 QUICKFILE_LOOKBACK_CHUNK_DAYS = 365
+
+# Neon already has "enough" history to skip an automatic deep import.
+QUICKFILE_SUBSTANTIAL_TX_MIN = 100
+QUICKFILE_SUBSTANTIAL_SPAN_DAYS = 180
 
 
 def lookback_since(*, first_sync: bool, now: datetime | None = None) -> str:
@@ -28,15 +33,34 @@ def lookback_days(*, first_sync: bool) -> int:
     return FIRST_SYNC_LOOKBACK_DAYS if first_sync else INCREMENTAL_LOOKBACK_DAYS
 
 
-def quickfile_lookback_since(*, first_sync: bool, now: datetime | None = None) -> str:
+def quickfile_lookback_days(
+    *,
+    first_sync: bool = False,
+    force_full: bool = False,
+) -> int:
+    """QuickFile lookback length.
+
+    - ``force_full`` → ~10 years (explicit Sync ?force_full=true only)
+    - ``first_sync`` → ~1 year (empty ledger, non-force import)
+    - else → ~90-day incremental (daily cron + normal Sync)
+    """
+    if force_full:
+        return QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
+    if first_sync:
+        return QUICKFILE_INITIAL_LOOKBACK_DAYS
+    return INCREMENTAL_LOOKBACK_DAYS
+
+
+def quickfile_lookback_since(
+    *,
+    first_sync: bool = False,
+    force_full: bool = False,
+    now: datetime | None = None,
+) -> str:
     """ISO date for QuickFile Bank / Invoice / Purchase search cutoffs."""
     moment = now or datetime.now(timezone.utc)
-    days = QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS if first_sync else INCREMENTAL_LOOKBACK_DAYS
+    days = quickfile_lookback_days(first_sync=first_sync, force_full=force_full)
     return (moment - timedelta(days=days)).date().isoformat()
-
-
-def quickfile_lookback_days(*, first_sync: bool) -> int:
-    return QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS if first_sync else INCREMENTAL_LOOKBACK_DAYS
 
 
 def lookback_date_chunks(

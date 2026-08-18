@@ -20,7 +20,11 @@ vi.mock("@/lib/api-client", () => ({
           last_backup: null,
           needs_review: true,
           integrations: {
-            quickfile: { configured: true, last_sync_at: "2026-08-17T10:00:00Z" },
+            quickfile: {
+              configured: true,
+              connected: true,
+              last_sync_at: "2026-08-17T10:00:00Z",
+            },
             lunchflow: {
               configured: true,
               connected: true,

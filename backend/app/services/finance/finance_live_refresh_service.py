@@ -7,11 +7,15 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.integrations.quickfile_client import QuickFileError
 from app.services.finance.finance_liabilities_service import finance_liabilities_service
 from app.services.finance.lunchflow_sync_service import lunchflow_sync_service
 from app.services.finance.quickfile_sync_service import quickfile_sync_service
 from app.services.lunchflow_settings_service import lunchflow_settings_service
-from app.services.quickfile_settings_service import quickfile_settings_service
+from app.services.quickfile_settings_service import (
+    is_quickfile_quota_error,
+    quickfile_settings_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +41,16 @@ class FinanceLiveRefreshService:
         *,
         include_transactions: bool = False,
     ) -> None:
-        """Update live balances (and optionally transactions) when stale.
+        """Update live balances (and optionally Lunch Flow transactions) when stale.
 
-        Dashboard background refresh uses balances only so pages stay fast.
-        Full transaction import is reserved for explicit Refresh / Connect sync.
+        Dashboard background refresh uses balances only so pages stay fast and
+        QuickFile never runs Bank_Search history from a dashboard hit.
+        Full QuickFile transaction import is reserved for explicit Sync / daily cron.
         """
         # Same AsyncSession cannot be used concurrently — keep these sequential
         # but each path is balances-only so the whole call stays short.
         await self._refresh_quickfile(db)
         await self._refresh_lunchflow(db, include_transactions=include_transactions)
-        await self._refresh_quickfile_reports(db)
         try:
             await finance_liabilities_service.ensure_from_accounts(db)
             await db.commit()
@@ -69,12 +73,26 @@ class FinanceLiveRefreshService:
             return
         if not is_stale(status.last_sync_at):
             return
+        if await quickfile_settings_service.is_quota_blocked(db):
+            logger.info(
+                "Skipping live QuickFile balance refresh — API quota exhausted until midnight UTC"
+            )
+            return
         try:
             config = await quickfile_settings_service.get_config(db)
-            await quickfile_sync_service.sync(
-                db, config, include_reports=False, backup=False
+            # Balances + debtors only. Never full sync() / Bank_Search history.
+            await quickfile_sync_service.sync_balances(
+                db, config, include_reports=False
             )
-        except Exception:
+        except QuickFileError as exc:
+            await quickfile_settings_service.record_error(db, str(exc))
+            logger.warning(
+                "Live QuickFile balance refresh failed%s",
+                " (quota)" if is_quickfile_quota_error(exc) else "",
+                exc_info=True,
+            )
+        except Exception as exc:
+            await quickfile_settings_service.record_error(db, str(exc))
             logger.warning("Live QuickFile account refresh failed", exc_info=True)
 
     async def _refresh_lunchflow(
@@ -93,19 +111,6 @@ class FinanceLiveRefreshService:
                 await lunchflow_sync_service.sync_balances(db, config)
         except Exception:
             logger.warning("Live Lunch Flow account refresh failed", exc_info=True)
-
-    async def _refresh_quickfile_reports(self, db: AsyncSession) -> None:
-        status = await quickfile_settings_service.get_status(db)
-        if not status.configured:
-            return
-        try:
-            from app.services.finance.quickfile_reports_service import (
-                quickfile_reports_service,
-            )
-
-            await quickfile_reports_service.get_or_refresh_reports(db)
-        except Exception:
-            logger.warning("Live QuickFile report refresh failed", exc_info=True)
 
 
 finance_live_refresh_service = FinanceLiveRefreshService()

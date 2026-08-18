@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 
@@ -39,7 +41,7 @@ async def test_ensure_fresh_default_uses_balance_sync(
 ) -> None:
     from app.services.finance.finance_live_refresh_service import FinanceLiveRefreshService
 
-    called = {"balances": 0, "full": 0}
+    called = {"lf_balances": 0, "lf_full": 0, "qf_balances": 0, "qf_full": 0}
 
     async def stale_status(_db):
         from types import SimpleNamespace
@@ -49,17 +51,18 @@ async def test_ensure_fresh_default_uses_balance_sync(
     async def fake_config(_db):
         return object()
 
-    async def fake_balances(_db, _config):
-        called["balances"] += 1
+    async def fake_lf_balances(_db, _config):
+        called["lf_balances"] += 1
 
-    async def fake_full(_db, _config):
-        called["full"] += 1
+    async def fake_lf_full(_db, _config):
+        called["lf_full"] += 1
 
-    async def noop_qf(_db, _config, **_kwargs):
-        return None
+    async def fake_qf_balances(_db, _config, **_kwargs):
+        called["qf_balances"] += 1
 
-    async def noop_reports(_db):
-        return None
+    async def fail_qf_full(_db, _config, **_kwargs):
+        called["qf_full"] += 1
+        raise AssertionError("must not call full QuickFile sync from live refresh")
 
     async def noop_debts(_db):
         return 0
@@ -84,16 +87,24 @@ async def test_ensure_fresh_default_uses_balance_sync(
         fake_config,
     )
     monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.quickfile_settings_service.is_quota_blocked",
+        AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.quickfile_sync_service.sync_balances",
+        fake_qf_balances,
+    )
+    monkeypatch.setattr(
         "app.services.finance.finance_live_refresh_service.quickfile_sync_service.sync",
-        noop_qf,
+        fail_qf_full,
     )
     monkeypatch.setattr(
         "app.services.finance.finance_live_refresh_service.lunchflow_sync_service.sync_balances",
-        fake_balances,
+        fake_lf_balances,
     )
     monkeypatch.setattr(
         "app.services.finance.finance_live_refresh_service.lunchflow_sync_service.sync",
-        fake_full,
+        fake_lf_full,
     )
     monkeypatch.setattr(
         "app.services.finance.finance_live_refresh_service.finance_liabilities_service.ensure_from_accounts",
@@ -104,15 +115,6 @@ async def test_ensure_fresh_default_uses_balance_sync(
         noop_budget,
     )
 
-    class _Reports:
-        async def get_or_refresh_reports(self, _db):
-            return await noop_reports(_db)
-
-    monkeypatch.setattr(
-        "app.services.finance.quickfile_reports_service.quickfile_reports_service",
-        _Reports(),
-    )
-
     class _Db:
         async def commit(self):
             return None
@@ -121,5 +123,7 @@ async def test_ensure_fresh_default_uses_balance_sync(
             return None
 
     await FinanceLiveRefreshService().ensure_fresh(_Db())
-    assert called["balances"] == 1
-    assert called["full"] == 0
+    assert called["lf_balances"] == 1
+    assert called["lf_full"] == 0
+    assert called["qf_balances"] == 1
+    assert called["qf_full"] == 0

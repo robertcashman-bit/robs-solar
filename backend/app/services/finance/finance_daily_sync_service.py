@@ -22,7 +22,10 @@ class FinanceDailySyncService:
             if quickfile_settings_service.env_configured():
                 try:
                     config = await quickfile_settings_service.get_config(db)
-                    synced = await quickfile_sync_service.sync(db, config)
+                    # Always ~90-day incremental — never the 10-year force_full window.
+                    synced = await quickfile_sync_service.sync(
+                        db, config, incremental_only=True
+                    )
                     result.quickfile = synced.message
                 except IntegrationNotConfiguredError as exc:
                     result.quickfile = str(exc)
@@ -30,6 +33,13 @@ class FinanceDailySyncService:
                     result.ok = False
                     result.quickfile = "QuickFile daily sync failed"
                     logger.warning("QuickFile daily sync failed: %s", exc)
+                    try:
+                        await quickfile_settings_service.record_error(db, str(exc))
+                    except Exception:
+                        logger.warning(
+                            "Could not persist QuickFile daily sync error",
+                            exc_info=True,
+                        )
             else:
                 result.quickfile = "QuickFile not configured — skipped"
 
