@@ -89,10 +89,14 @@ describe("PersonalFinancePage", () => {
   it("does not show an older snapshot as this month's income or surplus", async () => {
     render(<PersonalFinancePage />);
     expect(await screen.findByText("Current")).toBeInTheDocument();
-    expect(tile("Monthly income").getByText("—")).toBeInTheDocument();
-    expect(tile("Monthly surplus").getByText("—")).toBeInTheDocument();
+    expect(tile("Personal monthly income").getByText("—")).toBeInTheDocument();
+    expect(tile("Personal monthly surplus").getByText("—")).toBeInTheDocument();
     expect(screen.queryByText("£9,999.00")).not.toBeInTheDocument();
     expect(screen.queryByText("£9,889.00")).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("Income")).toHaveValue("");
+    expect(screen.getByText("Personal house (your half)")).toBeInTheDocument();
+    expect(screen.getByText("Your half of £700,000. Other half ignored.")).toBeInTheDocument();
+    expect(screen.getByText("Personal house mortgage (placeholder)")).toBeInTheDocument();
+    expect(screen.getByText("Placeholder £175,000 for now.")).toBeInTheDocument();
   });
 });

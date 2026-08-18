@@ -679,12 +679,21 @@ def personal_net_worth(
     personal_bank: float,
     pension: float,
     personal_external_debt: float,
+    property_gbp: float = 0.0,
+    other_assets_gbp: float = 0.0,
     director_owes_company: float = 0.0,
     company_owes_director: float = 0.0,
 ) -> float:
+    """Personal stack only: cash + pension + house/other assets − personal debts ± DLA.
+
+    Property and other personal assets belong here (not on company_position).
+    Combined net worth already includes them via total_assets.
+    """
     return round(
         personal_bank
         + pension
+        + property_gbp
+        + other_assets_gbp
         + company_owes_director
         - personal_external_debt
         - director_owes_company,

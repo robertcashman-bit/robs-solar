@@ -70,6 +70,9 @@ vi.mock("@/lib/api-client", () => ({
           },
         ];
       }
+      if (path.startsWith("/finance/budgets/active")) {
+        return null;
+      }
       return [];
     }),
   },
@@ -89,8 +92,9 @@ describe("ReportsPage", () => {
     expect(screen.getByRole("heading", { name: "Personal" })).toBeInTheDocument();
     expect(screen.getByText(/Save a snapshot on Personal/i)).toBeInTheDocument();
     expect(screen.getByText("Personal cash")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Active Budget" })).toBeInTheDocument();
-    expect(screen.getByText("No budget is active yet.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Active budgets" })).toBeInTheDocument();
+    expect(screen.getByText("No active personal plan yet.")).toBeInTheDocument();
+    expect(screen.getByText("No active business plan yet.")).toBeInTheDocument();
     expect(screen.getByText("Budget vs actual")).toBeInTheDocument();
     expect(screen.getByText("Live QuickFile statements")).toBeInTheDocument();
     expect(screen.getByText("Company P&L history")).toBeInTheDocument();

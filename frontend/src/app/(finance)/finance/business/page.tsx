@@ -167,12 +167,12 @@ export default function BusinessFinancePage() {
         />
       </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricTile label="Business bank (current)" value={bankBalance} hint="Positive current accounts" />
+        <MetricTile label="Business bank" value={bankBalance} hint="Positive current accounts" />
         <MetricTile
           label={
             periodFlow && periodFlow.transaction_count > 0
-              ? `Turnover (${periodFlow.label})`
-              : "Turnover (month)"
+              ? `Business turnover (${periodFlow.label})`
+              : "Business turnover (month)"
           }
           value={
             periodFlow && periodFlow.transaction_count > 0
@@ -188,8 +188,8 @@ export default function BusinessFinancePage() {
         <MetricTile
           label={
             periodFlow && periodFlow.transaction_count > 0
-              ? `Expenses (${periodFlow.label})`
-              : "Expenses (month)"
+              ? `Business expenses (${periodFlow.label})`
+              : "Business expenses (month)"
           }
           value={
             periodFlow && periodFlow.transaction_count > 0
@@ -205,8 +205,8 @@ export default function BusinessFinancePage() {
         <MetricTile
           label={
             periodFlow && periodFlow.transaction_count > 0
-              ? `Profit (${periodFlow.label})`
-              : "Profit estimate"
+              ? `Business profit (${periodFlow.label})`
+              : "Business profit estimate"
           }
           value={
             periodFlow && periodFlow.transaction_count > 0
@@ -220,16 +220,16 @@ export default function BusinessFinancePage() {
               : "Snapshot"
           }
         />
-        <MetricTile label="VAT reserve (current)" value={vatReserveGbp} hint="Cash in VAT pot" />
-        <MetricTile label="Corp tax reserve" value={snapshot?.corp_tax_reserve_gbp} />
-        <MetricTile label="Debtors" value={snapshot?.debtors_gbp} />
+        <MetricTile label="Business VAT pot" value={vatReserveGbp} hint="Cash in VAT pot" />
+        <MetricTile label="Business corp tax reserve" value={snapshot?.corp_tax_reserve_gbp} />
+        <MetricTile label="Business debtors" value={snapshot?.debtors_gbp} />
         <MetricTile
-          label="Owed to you"
+          label="Business director's loan"
           value={directorsLoan}
           positive={directorsLoan > 0}
-          hint="Director's loan"
+          hint="Owed to you — cancels in combined net worth"
         />
-        <MetricTile label="Cash to draw" value={snapshot?.cash_available_to_draw_gbp} />
+        <MetricTile label="Business cash to draw" value={snapshot?.cash_available_to_draw_gbp} />
       </div>
       <section className="mt-8">
         <h2 className="solar-section-title">Live QuickFile statements</h2>

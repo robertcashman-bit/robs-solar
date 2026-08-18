@@ -302,6 +302,65 @@ def test_personal_and_company_positions_cancel_internal_loan() -> None:
     assert company == 6800
 
 
+def test_house_and_mortgage_move_personal_and_combined_not_business() -> None:
+    """House (your half) £350k − mortgage £175k = +£175k personal and combined equity."""
+    base_accounts = [
+        AccountView(1, "personal", "current", "Current", 2000),
+        AccountView(2, "business", "current", "Business", 5000),
+        AccountView(3, "personal", "pension", "Pension", 10000),
+    ]
+    base_debts = [
+        LiabilityView(1, "personal", "Card", "credit_card", 500, 20.0, 25),
+        LiabilityView(2, "business", "Van finance", "loan", 1000, 8.0, 100),
+    ]
+    before = compute_totals(base_accounts, base_debts)
+    after = compute_totals(
+        [
+            *base_accounts,
+            AccountView(4, "personal", "property", "House (your half)", 350000),
+        ],
+        [
+            *base_debts,
+            LiabilityView(
+                3,
+                "personal",
+                "House mortgage (placeholder)",
+                "mortgage",
+                175000,
+                0.0,
+                0,
+            ),
+        ],
+    )
+
+    def personal_from(totals):  # type: ignore[no-untyped-def]
+        return personal_net_worth(
+            personal_bank=round(totals.personal_cash_gbp - totals.personal_overdraft_gbp, 2),
+            pension=totals.pension_gbp,
+            personal_external_debt=totals.personal_debt_gbp,
+            property_gbp=totals.property_gbp,
+            other_assets_gbp=totals.other_assets_gbp,
+        )
+
+    def company_from(totals):  # type: ignore[no-untyped-def]
+        return company_position(
+            business_bank=round(totals.business_cash_gbp - totals.business_overdraft_gbp, 2),
+            debtors=totals.debtors_gbp,
+            vat_reserve=totals.vat_reserve_gbp,
+            corp_tax_reserve=totals.corp_tax_reserve_gbp,
+            business_external_debt=totals.business_debt_gbp,
+        )
+
+    assert after.property_gbp == 350000
+    assert after.mortgage_gbp == 175000
+    assert personal_from(after) - personal_from(before) == 175000
+    assert after.net_worth_gbp - before.net_worth_gbp == 175000
+    assert company_from(after) == company_from(before)
+    assert after.business_debt_gbp == before.business_debt_gbp
+    # House equity stays on the personal stack only.
+    assert personal_from(after) == personal_from(before) + 350000 - 175000
+
+
 def test_resolve_monthly_flow_prefers_snapshot_then_open_banking() -> None:
     income, spending, _bills, _repay, source, configured = resolve_monthly_flow(
         snapshot_present=True,

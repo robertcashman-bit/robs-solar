@@ -82,6 +82,8 @@ const get = vi.fn(async (path: string) => {
   if (path === "/finance/budgets/suggestions") return suggestions;
   if (path === "/finance/budgets") return [];
   if (path === "/finance/budgets/compare") return { income_gbp: 4252.6, rows: [] };
+  if (path === "/finance/budgets/active?scope=personal") return null;
+  if (path === "/finance/budgets/active?scope=business") return null;
   if (path.startsWith("/finance/budgets/vs-actual")) {
     return {
       month: "2026-08",
@@ -126,6 +128,9 @@ describe("BudgetStudio", () => {
     render(<BudgetStudio user={{ username: "admin", role: "admin" }} />);
 
     expect(await screen.findByRole("heading", { name: "Create your first budget" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Active budgets" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Personal active budget")).toBeInTheDocument();
+    expect(screen.getByLabelText("DLS Ltd active budget")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Save recommended Balanced and set active" }),
     ).toBeInTheDocument();
@@ -143,5 +148,77 @@ describe("BudgetStudio", () => {
       });
     });
     expect(await screen.findByText("Budget saved and set as active")).toBeInTheDocument();
+  });
+
+  it("shows dual active plan line lists from fixture plans", async () => {
+    const personalActive = {
+      ...createdPlan,
+      id: 3,
+      name: "Personal fixture",
+      active_scope: "personal",
+      income_gbp: 3000,
+      lines: [
+        {
+          id: 31,
+          scope: "personal",
+          category: "Food",
+          amount_gbp: 200,
+          source: "user",
+          source_note: "Fixture",
+          is_custom: false,
+          sort_order: 10,
+        },
+      ],
+    };
+    const businessActive = {
+      ...createdPlan,
+      id: 4,
+      name: "Business fixture",
+      active_scope: "business",
+      income_gbp: 5000,
+      lines: [
+        {
+          id: 41,
+          scope: "business",
+          category: "Software / IT",
+          amount_gbp: 90,
+          source: "user",
+          source_note: "Fixture",
+          is_custom: false,
+          sort_order: 10,
+        },
+      ],
+    };
+    get.mockImplementation((async (path: string) => {
+      if (path === "/finance/budgets/suggestions") return suggestions;
+      if (path === "/finance/budgets") return [personalActive, businessActive];
+      if (path === "/finance/budgets/compare") return { income_gbp: 4252.6, rows: [] };
+      if (path === "/finance/budgets/active?scope=personal") return personalActive;
+      if (path === "/finance/budgets/active?scope=business") return businessActive;
+      if (path.startsWith("/finance/budgets/vs-actual")) {
+        return {
+          month: "2026-08",
+          plan_id: 3,
+          plan_name: "Personal fixture",
+          has_actuals: false,
+          available: true,
+          reason: "",
+          budgeted_total_gbp: 200,
+          actual_total_gbp: 0,
+          variance_total_gbp: null,
+          lines: [],
+          unbudgeted_actuals: [],
+        };
+      }
+      return [];
+    }) as typeof get);
+
+    render(<BudgetStudio user={{ username: "admin", role: "admin" }} />);
+    expect(await screen.findByText("Food")).toBeInTheDocument();
+    expect(screen.getByText("Software / IT")).toBeInTheDocument();
+    expect(screen.getAllByText("£200.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("£90.00").length).toBeGreaterThan(0);
+    expect(get).toHaveBeenCalledWith("/finance/budgets/active?scope=personal");
+    expect(get).toHaveBeenCalledWith("/finance/budgets/active?scope=business");
   });
 });

@@ -123,6 +123,12 @@ export default function PersonalFinancePage() {
   const companyOwes = accounts
     .filter((a) => a.account_type === "directors_loan")
     .reduce((s, a) => s + a.balance_gbp, 0);
+  const property = accounts
+    .filter((a) => a.account_type === "property")
+    .reduce((s, a) => s + a.balance_gbp, 0);
+  const mortgage = accounts
+    .filter((a) => a.account_type === "mortgage")
+    .reduce((s, a) => s + Math.abs(a.balance_gbp), 0);
   const assets = accounts
     .filter((a) => ["pension", "property", "other_asset"].includes(a.account_type))
     .reduce((s, a) => s + a.balance_gbp, 0);
@@ -148,25 +154,37 @@ export default function PersonalFinancePage() {
         />
       </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <MetricTile label="Personal cash (current)" value={cash} hint="Positive current accounts only" />
+        <MetricTile label="Personal bank" value={cash} hint="Positive current accounts only" />
         <MetricTile
-          label="Pension (current)"
+          label="Personal pension"
           value={pension}
           positive
-          hint={pension > 0 ? "Included in net worth" : "Add the pot here so net worth includes it"}
+          hint={pension > 0 ? "Included in personal net worth" : "Add the pot here so net worth includes it"}
         />
         <MetricTile
-          label="Company owes you"
+          label="Personal house (your half)"
+          value={property > 0 ? property : null}
+          positive={property > 0}
+          hint="Your half of £700,000. Other half ignored."
+        />
+        <MetricTile
+          label="Personal house mortgage (placeholder)"
+          value={mortgage > 0 ? mortgage : null}
+          warning={mortgage > 0}
+          hint="Placeholder £175,000 for now."
+        />
+        <MetricTile
+          label="Personal director's loan receivable"
           value={companyOwes}
           positive={companyOwes > 0}
-          hint="Director's loan"
+          hint="Company owes you — cancels in combined net worth"
         />
-        <MetricTile label="Personal assets" value={assets} hint="Pension, property, other" />
+        <MetricTile label="Personal assets" value={assets} hint="Pension, house share, other" />
         <MetricTile
           label={
             periodFlow && periodFlow.transaction_count > 0
-              ? `Income (${periodFlow.label})`
-              : "Monthly income"
+              ? `Personal income (${periodFlow.label})`
+              : "Personal monthly income"
           }
           value={
             periodFlow && periodFlow.transaction_count > 0
@@ -182,8 +200,8 @@ export default function PersonalFinancePage() {
         <MetricTile
           label={
             periodFlow && periodFlow.transaction_count > 0
-              ? `Surplus (${periodFlow.label})`
-              : "Monthly surplus"
+              ? `Personal surplus (${periodFlow.label})`
+              : "Personal monthly surplus"
           }
           value={
             periodFlow && periodFlow.transaction_count > 0

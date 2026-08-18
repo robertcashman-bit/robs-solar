@@ -5,6 +5,24 @@ import { describe, expect, it, vi } from "vitest";
 import { FinanceOverviewView } from "@/components/finance/FinanceOverviewView";
 import { financeOverviewSchema, type FinanceOverview } from "@/lib/finance-schemas";
 
+vi.mock("@/components/finance/ActiveBudgetsBreakdown", () => ({
+  ActiveBudgetsBreakdown: () => (
+    <div aria-label="Active budgets by scope">
+      <h2>Active budgets</h2>
+      <section aria-label="Personal active budget">
+        <h3>Personal budget</h3>
+        <span>Food</span>
+        <span>£250.00</span>
+      </section>
+      <section aria-label="DLS Ltd active budget">
+        <h3>DLS Ltd budget</h3>
+        <span>Software / IT</span>
+        <span>£120.00</span>
+      </section>
+    </div>
+  ),
+}));
+
 const overview: FinanceOverview = financeOverviewSchema.parse({
   personal_bank_balance_gbp: 2500,
   business_bank_balance_gbp: 8000,
@@ -19,7 +37,7 @@ const overview: FinanceOverview = financeOverviewSchema.parse({
   corp_tax_reserve_warning: false,
   credit_card_balances_gbp: 800,
   loan_balances_gbp: 400,
-  mortgage_balance_gbp: 150000,
+  mortgage_balance_gbp: 175000,
   pension_value_gbp: 50000,
   directors_loan_gbp: 0,
   net_worth_estimate_gbp: 100000,
@@ -29,10 +47,15 @@ const overview: FinanceOverview = financeOverviewSchema.parse({
   credit_limit_gbp: 2000,
   personal_overdraft_gbp: 0,
   business_overdraft_gbp: 0,
-  total_assets_gbp: 60500,
-  property_gbp: 0,
+  total_assets_gbp: 405500,
+  property_gbp: 350000,
+  debtors_gbp: 1200,
+  personal_net_worth_gbp: 226300,
+  company_position_gbp: 9700,
   month_budgeted_gbp: 2800,
   month_actual_gbp: 400,
+  mortgage_configured: true,
+  pension_configured: true,
   active_budget: {
     id: 1,
     name: "Balanced",
@@ -60,30 +83,48 @@ describe("FinanceOverviewView", () => {
         }}
       />,
     );
-    const tile = screen.getByText("External debt").closest("div");
+    const tile = screen.getByText("Combined external debt").closest("div");
     expect(tile).toHaveTextContent("£0.00");
     expect(tile).not.toHaveTextContent("£1,200.00");
   });
 
-  it("renders balance tiles", () => {
+  it("renders labelled personal, business, and combined stacks with house hints", () => {
     render(<FinanceOverviewView overview={overview} />);
-    expect(screen.getByText("Combined net worth")).toBeInTheDocument();
-    expect(screen.getByText("Personal net worth")).toBeInTheDocument();
-    expect(screen.getByText("Company position")).toBeInTheDocument();
-    expect(screen.getByText("Pension (current)")).toBeInTheDocument();
-    expect(screen.getByText("Property")).toBeInTheDocument();
-    expect(screen.getByText("Director's loan")).toBeInTheDocument();
-    expect(screen.getByText("Cash available (current)")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Active Budget" })).toBeInTheDocument();
-    expect(screen.getByText(/Balanced · balanced/i)).toBeInTheDocument();
-    expect(screen.getByText("Planned expenditure")).toBeInTheDocument();
     expect(
-      screen.getByText(/Property value is not set but a mortgage is recorded/),
+      screen.getByText("Combined (personal + company, director's loan counted once)"),
     ).toBeInTheDocument();
+    expect(screen.getAllByText("Personal net worth").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Business / company position").length).toBeGreaterThan(0);
+    expect(screen.getByText("Personal house (your half)")).toBeInTheDocument();
+    expect(screen.getByText("Your half of £700,000. Other half ignored.")).toBeInTheDocument();
+    expect(screen.getByText("Personal house mortgage (placeholder)")).toBeInTheDocument();
+    expect(screen.getByText("Placeholder £175,000 for now.")).toBeInTheDocument();
+    expect(screen.getByText("Business VAT pot")).toBeInTheDocument();
+    expect(screen.getByText("Business debtors")).toBeInTheDocument();
+    expect(screen.queryByText("External debt")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Active budgets" })).toBeInTheDocument();
+    expect(screen.getByText("Food")).toBeInTheDocument();
+    expect(screen.getByText("Software / IT")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Connect banks" })).toHaveAttribute(
       "href",
       "/finance/connect",
     );
+  });
+
+  it("scope toggle shows only that stack's tiles", async () => {
+    const user = userEvent.setup();
+    render(<FinanceOverviewView overview={overview} />);
+    await user.click(screen.getByRole("button", { name: "personal" }));
+    expect(screen.getByText("Personal house (your half)")).toBeInTheDocument();
+    expect(screen.queryByText("Business VAT pot")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Combined (personal + company, director's loan counted once)"),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "business" }));
+    expect(screen.getByText("Business VAT pot")).toBeInTheDocument();
+    expect(screen.queryByText("Personal house (your half)")).not.toBeInTheDocument();
+    expect(screen.queryByText("Personal house mortgage (placeholder)")).not.toBeInTheDocument();
   });
 
   it("wires dismiss on insights when a handler is provided", async () => {
@@ -161,9 +202,9 @@ describe("FinanceOverviewView", () => {
         }}
       />,
     );
-    expect(screen.getByText("Planned income")).toBeInTheDocument();
-    expect(screen.getByText("Planned spending")).toBeInTheDocument();
-    expect(screen.getByText("Planned surplus")).toBeInTheDocument();
+    expect(screen.getByText("Personal planned income")).toBeInTheDocument();
+    expect(screen.getByText("Personal planned spending")).toBeInTheDocument();
+    expect(screen.getByText("Personal planned surplus")).toBeInTheDocument();
     expect(
       screen.getAllByText(/Budget plan estimate — not live income or spending/i).length,
     ).toBeGreaterThan(0);
@@ -207,8 +248,8 @@ describe("FinanceOverviewView", () => {
         }}
       />,
     );
-    expect(screen.getByText("Income (Last month)")).toBeInTheDocument();
-    expect(screen.getByText("Turnover (3 months)")).toBeInTheDocument();
+    expect(screen.getByText("Personal income (Last month)")).toBeInTheDocument();
+    expect(screen.getByText("Business turnover (3 months)")).toBeInTheDocument();
     expect(screen.getAllByText(/Showing available history from 2026-06-01/).length).toBeGreaterThan(0);
   });
 
@@ -223,7 +264,7 @@ describe("FinanceOverviewView", () => {
         }}
       />,
     );
-    expect(screen.getAllByText("Monthly income").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Personal monthly income").length).toBeGreaterThan(0);
     expect(
       screen.getAllByText(/From live Open Banking sync/i).length,
     ).toBeGreaterThan(0);

@@ -94,10 +94,12 @@ describe("BusinessFinancePage", () => {
     render(<BusinessFinancePage />);
     expect(await screen.findByText("Vat Account")).toBeInTheDocument();
     // VAT pot account wins over stale snapshot liability (2956.27).
-    expect(tile("VAT reserve (current)").getByText("£0.47")).toBeInTheDocument();
-    expect(tile("Turnover (month)").getByText("—")).toBeInTheDocument();
+    expect(tile("Business VAT pot").getByText("£0.47")).toBeInTheDocument();
+    expect(tile("Business turnover (month)").getByText("—")).toBeInTheDocument();
     expect(screen.queryByText("£9,999.00")).not.toBeInTheDocument();
     expect(screen.queryByText("£2,956.27")).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("Turnover")).toHaveValue("");
+    expect(screen.queryByText(/house/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/mortgage/i)).not.toBeInTheDocument();
   });
 });

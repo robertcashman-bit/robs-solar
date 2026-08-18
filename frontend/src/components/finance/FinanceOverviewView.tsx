@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { ActiveBudgetCard } from "@/components/finance/ActiveBudgetCard";
+import { ActiveBudgetsBreakdown } from "@/components/finance/ActiveBudgetsBreakdown";
 import { InsightCard } from "@/components/finance/InsightCard";
 import { MetricTile } from "@/components/finance/MetricTile";
 import { COMPANY_NAME, COMPANY_SHORT, PERSONAL_NAME, monthlyFlowHint } from "@/lib/finance-branding";
@@ -19,6 +19,10 @@ function flowLabel(prefix: string, periodLabel?: string | null) {
   return periodLabel ? `${prefix} (${periodLabel})` : prefix;
 }
 
+const HOUSE_HINT = "Your half of £700,000. Other half ignored.";
+const MORTGAGE_HINT = "Placeholder £175,000 for now.";
+const COMBINED_LABEL = "Combined (personal + company, director's loan counted once)";
+
 export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverviewViewProps) {
   const [scopeView, setScopeView] = useState<"combined" | "personal" | "business">("combined");
   const [showSafeCalc, setShowSafeCalc] = useState(false);
@@ -32,8 +36,8 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
   const externalDebt = overview.external_debt_gbp ?? overview.total_personal_debt_gbp + overview.total_business_debt_gbp;
   const noCash =
     overview.personal_bank_balance_gbp === 0 && overview.business_bank_balance_gbp === 0;
-  const hasOverdraft = (overview.personal_overdraft_gbp ?? 0) > 0;
-  const budget = overview.active_budget;
+  const hasPersonalOverdraft = (overview.personal_overdraft_gbp ?? 0) > 0;
+  const hasBusinessOverdraft = (overview.business_overdraft_gbp ?? 0) > 0;
   const propertyMissing =
     (overview.property_gbp ?? 0) <= 0 && (overview.mortgage_balance_gbp ?? 0) > 0;
   const safe = overview.safe_to_spend ?? {};
@@ -51,24 +55,28 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
     : monthlyFlowHint(overview.monthly_flow_source);
   const hasPeriodFlow = useLedgerPeriod || overview.monthly_flow_source !== "none";
   const incomeLabel = useLedgerPeriod
-    ? flowLabel("Income", personalFlow!.label)
+    ? flowLabel("Personal income", personalFlow!.label)
     : overview.monthly_flow_source === "budget"
-      ? "Planned income"
-      : "Monthly income";
+      ? "Personal planned income"
+      : "Personal monthly income";
   const spendingLabel = useLedgerPeriod
-    ? flowLabel("Spending", personalFlow!.label)
+    ? flowLabel("Personal spending", personalFlow!.label)
     : overview.monthly_flow_source === "budget"
-      ? "Planned spending"
-      : "Monthly spending";
+      ? "Personal planned spending"
+      : "Personal monthly spending";
   const surplusLabel = useLedgerPeriod
-    ? flowLabel("Surplus", personalFlow!.label)
+    ? flowLabel("Personal surplus", personalFlow!.label)
     : overview.monthly_flow_source === "budget"
-      ? "Planned surplus"
-      : "Monthly surplus";
+      ? "Personal planned surplus"
+      : "Personal monthly surplus";
+
+  const showPersonal = scopeView === "combined" || scopeView === "personal";
+  const showBusiness = scopeView === "combined" || scopeView === "business";
+  const showCombined = scopeView === "combined";
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Finance scope">
         {(["combined", "personal", "business"] as const).map((item) => (
           <button
             key={item}
@@ -85,6 +93,77 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
         ))}
       </div>
 
+      <section aria-label="Net worth by scope">
+        <h2 className="solar-section-title">Totals by scope</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Personal and company positions first. Combined nets both ledgers and counts the
+          director&apos;s loan once.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {showPersonal ? (
+            <MetricTile
+              label="Personal net worth"
+              value={overview.personal_net_worth_gbp}
+              positive={(overview.personal_net_worth_gbp ?? 0) >= 0}
+              hint="Cash + pension + house share − personal debts, with director's loan as Robert's asset or liability"
+            />
+          ) : null}
+          {showBusiness ? (
+            <MetricTile
+              label="Business / company position"
+              value={overview.company_position_gbp}
+              positive={(overview.company_position_gbp ?? 0) >= 0}
+              hint="Company cash + debtors + tax reserves − business debts, with director's loan as receivable or payable"
+            />
+          ) : null}
+        </div>
+        {showCombined ? (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <MetricTile
+              label={COMBINED_LABEL}
+              value={overview.net_worth_estimate_gbp}
+              positive={overview.net_worth_estimate_gbp > 0}
+              hint="Household + company; director's loan cancelled so the same IOU is not counted twice"
+            />
+            <MetricTile
+              label="Combined external debt"
+              value={externalDebt}
+              warning={externalDebt > 0}
+              hint={`${formatGbp(overview.total_personal_debt_gbp)} personal · ${formatGbp(overview.total_business_debt_gbp)} company`}
+            />
+            <MetricTile
+              label="Combined cash available"
+              value={cashAvailable}
+              warning={cashAvailable < 0}
+              hint={`${formatGbp(overview.personal_bank_balance_gbp)} personal · ${formatGbp(overview.business_bank_balance_gbp)} company`}
+            />
+          </div>
+        ) : null}
+        {noCash ? (
+          <p className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--muted)]">
+            No current-account balances yet. Connect Open Banking or QuickFile on{" "}
+            <Link href="/finance/connect" className="underline underline-offset-2">
+              Connect banks
+            </Link>
+            , or{" "}
+            <Link href="/finance/import" className="underline underline-offset-2">
+              import a statement
+            </Link>
+            , or add them on Personal and Company.
+          </p>
+        ) : null}
+        {propertyMissing ? (
+          <p className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+            Personal property value is not set but a personal mortgage is recorded — personal and
+            combined net worth will look too low until you add the house value on{" "}
+            <Link href="/finance/personal" className="underline underline-offset-2">
+              Personal
+            </Link>{" "}
+            (account type: Property).
+          </p>
+        ) : null}
+      </section>
+
       <section>
         <h2 className="solar-section-title">Safe to spend</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
@@ -94,9 +173,9 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
             : ""}
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {(scopeView === "combined" || scopeView === "personal") && personalSafe ? (
+          {showPersonal && personalSafe ? (
             <MetricTile
-              label="Safe to spend (personal)"
+              label="Personal safe to spend"
               value={personalSafe.safe_to_spend_gbp}
               positive={personalSafe.safe_to_spend_gbp > 0}
               warning={personalSafe.status !== "HEALTHY"}
@@ -107,16 +186,16 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               }
             />
           ) : null}
-          {(scopeView === "combined" || scopeView === "business") && businessSafe ? (
+          {showBusiness && businessSafe ? (
             <MetricTile
-              label="Available business cash"
+              label="Business available cash"
               value={businessSafe.available_business_cash_gbp}
               positive={businessSafe.available_business_cash_gbp > 0}
               warning={businessSafe.status !== "HEALTHY"}
               hint={businessSafe.status}
             />
           ) : null}
-          {scopeView === "combined" && combinedSafe ? (
+          {showCombined && combinedSafe ? (
             <MetricTile
               label="Combined discretionary"
               value={combinedSafe.safe_to_spend_gbp}
@@ -152,232 +231,228 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
         ) : null}
       </section>
 
-      <section>
-        <h2 className="solar-section-title">Balances</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Current snapshot — not filtered by the historical period above. Combined net worth is{" "}
-          {PERSONAL_NAME}&apos;s personal assets plus {COMPANY_NAME}, minus external debt.
-          Director&apos;s loan is shown separately and left out of the combined total so the same
-          IOU is not counted twice.
-        </p>
-        {noCash ? (
-          <p className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--muted)]">
-            No current-account balances yet. Connect Open Banking or QuickFile on{" "}
-            <Link href="/finance/connect" className="underline underline-offset-2">
-              Connect banks
-            </Link>
-            , or{" "}
-            <Link href="/finance/import" className="underline underline-offset-2">
-              import a statement
-            </Link>
-            , or add them on Personal and Company.
-          </p>
-        ) : null}
-        {propertyMissing ? (
-          <p className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
-            Property value is not set but a mortgage is recorded — combined net worth will look too
-            low until you add the house value on{" "}
-            <Link href="/finance/personal" className="underline underline-offset-2">
-              Personal
-            </Link>{" "}
-            (account type: Property).
-          </p>
-        ) : null}
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <MetricTile
-            label="Combined net worth"
-            value={overview.net_worth_estimate_gbp}
-            positive={overview.net_worth_estimate_gbp > 0}
-            hint="Personal + company, excluding director's loan"
-          />
-          <MetricTile
-            label="External debt"
-            value={externalDebt}
-            warning={externalDebt > 0}
-            hint={`${formatGbp(overview.total_personal_debt_gbp)} personal · ${formatGbp(overview.total_business_debt_gbp)} company`}
-          />
-          <MetricTile
-            label={useLedgerPeriod ? flowLabel("Cashflow", personalFlow!.label) : "Monthly cashflow"}
-            value={hasPeriodFlow ? periodSurplus : null}
-            positive={periodSurplus >= 0}
-            warning={periodSurplus < 0}
-            hint={
-              useLedgerPeriod
-                ? periodFlowHint
-                : overview.monthly_flow_source === "budget"
-                  ? "Budget plan estimate — not live cashflow"
-                  : monthlyFlowHint(overview.monthly_flow_source)
-            }
-          />
-          <MetricTile
-            label="Cash available (current)"
-            value={cashAvailable}
-            warning={cashAvailable < 0}
-            hint={`${formatGbp(overview.personal_bank_balance_gbp)} personal · ${formatGbp(overview.business_bank_balance_gbp)} company`}
-          />
-          <MetricTile
-            label="Est. monthly interest"
-            value={overview.monthly_interest_incomplete ? null : overview.monthly_interest_gbp}
-            warning={Boolean(overview.monthly_interest_incomplete) || (overview.monthly_interest_gbp ?? 0) >= 50}
-            hint={
-              overview.monthly_interest_incomplete
-                ? "APR required for interest forecast"
-                : "From recorded annual APRs"
-            }
-          />
-          <MetricTile
-            label="High-interest debt"
-            value={overview.high_interest_debt_gbp}
-            warning={(overview.high_interest_debt_gbp ?? 0) > 0}
-            hint="APR 15% or more — pay this first"
-          />
-        </div>
-      </section>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400">
-                Personal
-              </p>
-              <h2 className="mt-1 text-lg font-semibold">{PERSONAL_NAME}</h2>
+      <div className={`grid gap-6 ${showPersonal && showBusiness ? "lg:grid-cols-2" : ""}`}>
+        {showPersonal ? (
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400">
+                  Personal
+                </p>
+                <h2 className="mt-1 text-lg font-semibold">{PERSONAL_NAME}</h2>
+              </div>
+              <Link href="/finance/personal" className="solar-btn-ghost text-sm">
+                Open
+              </Link>
             </div>
-            <Link href="/finance/personal" className="solar-btn-ghost text-sm">
-              Open
-            </Link>
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <MetricTile
-              label="Personal net worth"
-              value={overview.personal_net_worth_gbp}
-              positive={(overview.personal_net_worth_gbp ?? 0) >= 0}
-              hint="Cash + pension − external debt, with director's loan as Robert's asset or liability"
-            />
-            <MetricTile
-              label="Personal cash"
-              value={overview.personal_bank_balance_gbp}
-              warning={overview.personal_bank_balance_gbp < 0}
-              hint="Current accounts only"
-            />
-            <MetricTile
-              label="Personal debt"
-              value={overview.total_personal_debt_gbp}
-              warning={overview.total_personal_debt_gbp > 0}
-            />
-            <MetricTile
-              label="Cash after bills"
-              value={overview.cash_after_bills_gbp}
-              positive={overview.cash_after_bills_gbp > 0}
-              warning={overview.cash_after_bills_gbp < 500}
-            />
-            <MetricTile
-              label="Pension (current)"
-              value={overview.pension_configured === false ? null : overview.pension_value_gbp}
-              positive
-              hint={overview.pension_configured === false ? "Add a pension account to track this" : undefined}
-            />
-            <MetricTile
-              label="Property"
-              value={propertyMissing ? null : overview.property_gbp}
-              positive={!propertyMissing && (overview.property_gbp ?? 0) > 0}
-              warning={propertyMissing}
-              hint={
-                propertyMissing
-                  ? "Add the house value so net worth is not just the mortgage"
-                  : undefined
-              }
-            />
-            <MetricTile
-              label="Credit cards"
-              value={overview.personal_credit_card_balances_gbp}
-              warning={overview.personal_credit_card_balances_gbp > 0}
-              hint="Personal cards only"
-            />
-            <MetricTile
-              label="Available credit"
-              value={overview.available_credit_gbp}
-              hint="Unused card limits — add a limit on Personal or Debts"
-            />
-            {hasOverdraft ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <MetricTile
-                label="Personal overdraft"
-                value={overview.personal_overdraft_gbp}
-                warning
+                label="Personal net worth"
+                value={overview.personal_net_worth_gbp}
+                positive={(overview.personal_net_worth_gbp ?? 0) >= 0}
+                hint="Cash + pension + house share − personal debts, with director's loan as Robert's asset or liability"
               />
-            ) : (
               <MetricTile
-                label="Mortgage"
+                label="Personal bank"
+                value={overview.personal_bank_balance_gbp}
+                warning={overview.personal_bank_balance_gbp < 0}
+                hint="Current accounts only"
+              />
+              {hasPersonalOverdraft ? (
+                <MetricTile
+                  label="Personal overdraft"
+                  value={overview.personal_overdraft_gbp}
+                  warning
+                />
+              ) : null}
+              <MetricTile
+                label="Personal debts"
+                value={overview.total_personal_debt_gbp}
+                warning={overview.total_personal_debt_gbp > 0}
+                hint="Cards, loans, and mortgage"
+              />
+              <MetricTile
+                label="Personal credit cards"
+                value={overview.personal_credit_card_balances_gbp}
+                warning={overview.personal_credit_card_balances_gbp > 0}
+                hint="Personal cards only"
+              />
+              <MetricTile
+                label="Available credit"
+                value={overview.available_credit_gbp}
+                hint="Unused revolving credit limits (all scopes)"
+              />
+              <MetricTile
+                label="Personal cash after bills"
+                value={overview.cash_after_bills_gbp}
+                positive={overview.cash_after_bills_gbp > 0}
+                warning={overview.cash_after_bills_gbp < 500}
+              />
+              <MetricTile
+                label="Personal pension"
+                value={overview.pension_configured === false ? null : overview.pension_value_gbp}
+                positive
+                hint={
+                  overview.pension_configured === false
+                    ? "Add a pension account to track this"
+                    : undefined
+                }
+              />
+              <MetricTile
+                label="Personal house (your half)"
+                value={propertyMissing ? null : overview.property_gbp}
+                positive={!propertyMissing && (overview.property_gbp ?? 0) > 0}
+                warning={propertyMissing}
+                hint={
+                  propertyMissing
+                    ? "Add the house value so personal net worth is not just the mortgage"
+                    : HOUSE_HINT
+                }
+              />
+              <MetricTile
+                label="Personal house mortgage (placeholder)"
                 value={overview.mortgage_configured === false ? null : overview.mortgage_balance_gbp}
-                hint={overview.mortgage_configured === false ? "Add a mortgage to track this" : undefined}
+                warning={(overview.mortgage_balance_gbp ?? 0) > 0}
+                hint={
+                  overview.mortgage_configured === false
+                    ? "Add a mortgage to track this"
+                    : MORTGAGE_HINT
+                }
               />
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-400">
-                Company
-              </p>
-              <h2 className="mt-1 text-lg font-semibold">{COMPANY_NAME}</h2>
+              <MetricTile
+                label="Personal director's loan receivable"
+                value={overview.directors_loan_gbp}
+                hint={
+                  (overview.director_owes_company_gbp ?? 0) > 0
+                    ? `Robert owes the company ${formatGbp(overview.director_owes_company_gbp)}. Cancels in combined net worth.`
+                    : (overview.company_owes_director_gbp ?? 0) > 0
+                      ? `Company owes Robert ${formatGbp(overview.company_owes_director_gbp)}. Cancels in combined net worth.`
+                      : "Internal Robert ↔ company. Excluded from combined net worth."
+                }
+              />
+              <MetricTile
+                label="High-interest debt"
+                value={overview.high_interest_debt_gbp}
+                warning={(overview.high_interest_debt_gbp ?? 0) > 0}
+                hint="APR 15% or more across all debts — pay this first"
+              />
             </div>
-            <Link href="/finance/business" className="solar-btn-ghost text-sm">
-              Open
-            </Link>
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <MetricTile
-              label="Company position"
-              value={overview.company_position_gbp}
-              positive={(overview.company_position_gbp ?? 0) >= 0}
-              hint="Cash + debtors + tax reserves − external debt, with director's loan as receivable or payable"
-            />
-            <MetricTile
-              label="Company cash"
-              value={overview.business_bank_balance_gbp}
-              warning={overview.business_bank_balance_gbp < 0}
-              hint="Current accounts only — not personal cash"
-            />
-            <MetricTile
-              label="Company liabilities"
-              value={overview.total_business_debt_gbp}
-              warning={overview.total_business_debt_gbp > 0}
-            />
-            <MetricTile
-              label="Director's loan"
-              value={overview.directors_loan_gbp}
-              hint={
-                (overview.director_owes_company_gbp ?? 0) > 0
-                  ? `Robert owes the company ${formatGbp(overview.director_owes_company_gbp)}. Cancels in combined net worth.`
-                  : (overview.company_owes_director_gbp ?? 0) > 0
-                    ? `Company owes Robert ${formatGbp(overview.company_owes_director_gbp)}. Cancels in combined net worth.`
-                    : "Internal Robert ↔ company. Excluded from combined net worth."
-              }
-            />
-            <MetricTile
-              label="VAT reserve (current)"
-              value={overview.vat_reserve_gbp}
-              warning={overview.vat_reserve_warning}
-              hint={overview.vat_reserve_warning ? "VAT reserve appears low" : "Tax provision (not yet paid)"}
-            />
-            <MetricTile
-              label="Corp tax reserve"
-              value={overview.corp_tax_reserve_gbp}
-              warning={overview.corp_tax_reserve_warning}
-              hint="Tax provision (not yet paid)"
-            />
-            {(overview.business_overdraft_gbp ?? 0) > 0 ? (
-              <MetricTile label="Company overdraft" value={overview.business_overdraft_gbp} warning />
-            ) : (
-              <MetricTile label="Loans" value={overview.loan_balances_gbp} />
-            )}
-          </div>
-        </section>
+          </section>
+        ) : null}
+
+        {showBusiness ? (
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-400">
+                  Business / company
+                </p>
+                <h2 className="mt-1 text-lg font-semibold">{COMPANY_NAME}</h2>
+              </div>
+              <Link href="/finance/business" className="solar-btn-ghost text-sm">
+                Open
+              </Link>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <MetricTile
+                label="Business / company position"
+                value={overview.company_position_gbp}
+                positive={(overview.company_position_gbp ?? 0) >= 0}
+                hint="Cash + debtors + tax reserves − external debt, with director's loan as receivable or payable"
+              />
+              <MetricTile
+                label="Business bank"
+                value={overview.business_bank_balance_gbp}
+                warning={overview.business_bank_balance_gbp < 0}
+                hint="Current accounts only — not personal cash"
+              />
+              {hasBusinessOverdraft ? (
+                <MetricTile
+                  label="Business overdraft"
+                  value={overview.business_overdraft_gbp}
+                  warning
+                />
+              ) : null}
+              <MetricTile
+                label="Business debts"
+                value={overview.total_business_debt_gbp}
+                warning={overview.total_business_debt_gbp > 0}
+              />
+              <MetricTile
+                label="Business VAT pot"
+                value={overview.vat_reserve_gbp}
+                warning={overview.vat_reserve_warning}
+                hint={overview.vat_reserve_warning ? "VAT reserve appears low" : "Tax provision (not yet paid)"}
+              />
+              <MetricTile
+                label="Business corp tax reserve"
+                value={overview.corp_tax_reserve_gbp}
+                warning={overview.corp_tax_reserve_warning}
+                hint="Tax provision (not yet paid)"
+              />
+              <MetricTile
+                label="Business debtors"
+                value={overview.debtors_gbp}
+                positive={(overview.debtors_gbp ?? 0) > 0}
+                hint="Amounts owed to the company"
+              />
+              <MetricTile
+                label="Loans"
+                value={overview.loan_balances_gbp}
+                hint="Personal and business loans"
+              />
+              <MetricTile
+                label="Business director's loan"
+                value={overview.directors_loan_gbp}
+                hint={
+                  (overview.director_owes_company_gbp ?? 0) > 0
+                    ? `Robert owes the company ${formatGbp(overview.director_owes_company_gbp)}. Cancels in combined net worth.`
+                    : (overview.company_owes_director_gbp ?? 0) > 0
+                      ? `Company owes Robert ${formatGbp(overview.company_owes_director_gbp)}. Cancels in combined net worth.`
+                      : "Internal Robert ↔ company. Excluded from combined net worth."
+                }
+              />
+            </div>
+          </section>
+        ) : null}
       </div>
 
-      <ActiveBudgetCard budget={budget} />
+      {showCombined ? (
+        <section>
+          <h2 className="solar-section-title">Combined extras</h2>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <MetricTile
+              label={
+                useLedgerPeriod
+                  ? flowLabel("Personal cashflow", personalFlow!.label)
+                  : "Personal monthly cashflow"
+              }
+              value={hasPeriodFlow ? periodSurplus : null}
+              positive={periodSurplus >= 0}
+              warning={periodSurplus < 0}
+              hint={
+                useLedgerPeriod
+                  ? periodFlowHint
+                  : overview.monthly_flow_source === "budget"
+                    ? "Budget plan estimate — not live cashflow"
+                    : monthlyFlowHint(overview.monthly_flow_source)
+              }
+            />
+            <MetricTile
+              label="Combined est. monthly interest"
+              value={overview.monthly_interest_incomplete ? null : overview.monthly_interest_gbp}
+              warning={Boolean(overview.monthly_interest_incomplete) || (overview.monthly_interest_gbp ?? 0) >= 50}
+              hint={
+                overview.monthly_interest_incomplete
+                  ? "APR required for interest forecast"
+                  : "From recorded annual APRs"
+              }
+            />
+          </div>
+        </section>
+      ) : null}
+
+      <ActiveBudgetsBreakdown />
 
       {attention.length > 0 ? (
         <section>
@@ -420,7 +495,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
 
       <section>
         <h2 className="solar-section-title">
-          {useLedgerPeriod ? `Personal flow · ${personalFlow!.label}` : "Monthly flow"}
+          {useLedgerPeriod ? `Personal flow · ${personalFlow!.label}` : "Personal monthly flow"}
         </h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
           {useLedgerPeriod
@@ -441,7 +516,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
             hint={periodFlowHint}
           />
           <MetricTile
-            label="Household bills"
+            label="Personal household bills"
             value={
               useLedgerPeriod && personalFlow!.months_requested > 1
                 ? null
@@ -476,18 +551,18 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
             </p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <MetricTile
-                label={flowLabel("Turnover", businessFlow.label)}
+                label={flowLabel("Business turnover", businessFlow.label)}
                 value={businessFlow.transaction_count > 0 ? businessFlow.income_gbp : null}
                 positive
                 hint={businessFlow.coverage_note || "Stored business credits"}
               />
               <MetricTile
-                label={flowLabel("Expenses", businessFlow.label)}
+                label={flowLabel("Business expenses", businessFlow.label)}
                 value={businessFlow.transaction_count > 0 ? businessFlow.spending_gbp : null}
                 hint={businessFlow.coverage_note || "Stored business debits"}
               />
               <MetricTile
-                label={flowLabel("Surplus", businessFlow.label)}
+                label={flowLabel("Business surplus", businessFlow.label)}
                 value={businessFlow.transaction_count > 0 ? businessFlow.surplus_gbp : null}
                 positive={businessFlow.surplus_gbp >= 0}
                 warning={businessFlow.surplus_gbp < 0}

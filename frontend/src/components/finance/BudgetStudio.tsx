@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ActiveBudgetsBreakdown } from "@/components/finance/ActiveBudgetsBreakdown";
 import { MonthlyBudgetPanel } from "@/components/finance/MonthlyBudgetPanel";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
@@ -118,6 +119,8 @@ export function BudgetStudio({ user }: { user: UserInfo | null }) {
   });
   const [savingActuals, setSavingActuals] = useState(false);
   const [hydratedEditor, setHydratedEditor] = useState(false);
+  const [activePersonal, setActivePersonal] = useState<BudgetPlan | null>(null);
+  const [activeBusiness, setActiveBusiness] = useState<BudgetPlan | null>(null);
 
   const totals = useMemo(() => {
     const incomeValue = parseMoneyInput(incomeText);
@@ -143,14 +146,22 @@ export function BudgetStudio({ user }: { user: UserInfo | null }) {
     try {
       const suggestionData = await apiClient.get<unknown>("/finance/budgets/suggestions");
       const parsedSuggestions = budgetSuggestionsSchema.parse(suggestionData);
-      const [planData, compareData, actualData] = await Promise.all([
+      const [planData, compareData, actualData, personalActive, businessActive] = await Promise.all([
         apiClient.get<unknown>("/finance/budgets"),
         apiClient.get<unknown>("/finance/budgets/compare"),
         apiClient.get<unknown>(`/finance/budgets/vs-actual?month=${month}`),
+        apiClient.get<unknown>("/finance/budgets/active?scope=personal"),
+        apiClient.get<unknown>("/finance/budgets/active?scope=business"),
       ]);
       setSuggestions(parsedSuggestions);
       setPlans(budgetPlanSchema.array().parse(planData));
       setCompare(budgetCompareSchema.parse(compareData));
+      setActivePersonal(
+        personalActive == null ? null : budgetPlanSchema.parse(personalActive),
+      );
+      setActiveBusiness(
+        businessActive == null ? null : budgetPlanSchema.parse(businessActive),
+      );
       const parsedActual = budgetVsActualSchema.parse(actualData);
       setActual(parsedActual);
       setActualDrafts(
@@ -512,6 +523,15 @@ export function BudgetStudio({ user }: { user: UserInfo | null }) {
       </div>
 
       {!loaded ? <p className="text-sm text-[var(--muted)]">Loading budgets…</p> : null}
+
+      {loaded ? (
+        <ActiveBudgetsBreakdown
+          personalPlan={activePersonal}
+          businessPlan={activeBusiness}
+          fetchPlans={false}
+          showOpenLink={false}
+        />
+      ) : null}
 
       {loaded && plans.length === 0 ? (
         <section className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-5">

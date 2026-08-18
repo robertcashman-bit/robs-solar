@@ -293,6 +293,8 @@ class FinanceOverviewService:
                 personal_bank=personal_bank,
                 pension=totals.pension_gbp,
                 personal_external_debt=totals.personal_debt_gbp,
+                property_gbp=totals.property_gbp,
+                other_assets_gbp=totals.other_assets_gbp,
                 director_owes_company=director_owes,
                 company_owes_director=company_owes,
             ),
