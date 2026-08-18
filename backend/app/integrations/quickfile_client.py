@@ -53,6 +53,8 @@ def _invoice_search_parameters(
     return_count: int,
     offset: int = 0,
     status: str | None = None,
+    issue_date_from: str | None = None,
+    issue_date_to: str | None = None,
 ) -> dict[str, Any]:
     params: dict[str, Any] = {
         "ReturnCount": return_count,
@@ -63,6 +65,10 @@ def _invoice_search_parameters(
     }
     if status:
         params["Status"] = status
+    if issue_date_from:
+        params["IssueDateFrom"] = issue_date_from
+    if issue_date_to:
+        params["IssueDateTo"] = issue_date_to
     return params
 
 
@@ -164,6 +170,12 @@ def _extract_records(body: dict[str, Any]) -> list[dict[str, Any]]:
         "BankAccountDetails",
         "BankAccounts",
         "Account",
+        "Transaction",
+        "Transactions",
+        "Invoice",
+        "Invoices",
+        "Purchase",
+        "Purchases",
     ):
         value = body.get(key)
         if value is None:
@@ -171,8 +183,61 @@ def _extract_records(body: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
         if isinstance(value, dict):
+            # Bank_Search nests Transaction under Transactions.
+            nested = (
+                value.get("Transaction")
+                or value.get("Record")
+                or value.get("Invoice")
+                or value.get("Purchase")
+            )
+            if isinstance(nested, list):
+                return [item for item in nested if isinstance(item, dict)]
+            if isinstance(nested, dict):
+                return [nested]
             return [value]
     return []
+
+
+def _bank_search_parameters(
+    *,
+    nominal_code: int | str,
+    return_count: int,
+    offset: int = 0,
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "ReturnCount": return_count,
+        "Offset": offset,
+        "OrderResultsBy": "TransactionDate",
+        "OrderDirection": "DESC",
+        "NominalCode": int(nominal_code) if str(nominal_code).isdigit() else nominal_code,
+    }
+    if from_date:
+        params["FromDate"] = from_date
+    if to_date:
+        params["ToDate"] = to_date
+    return params
+
+
+def _purchase_search_parameters(
+    *,
+    return_count: int,
+    offset: int = 0,
+    receipt_date_from: str | None = None,
+    receipt_date_to: str | None = None,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "ReturnCount": return_count,
+        "Offset": offset,
+        "OrderResultsBy": "ReceiptDate",
+        "OrderDirection": "DESC",
+    }
+    if receipt_date_from:
+        params["ReceiptDateFrom"] = receipt_date_from
+    if receipt_date_to:
+        params["ReceiptDateTo"] = receipt_date_to
+    return params
 
 
 def _nominal_code_key(value: Any) -> str:
@@ -330,3 +395,97 @@ class QuickFileClient:
             if recordset_count and offset >= recordset_count:
                 break
         return round(total, 2)
+
+    async def _paginated_search(
+        self,
+        api_path: str,
+        *,
+        build_params,
+        page_size: int = 200,
+        max_pages: int = 100,
+    ) -> list[dict[str, Any]]:
+        collected: list[dict[str, Any]] = []
+        offset = 0
+        recordset_count: int | None = None
+        for _ in range(max_pages):
+            body = await self.request(
+                api_path,
+                {"SearchParameters": build_params(return_count=page_size, offset=offset)},
+            )
+            if recordset_count is None:
+                meta = body.get("MetaData") if isinstance(body.get("MetaData"), dict) else {}
+                raw_count = body.get("RecordsetCount") or meta.get("RecordsetCount") or 0
+                try:
+                    recordset_count = int(raw_count)
+                except (TypeError, ValueError):
+                    recordset_count = 0
+            records = _extract_records(body)
+            collected.extend(records)
+            if len(records) < page_size:
+                break
+            offset += page_size
+            if recordset_count and offset >= recordset_count:
+                break
+        return collected
+
+    async def fetch_bank_transactions(
+        self,
+        nominal_code: str | int,
+        *,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Paginated Bank_Search statement lines for one nominal code."""
+
+        def build_params(*, return_count: int, offset: int) -> dict[str, Any]:
+            return _bank_search_parameters(
+                nominal_code=nominal_code,
+                return_count=return_count,
+                offset=offset,
+                from_date=from_date,
+                to_date=to_date,
+            )
+
+        return await self._paginated_search("/1_2/bank/search", build_params=build_params)
+
+    async def fetch_invoices(
+        self,
+        *,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Paginated Invoice_Search document headers (not item lines)."""
+
+        def build_params(*, return_count: int, offset: int) -> dict[str, Any]:
+            return _invoice_search_parameters(
+                return_count=return_count,
+                offset=offset,
+                status=status,
+                issue_date_from=from_date,
+                issue_date_to=to_date,
+            )
+
+        return await self._paginated_search(
+            "/1_2/invoice/search", build_params=build_params
+        )
+
+    async def fetch_purchases(
+        self,
+        *,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Paginated Purchase_Search document headers (not item lines)."""
+
+        def build_params(*, return_count: int, offset: int) -> dict[str, Any]:
+            return _purchase_search_parameters(
+                return_count=return_count,
+                offset=offset,
+                receipt_date_from=from_date,
+                receipt_date_to=to_date,
+            )
+
+        return await self._paginated_search(
+            "/1_2/purchase/search", build_params=build_params
+        )

@@ -22,6 +22,7 @@ _LEGACY_LAST_SYNC_KEY = "lunch_flow_last_sync_at"
 _LAST_TEST_KEY = "lunchflow_last_test_at"
 _LEGACY_LAST_TEST_KEY = "lunch_flow_last_test_at"
 _MONTHLY_FLOW_KEY = "lunchflow_monthly_flow"
+_FULL_IMPORT_KEY = "lunchflow_full_import_at"
 
 
 class LunchFlowSettingsService:
@@ -87,6 +88,14 @@ class LunchFlowSettingsService:
 
     async def mark_tested(self, db: AsyncSession) -> None:
         await self._set_timestamp(db, _LAST_TEST_KEY)
+
+    async def needs_full_history_import(self, db: AsyncSession) -> bool:
+        """True until a successful long-lookback transaction import has completed."""
+        row = await self._get_row(db, _FULL_IMPORT_KEY)
+        return row is None or not (row.value or "").strip()
+
+    async def mark_full_history_imported(self, db: AsyncSession) -> None:
+        await self._set_timestamp(db, _FULL_IMPORT_KEY)
 
     async def _set_timestamp(self, db: AsyncSession, key: str) -> None:
         now = datetime.now(timezone.utc).isoformat()

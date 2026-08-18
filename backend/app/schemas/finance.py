@@ -846,6 +846,9 @@ class QuickFileSyncResult(BaseModel):
     accounts_synced: int
     debtors_gbp: float
     reports_synced: bool = False
+    imported: int = 0
+    duplicates: int = 0
+    rejected: int = 0
     message: str
 
 
