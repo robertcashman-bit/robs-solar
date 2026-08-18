@@ -1,4 +1,4 @@
-"""Import QuickFile bank accounts and live P&L / balance sheet into finance tables."""
+"""Import QuickFile bank accounts, statement lines, and live P&L / balance sheet."""
 
 from __future__ import annotations
 
@@ -17,7 +17,9 @@ from app.schemas.finance import (
     QuickFileConfig,
     QuickFileSyncResult,
 )
+from app.services.finance.finance_import_service import finance_import_service
 from app.services.finance.quickfile_reports_service import quickfile_reports_service
+from app.services.finance.sync_lookback import lookback_since
 from app.services.quickfile_settings_service import quickfile_settings_service
 
 logger = logging.getLogger(__name__)
@@ -33,9 +35,12 @@ class QuickFileSyncService:
         backup: bool = True,
     ) -> QuickFileSyncResult:
         provider = QuickFileProvider(config)
+        first_sync = await quickfile_settings_service.needs_full_history_import(db)
+        since = lookback_since(first_sync=first_sync)
         try:
             accounts = await provider.sync_accounts()
             debtors_gbp = await provider.fetch_debtors_gbp()
+            raw_txs = await provider.sync_transactions(since=since)
         except IntegrationNotConfiguredError as exc:
             raise exc
 
@@ -65,8 +70,21 @@ class QuickFileSyncService:
         )
         synced += 1
 
+        imported = await finance_import_service.commit(
+            db,
+            raw_txs,
+            source="quickfile",
+            actor="import",
+            persist=True,
+        )
+        if first_sync:
+            await quickfile_settings_service.mark_full_history_imported(db)
         await quickfile_settings_service.mark_synced(db)
-        message = f"Synced {synced} QuickFile account(s)"
+        window = "365-day first sync" if first_sync else "90-day incremental"
+        message = (
+            f"Synced {synced} QuickFile account(s); "
+            f"imported {imported.get('imported', 0)} transaction(s) ({window})"
+        )
         message += f"; debtors control {debtors_gbp:.2f} GBP"
 
         reports_synced = False
@@ -84,6 +102,9 @@ class QuickFileSyncService:
             accounts_synced=synced,
             debtors_gbp=debtors_gbp,
             reports_synced=reports_synced,
+            imported=imported.get("imported", 0),
+            duplicates=imported.get("duplicate_count", 0),
+            rejected=imported.get("rejected_count", 0),
             message=message,
         )
 

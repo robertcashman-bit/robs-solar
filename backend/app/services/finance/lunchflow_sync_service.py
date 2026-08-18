@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from app.integrations.lunchflow_provider import LunchFlowProvider
 from app.schemas.finance import FinanceAccountSource, LunchFlowConfig, LunchFlowSyncResult
 from app.services.finance.finance_import_service import finance_import_service
 from app.services.finance.finance_ledger_service import finance_ledger_service
+from app.services.finance.sync_lookback import lookback_since
 from app.services.lunchflow_settings_service import lunchflow_settings_service
 
 
@@ -41,12 +42,14 @@ class LunchFlowSyncService:
     async def sync(self, db: AsyncSession, config: LunchFlowConfig) -> LunchFlowSyncResult:
         provider = LunchFlowProvider(config)
         records = await provider.sync_accounts()
+        first_sync = await lunchflow_settings_service.needs_full_history_import(db)
+        since = lookback_since(first_sync=first_sync)
         try:
             for item in records:
                 await self._upsert_account(db, item)
             await db.flush()
-            # Incremental: last 90 days is enough for dashboard freshness.
-            since = (datetime.now(timezone.utc) - timedelta(days=90)).date().isoformat()
+            # First successful full import pulls 365 days (provider default when since
+            # is omitted). Later syncs stay incremental (~90 days); fingerprints dedupe.
             raw_txs = await provider.sync_transactions(since=since)
             imported = await finance_import_service.commit(
                 db,
@@ -63,8 +66,11 @@ class LunchFlowSyncService:
         )
         if income > 0 or spending > 0:
             await lunchflow_settings_service.set_monthly_flow(db, income, spending)
+        if first_sync:
+            await lunchflow_settings_service.mark_full_history_imported(db)
         await lunchflow_settings_service.mark_synced(db)
         await _safe_backup(db, trigger="lunchflow_sync")
+        window = "365-day first sync" if first_sync else "90-day incremental"
         return LunchFlowSyncResult(
             accounts_synced=len(records),
             imported=imported.get("imported", 0),
@@ -72,7 +78,8 @@ class LunchFlowSyncService:
             rejected=imported.get("rejected_count", 0),
             message=(
                 f"Synced {len(records)} Lunch Flow account(s), "
-                f"imported {imported.get('imported', 0)} transaction(s)"
+                f"imported {imported.get('imported', 0)} transaction(s) "
+                f"({window})"
             ),
         )
 

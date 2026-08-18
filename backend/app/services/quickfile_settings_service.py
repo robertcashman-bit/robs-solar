@@ -15,6 +15,7 @@ from app.services.settings_crypto import open_json, seal_json
 
 _QUICKFILE_KEY = "quickfile"
 _LAST_SYNC_KEY = "quickfile_last_sync_at"
+_FULL_IMPORT_KEY = "quickfile_full_import_at"
 _BUDGET_ACCOUNTS_KEY = "quickfile_budget_account_ids"
 
 
@@ -100,10 +101,21 @@ class QuickFileSettingsService:
         return await self.get_status(db)
 
     async def mark_synced(self, db: AsyncSession) -> None:
+        await self._set_timestamp(db, _LAST_SYNC_KEY)
+
+    async def needs_full_history_import(self, db: AsyncSession) -> bool:
+        """True until a successful long-lookback bank-line import has completed."""
+        row = await self._get_row(db, _FULL_IMPORT_KEY)
+        return row is None or not (row.value or "").strip()
+
+    async def mark_full_history_imported(self, db: AsyncSession) -> None:
+        await self._set_timestamp(db, _FULL_IMPORT_KEY)
+
+    async def _set_timestamp(self, db: AsyncSession, key: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        row = await self._get_row(db, _LAST_SYNC_KEY)
+        row = await self._get_row(db, key)
         if row is None:
-            db.add(AppSettingRow(key=_LAST_SYNC_KEY, value=now))
+            db.add(AppSettingRow(key=key, value=now))
         else:
             row.value = now
         await db.commit()
