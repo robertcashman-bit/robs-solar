@@ -17,6 +17,7 @@ describe("finance-period", () => {
 
   it("parses known period keys and falls back", () => {
     expect(parseFinancePeriod("3m")).toBe("3m");
+    expect(parseFinancePeriod("mtd")).toBe("mtd");
     expect(parseFinancePeriod("nope")).toBe("1m");
   });
 
@@ -32,12 +33,20 @@ describe("finance-period", () => {
     expect(range.monthsRequested).toBe(3);
   });
 
+  it("builds month-to-date window through today", () => {
+    const range = periodDateRange("mtd", new Date(Date.UTC(2026, 7, 18)));
+    expect(range.dateFrom).toBe("2026-08-01");
+    expect(range.dateTo).toBe("2026-08-18");
+    expect(range.monthsRequested).toBe(1);
+  });
+
   it("labels periods for UI chips", () => {
+    expect(periodLabel("mtd")).toBe("This month to date");
     expect(periodLabel("1m")).toBe("Last month");
     expect(periodLabel("12m")).toBe("Last year");
   });
 
-  it("persists preferences in localStorage", () => {
+  it("persists preferences in localStorage including legacy keys", () => {
     writeStoredPeriodPrefs({
       period: "6m",
       personalPeriod: "6m",
@@ -50,5 +59,12 @@ describe("finance-period", () => {
       businessPeriod: "3m",
       scope: "both",
     });
+    writeStoredPeriodPrefs({
+      period: "mtd",
+      personalPeriod: "mtd",
+      businessPeriod: "1m",
+      scope: "personal",
+    });
+    expect(readStoredPeriodPrefs()?.period).toBe("mtd");
   });
 });

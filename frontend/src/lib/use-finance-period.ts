@@ -20,6 +20,13 @@ type Options = {
   /** Hide or fix scope (e.g. personal page always personal). */
   fixedScope?: FinancePeriodScope;
   defaultScope?: FinancePeriodScope;
+  /** Fallback when URL (and, unless preferDefaultPeriod, stored) have no period. */
+  defaultPeriod?: FinancePeriodKey;
+  /**
+   * When set with defaultPeriod, URL wins then defaultPeriod — stored period is
+   * ignored so Personal/Business can default to MTD on each visit without a query.
+   */
+  preferDefaultPeriod?: boolean;
 };
 
 function currentParams(): URLSearchParams {
@@ -30,9 +37,12 @@ function currentParams(): URLSearchParams {
 function readPrefs(opts: Options): FinancePeriodPrefs {
   const params = currentParams();
   const stored = readStoredPeriodPrefs();
+  const fallback = opts.defaultPeriod ?? DEFAULT_FINANCE_PERIOD;
+  // preferDefaultPeriod: URL wins, then page default (e.g. mtd on Personal/Business).
   const period = parseFinancePeriod(
-    params.get("period") ?? stored.period,
-    DEFAULT_FINANCE_PERIOD,
+    params.get("period")
+      ?? (opts.preferDefaultPeriod ? opts.defaultPeriod : stored.period),
+    fallback,
   );
   const personalPeriod = parseFinancePeriod(
     params.get("personal_period") ?? stored.personalPeriod ?? period,
@@ -82,7 +92,7 @@ export function useFinancePeriod(options: Options = {}) {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options.dualPeriod, options.fixedScope, options.defaultScope]);
+  }, [options.dualPeriod, options.fixedScope, options.defaultScope, options.defaultPeriod, options.preferDefaultPeriod]);
 
   const persist = useCallback(
     (next: FinancePeriodPrefs) => {
@@ -91,7 +101,7 @@ export function useFinancePeriod(options: Options = {}) {
       replaceUrl(next, options);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [options.dualPeriod, options.fixedScope, options.defaultScope],
+    [options.dualPeriod, options.fixedScope, options.defaultScope, options.defaultPeriod, options.preferDefaultPeriod],
   );
 
   const setPeriod = useCallback(

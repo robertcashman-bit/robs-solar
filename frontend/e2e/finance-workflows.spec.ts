@@ -21,6 +21,22 @@ test("finance routes load from navigation", async ({ page }) => {
   }
 });
 
+test("personal and business default to this month to date", async ({ page }) => {
+  await gotoWhenAuthed(page, "/finance/personal");
+  await expect(page.getByRole("heading", { name: "This month to date" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "This month to date" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await gotoWhenAuthed(page, "/finance/business");
+  await expect(page.getByRole("heading", { name: "This month to date" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "This month to date" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});
+
 test("reports and cash flow load and accept existing controls", async ({ page }) => {
   await gotoWhenAuthed(page, "/finance/reports");
   await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();

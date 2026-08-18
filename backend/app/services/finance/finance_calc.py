@@ -134,6 +134,7 @@ class FinanceTotals:
     corp_tax_reserve_warning: bool
     debt_reduction_gbp: float
     personal_credit_card_gbp: float = 0.0
+    personal_loan_gbp: float = 0.0
     formula: str = (
         "net_worth = (positive current + pension + property + other assets + debtors) "
         "− (active debts ex-DLA + overdrafts + unlinked account debts). "
@@ -401,8 +402,26 @@ def compute_totals(
         {"credit_card"},
         {"credit_card"},
     )
-    loans = _typed_debt(debts, unlinked, {"loan", "business_loan"}, {"loan", "capital_on_tap"})
-    mortgage = _typed_debt(debts, unlinked, {"mortgage"}, {"mortgage"})
+    # Personal loans only — never mix into the business loans tile.
+    personal_loans = _typed_debt(
+        [debt for debt in debts if debt.scope == "personal"],
+        [account for account in unlinked if account.scope == "personal"],
+        {"loan"},
+        {"loan"},
+    )
+    # Business loans / capital-on-tap only (mortgage stays personal, not a loan).
+    business_loans = _typed_debt(
+        [debt for debt in debts if debt.scope == "business"],
+        [account for account in unlinked if account.scope == "business"],
+        {"loan", "business_loan"},
+        {"loan", "capital_on_tap"},
+    )
+    mortgage = _typed_debt(
+        [debt for debt in debts if debt.scope == "personal"],
+        [account for account in unlinked if account.scope == "personal"],
+        {"mortgage"},
+        {"mortgage"},
+    )
 
     total_assets = round(
         personal_cash + business_cash + pension + property_gbp + other_assets + debtors,
@@ -462,7 +481,8 @@ def compute_totals(
         business_debt_gbp=business_debt,
         credit_card_gbp=credit_cards,
         personal_credit_card_gbp=personal_credit_cards,
-        loan_gbp=loans,
+        loan_gbp=business_loans,
+        personal_loan_gbp=personal_loans,
         mortgage_gbp=mortgage,
         directors_loan_gbp=directors_loan,
         creditors_gbp=creditors,
@@ -843,15 +863,6 @@ def resolve_monthly_flow(
             "snapshot",
             True,
         )
-    if open_banking_income > 0 or open_banking_spending > 0:
-        return (
-            round(open_banking_income, 2),
-            round(open_banking_spending, 2),
-            0.0,
-            round(snapshot_repayments, 2) if snapshot_present else 0.0,
-            "open_banking",
-            True,
-        )
     if cashflow_income > 0 or cashflow_spending > 0 or cashflow_bills > 0:
         return (
             round(cashflow_income, 2),
@@ -861,6 +872,8 @@ def resolve_monthly_flow(
             "cashflow",
             True,
         )
+    # Prefer the typical budget plan over a thin Open Banking 30-day window so
+    # salary that has not yet posted this month is not treated as £0 income.
     if budget_income > 0 or budget_spending > 0:
         return (
             round(budget_income, 2),
@@ -868,6 +881,15 @@ def resolve_monthly_flow(
             0.0,
             round(snapshot_repayments, 2) if snapshot_present else 0.0,
             "budget",
+            True,
+        )
+    if open_banking_income > 0 or open_banking_spending > 0:
+        return (
+            round(open_banking_income, 2),
+            round(open_banking_spending, 2),
+            0.0,
+            round(snapshot_repayments, 2) if snapshot_present else 0.0,
+            "open_banking",
             True,
         )
     if snapshot_present:

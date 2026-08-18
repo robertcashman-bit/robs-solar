@@ -273,6 +273,7 @@ class FinanceOverviewService:
             credit_card_balances_gbp=totals.credit_card_gbp,
             personal_credit_card_balances_gbp=totals.personal_credit_card_gbp,
             loan_balances_gbp=totals.loan_gbp,
+            personal_loan_balances_gbp=totals.personal_loan_gbp,
             mortgage_balance_gbp=totals.mortgage_gbp,
             pension_value_gbp=totals.pension_gbp,
             directors_loan_gbp=totals.directors_loan_gbp,
@@ -442,6 +443,67 @@ class FinanceOverviewService:
         business.pop("month_keys", None)
         overview.personal_period_flow = PeriodFlowSummary(**personal)
         overview.business_period_flow = PeriodFlowSummary(**business)
+        # Surplus prefers stored period flow, then the active typical budget —
+        # never Open Banking's thin 30-day window as "personal surplus".
+        previous_source = overview.monthly_flow_source
+        if int(personal.get("transaction_count") or 0) > 0:
+            overview.monthly_surplus_gbp = float(personal.get("surplus_gbp") or 0)
+            overview.monthly_income_gbp = float(personal.get("income_gbp") or 0)
+            overview.monthly_spending_gbp = float(personal.get("spending_gbp") or 0)
+            overview.monthly_flow_source = "transactions"
+        elif overview.active_budget is not None and overview.monthly_flow_source in {
+            "open_banking",
+            "snapshot",
+            "none",
+        }:
+            overview.monthly_surplus_gbp = float(overview.active_budget.surplus_gbp)
+            overview.monthly_income_gbp = float(overview.active_budget.income_gbp)
+            overview.monthly_flow_source = "budget"
+        if overview.monthly_flow_source != previous_source:
+            self._realign_safe_to_spend(overview)
+
+    @staticmethod
+    def _realign_safe_to_spend(overview: FinanceOverviewResponse) -> None:
+        """Keep Safe to Spend notes/status in sync after surplus source override."""
+        from app.services.finance.finance_calc import monthly_flow_note
+
+        source = overview.monthly_flow_source
+        flow_note = monthly_flow_note(source)
+        safe = dict(overview.safe_to_spend or {})
+        personal = dict(safe.get("personal") or {})
+        combined = dict(safe.get("combined") or {})
+        breakdown = dict(personal.get("breakdown") or {})
+        if source == "budget":
+            personal["safe_to_spend_gbp"] = 0.0
+            personal["status"] = "BUDGET_PLAN_ONLY"
+            combined["safe_to_spend_gbp"] = 0.0
+            combined["status"] = "BUDGET_PLAN_ONLY"
+        elif source == "transactions":
+            essentials = float(breakdown.get("essential_bills_gbp") or 0)
+            debt_mins = float(breakdown.get("debt_minimums_gbp") or 0)
+            buffer = float(breakdown.get("cash_buffer_gbp") or 1000)
+            projected = round(overview.monthly_income_gbp - essentials - debt_mins - buffer, 2)
+            personal["safe_to_spend_gbp"] = max(projected, 0.0)
+            if projected < 0 or overview.personal_bank_balance_gbp < 0:
+                personal["status"] = "PROJECTED_SHORTFALL"
+            elif overview.personal_bank_balance_gbp < buffer * 0.5:
+                personal["status"] = "LOW_CASH"
+            elif overview.personal_bank_balance_gbp < buffer:
+                personal["status"] = "CAUTION"
+            else:
+                personal["status"] = "HEALTHY"
+            breakdown["expected_income_gbp"] = overview.monthly_income_gbp
+        personal["flow_source"] = source
+        personal["flow_note"] = flow_note
+        breakdown["flow_source"] = source
+        breakdown["flow_note"] = flow_note
+        personal["breakdown"] = breakdown
+        combined["flow_source"] = source
+        combined["flow_note"] = flow_note
+        safe["personal"] = personal
+        safe["combined"] = combined
+        overview.safe_to_spend = safe
+        overview.cash_status = str(combined.get("status") or overview.cash_status)
 
     async def _sync_stamp(self, db: AsyncSession, source: str) -> str | None:
         try:

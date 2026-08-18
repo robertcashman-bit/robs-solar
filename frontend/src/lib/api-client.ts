@@ -2,6 +2,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend";
 
 /** Default GET timeout for ordinary finance reads. */
 export const DEFAULT_GET_TIMEOUT_MS = 12_000;
+/** Reports aggregates can exceed the default on cold SQLite / large ledgers. */
+export const REPORTS_GET_TIMEOUT_MS = 45_000;
 /** POST/PUT/PATCH/DELETE — allow slower writes. */
 export const MUTATION_TIMEOUT_MS = 45_000;
 /**
@@ -15,6 +17,11 @@ const COLD_START_GET_PATHS = new Set([
   "/health",
   "/auth/magic-code/status",
 ]);
+
+function isReportsPath(path: string): boolean {
+  const bare = path.split("?")[0] ?? path;
+  return bare === "/finance/reports" || bare.startsWith("/finance/reports/");
+}
 
 export class ApiError extends Error {
   status: number;
@@ -39,8 +46,12 @@ export function resolveTimeoutMs(path: string, method?: string): number {
   if (method && method !== "GET") {
     return MUTATION_TIMEOUT_MS;
   }
-  if (COLD_START_GET_PATHS.has(path)) {
+  const bare = path.split("?")[0] ?? path;
+  if (COLD_START_GET_PATHS.has(bare)) {
     return COLD_START_GET_TIMEOUT_MS;
+  }
+  if (isReportsPath(path)) {
+    return REPORTS_GET_TIMEOUT_MS;
   }
   return DEFAULT_GET_TIMEOUT_MS;
 }

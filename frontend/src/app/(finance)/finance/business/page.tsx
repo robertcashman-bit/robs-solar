@@ -6,6 +6,7 @@ import { z } from "zod";
 import { AccountManager } from "@/components/finance/AccountManager";
 import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { MetricTile } from "@/components/finance/MetricTile";
+import { PlComparePanel } from "@/components/finance/PlComparePanel";
 import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
@@ -59,15 +60,18 @@ export default function BusinessFinancePage() {
     debtors_gbp: "",
     creditors_gbp: "",
   });
-  const periodState = useFinancePeriod({ fixedScope: "business" });
+  const periodState = useFinancePeriod({
+    fixedScope: "business",
+    defaultPeriod: "mtd",
+    preferDefaultPeriod: true,
+  });
   const [periodFlow, setPeriodFlow] = useState<PeriodFlowSummary | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [accts, snaps, qfReports, flow] = await Promise.all([
+      const [accts, snaps, flow] = await Promise.all([
         apiClient.get<unknown>("/finance/accounts?scope=business"),
         apiClient.get<unknown>("/finance/snapshots/business"),
-        apiClient.get<unknown>("/finance/integrations/quickfile/reports"),
         apiClient.get<unknown>(
           `/finance/period-flow?period=${periodState.period}&scope=business`,
         ),
@@ -76,8 +80,6 @@ export default function BusinessFinancePage() {
       setPeriodFlow(parsedFlow.success ? parsedFlow.data : null);
       setAccounts(z.array(financeAccountSchema).parse(accts));
       const parsed = z.array(businessFinanceSnapshotSchema).parse(snaps);
-      const parsedReports = quickFileReportsSchema.safeParse(qfReports);
-      setQuickfileReports(parsedReports.success ? parsedReports.data : null);
       const current = parsed.find((item) => isCurrentMonthSnapshot(item.snapshot_date)) ?? null;
       setSnapshot(current);
       if (current) {
@@ -91,6 +93,16 @@ export default function BusinessFinancePage() {
         });
       }
       setError(null);
+      // Stored QuickFile statements after first paint — never block the page on live QF.
+      void apiClient
+        .get<unknown>("/finance/integrations/quickfile/reports")
+        .then((qfReports) => {
+          const parsedReports = quickFileReportsSchema.safeParse(qfReports);
+          setQuickfileReports(parsedReports.success ? parsedReports.data : null);
+        })
+        .catch(() => {
+          setQuickfileReports(null);
+        });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load business finance");
     }
@@ -231,12 +243,14 @@ export default function BusinessFinancePage() {
         />
         <MetricTile label="Business cash to draw" value={snapshot?.cash_available_to_draw_gbp} />
       </div>
+      <div className="mt-8">
+        <PlComparePanel scope="business" title="Business profit & loss compare" />
+      </div>
       <section className="mt-8">
-        <h2 className="solar-section-title">Live QuickFile statements</h2>
+        <h2 className="solar-section-title">QuickFile statements</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Pulled from QuickFile on sync (month and YTD columns). Multi-month period chips above
-          use stored business transactions for the historical window — they do not invent a
-          custom QuickFile report.
+          Stored QuickFile reports (loaded after the page paints). Multi-month period chips above
+          use stored business transactions for the historical window.
         </p>
         <div className="mt-4">
           <QuickFileStatements

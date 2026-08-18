@@ -9,6 +9,7 @@ import { BudgetVsActualPanel } from "@/components/finance/BudgetVsActualPanel";
 import { FinanceHistoryCharts } from "@/components/finance/FinanceHistoryCharts";
 import { MetricTile } from "@/components/finance/MetricTile";
 import { PersonalReportPanel } from "@/components/finance/PersonalReportPanel";
+import { PlComparePanel } from "@/components/finance/PlComparePanel";
 import { PlHistoryChart } from "@/components/finance/PlHistoryChart";
 import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
 import { FinanceExportPanel } from "@/components/finance/FinanceExportPanel";
@@ -224,9 +225,16 @@ export default function ReportsPage() {
             />
           </div>
           <PersonalReportPanel report={reports.personal_report} />
+          <div className="grid gap-8 lg:grid-cols-2">
+            <PlComparePanel scope="personal" title="Personal P&L compare" />
+            <PlComparePanel scope="business" title="Business P&L compare" />
+          </div>
           <FinanceHistoryCharts reports={reports} />
           <section>
-            <h2 className="solar-section-title">Live QuickFile statements</h2>
+            <h2 className="solar-section-title">QuickFile statements</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              From the last stored QuickFile sync — not fetched live on this page.
+            </p>
             <div className="mt-4">
               <QuickFileStatements
                 reports={reports.quickfile_reports}

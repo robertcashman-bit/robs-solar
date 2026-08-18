@@ -70,6 +70,9 @@ vi.mock("@/lib/api-client", () => ({
           },
         ];
       }
+      if (path.startsWith("/finance/pnl-compare")) {
+        return { scope: "personal", as_of: "2026-08-18", rows: [] };
+      }
       if (path.startsWith("/finance/budgets/active")) {
         return null;
       }
@@ -96,7 +99,7 @@ describe("ReportsPage", () => {
     expect(screen.getByText("No active personal plan yet.")).toBeInTheDocument();
     expect(screen.getByText("No active business plan yet.")).toBeInTheDocument();
     expect(screen.getByText("Budget vs actual")).toBeInTheDocument();
-    expect(screen.getByText("Live QuickFile statements")).toBeInTheDocument();
+    expect(screen.getByText("QuickFile statements")).toBeInTheDocument();
     expect(screen.getByText("Company P&L history")).toBeInTheDocument();
     expect(screen.getByText("Account statements")).toBeInTheDocument();
     expect(screen.getByText("Lloyds")).toBeInTheDocument();

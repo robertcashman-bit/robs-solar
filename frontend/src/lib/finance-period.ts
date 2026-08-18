@@ -1,10 +1,11 @@
-export const FINANCE_PERIOD_KEYS = ["1m", "3m", "6m", "12m"] as const;
+export const FINANCE_PERIOD_KEYS = ["mtd", "1m", "3m", "6m", "12m"] as const;
 export type FinancePeriodKey = (typeof FINANCE_PERIOD_KEYS)[number];
 
 export const FINANCE_PERIOD_SCOPES = ["personal", "business", "both"] as const;
 export type FinancePeriodScope = (typeof FINANCE_PERIOD_SCOPES)[number];
 
 export const FINANCE_PERIOD_LABELS: Record<FinancePeriodKey, string> = {
+  mtd: "This month to date",
   "1m": "Last month",
   "3m": "3 months",
   "6m": "6 months",
@@ -49,11 +50,20 @@ export function periodLabel(period: FinancePeriodKey): string {
   return FINANCE_PERIOD_LABELS[period];
 }
 
-/** Inclusive ISO date window for complete calendar months ending last month. */
+/** Inclusive ISO date window. Historical keys end last month; mtd is month start→today. */
 export function periodDateRange(
   period: FinancePeriodKey,
   asOf: Date = new Date(),
 ): { dateFrom: string; dateTo: string; monthsRequested: number } {
+  if (period === "mtd") {
+    const dateFrom = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1))
+      .toISOString()
+      .slice(0, 10);
+    const dateTo = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate()))
+      .toISOString()
+      .slice(0, 10);
+    return { dateFrom, dateTo, monthsRequested: 1 };
+  }
   const monthsRequested = { "1m": 1, "3m": 3, "6m": 6, "12m": 12 }[period];
   const end = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - 1, 1));
   const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - (monthsRequested - 1), 1));

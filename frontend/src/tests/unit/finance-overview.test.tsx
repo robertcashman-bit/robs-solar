@@ -97,8 +97,17 @@ describe("FinanceOverviewView", () => {
     expect(screen.getAllByText("Business / company position").length).toBeGreaterThan(0);
     expect(screen.getByText("Personal house (your half)")).toBeInTheDocument();
     expect(screen.getByText("Your half of £700,000. Other half ignored.")).toBeInTheDocument();
-    expect(screen.getByText("Personal house mortgage (placeholder)")).toBeInTheDocument();
+    expect(screen.getByText("Of which house mortgage (placeholder)")).toBeInTheDocument();
     expect(screen.getByText("Placeholder £175,000 for now.")).toBeInTheDocument();
+    expect(screen.getByText("Of which personal credit cards")).toBeInTheDocument();
+    expect(screen.getByText("High-interest debt")).toBeInTheDocument();
+    expect(
+      screen.getByText("APR 15% or more across all debts — pay this first"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Of which business loans")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Mortgage and cards below are of which, not extra/),
+    ).toBeInTheDocument();
     expect(screen.getByText("Business VAT pot")).toBeInTheDocument();
     expect(screen.getByText("Business debtors")).toBeInTheDocument();
     expect(screen.queryByText("External debt")).not.toBeInTheDocument();
@@ -124,7 +133,7 @@ describe("FinanceOverviewView", () => {
     await user.click(screen.getByRole("button", { name: "business" }));
     expect(screen.getByText("Business VAT pot")).toBeInTheDocument();
     expect(screen.queryByText("Personal house (your half)")).not.toBeInTheDocument();
-    expect(screen.queryByText("Personal house mortgage (placeholder)")).not.toBeInTheDocument();
+    expect(screen.queryByText("Of which house mortgage (placeholder)")).not.toBeInTheDocument();
   });
 
   it("wires dismiss on insights when a handler is provided", async () => {
