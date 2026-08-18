@@ -10,7 +10,7 @@ const requestMagicCode = vi.fn(async () => ({
   expiresInSeconds: 600,
 }));
 const consumeMagicLink = vi.fn();
-const apiGet = vi.fn(async (_path: string) => ({ status: "ok" }));
+const apiGet = vi.fn(async () => ({ status: "ok" }));
 
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({

@@ -142,8 +142,8 @@ export function ActiveBudgetsBreakdown({
   fetchPlans = true,
   showOpenLink = true,
 }: ActiveBudgetsBreakdownProps) {
-  const [personalPlan, setPersonalPlan] = useState<BudgetPlan | null>(personalProp ?? null);
-  const [businessPlan, setBusinessPlan] = useState<BudgetPlan | null>(businessProp ?? null);
+  const [fetchedPersonal, setFetchedPersonal] = useState<BudgetPlan | null>(null);
+  const [fetchedBusiness, setFetchedBusiness] = useState<BudgetPlan | null>(null);
   const [loading, setLoading] = useState(fetchPlans);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,8 +155,8 @@ export function ActiveBudgetsBreakdown({
         apiClient.get<unknown>("/finance/budgets/active?scope=personal"),
         apiClient.get<unknown>("/finance/budgets/active?scope=business"),
       ]);
-      setPersonalPlan(personalRaw == null ? null : budgetPlanSchema.parse(personalRaw));
-      setBusinessPlan(businessRaw == null ? null : budgetPlanSchema.parse(businessRaw));
+      setFetchedPersonal(personalRaw == null ? null : budgetPlanSchema.parse(personalRaw));
+      setFetchedBusiness(businessRaw == null ? null : budgetPlanSchema.parse(businessRaw));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load active budgets");
@@ -166,12 +166,7 @@ export function ActiveBudgetsBreakdown({
   }, [fetchPlans]);
 
   useEffect(() => {
-    if (!fetchPlans) {
-      setPersonalPlan(personalProp ?? null);
-      setBusinessPlan(businessProp ?? null);
-      setLoading(false);
-      return;
-    }
+    if (!fetchPlans) return;
     const timer = window.setTimeout(() => void load(), 0);
     const onChanged = () => {
       void load();
@@ -181,7 +176,11 @@ export function ActiveBudgetsBreakdown({
       window.clearTimeout(timer);
       window.removeEventListener("robs-finance-changed", onChanged);
     };
-  }, [fetchPlans, load, personalProp, businessProp]);
+  }, [fetchPlans, load]);
+
+  const personalPlan = fetchPlans ? fetchedPersonal : (personalProp ?? null);
+  const businessPlan = fetchPlans ? fetchedBusiness : (businessProp ?? null);
+  const showLoading = fetchPlans && loading;
 
   const samePlan =
     personalPlan != null && businessPlan != null && personalPlan.id === businessPlan.id;
@@ -233,7 +232,7 @@ export function ActiveBudgetsBreakdown({
         ) : null}
       </div>
       {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
-      {loading ? (
+      {showLoading ? (
         <p className="text-sm text-[var(--muted)]">Loading active budgets…</p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
