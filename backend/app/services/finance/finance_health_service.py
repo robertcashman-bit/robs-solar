@@ -110,6 +110,7 @@ class FinanceHealthService:
             "integrations": {
                 "quickfile": {
                     "configured": bool(qf.configured),
+                    "connected": bool(qf.connected or qf.configured),
                     "last_sync_at": qf.last_sync_at,
                 },
                 "lunchflow": {

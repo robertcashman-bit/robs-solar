@@ -629,18 +629,30 @@ export const financeReportsSchema = z.object({
   business_report: businessFinanceReportSchema.nullable().optional(),
 });
 
-export const quickFileConfigStatusSchema = z.object({
-  account_number: z.string(),
-  api_key_set: z.boolean(),
-  application_id: z.string(),
-  configured: z.boolean(),
-  last_sync_at: z.string().nullable().optional(),
-});
+export const quickFileConfigStatusSchema = z
+  .object({
+    account_number: z.string().optional().default(""),
+    api_key_set: z.boolean(),
+    application_id: z.string().optional().default(""),
+    configured: z.boolean(),
+    /** True when configured — QuickFile has no separate OAuth token. */
+    connected: z.boolean().optional().default(false),
+    last_sync_at: z.string().nullable().optional(),
+    budget_account_external_ids: z.array(z.string()).optional().default([]),
+  })
+  .transform((value) => ({
+    ...value,
+    // Prefer explicit connected; otherwise mirror configured.
+    connected: value.connected || value.configured,
+  }));
 
 export const quickFileSyncResultSchema = z.object({
   accounts_synced: z.number(),
   debtors_gbp: z.number(),
   reports_synced: z.boolean().optional().default(false),
+  imported: z.number().optional().default(0),
+  duplicates: z.number().optional().default(0),
+  rejected: z.number().optional().default(0),
   message: z.string(),
 });
 

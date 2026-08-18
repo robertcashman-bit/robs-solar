@@ -114,7 +114,9 @@ export function FinanceHealthPanel({ canEdit }: { canEdit: boolean }) {
           </li>
           <li>
             QuickFile:{" "}
-            {integrations?.quickfile?.configured ? "configured" : "not configured"}
+            {integrations?.quickfile?.configured || integrations?.quickfile?.connected
+              ? "configured"
+              : "not configured"}
             {" · last sync "}
             {formatSync(integrations?.quickfile?.last_sync_at)}
           </li>
