@@ -183,6 +183,8 @@ def parse_balance_sheet_full(body: dict[str, Any], *, to_date: str) -> dict[str,
 
     debtors = _line_amount_from_breakdown(current_assets, "debtors control")
     creditors = _line_amount_from_breakdown(current_assets, "creditors control")
+    # Nominal 1210 "Vat Account" — cash reserved for VAT, not the creditor liability.
+    vat_reserve = _line_amount_from_breakdown(current_assets, "vat account")
     vat_liability = _sum_lines_from_breakdown(
         current_liabilities, "vat liability", "sales tax control"
     )
@@ -211,6 +213,7 @@ def parse_balance_sheet_full(body: dict[str, Any], *, to_date: str) -> dict[str,
         "capital_and_reserves_gbp": round(_float(totals.get("CapitalAndReserves")), 2),
         "debtors_gbp": debtors,
         "creditors_gbp": creditors,
+        "vat_reserve_gbp": vat_reserve,
         "vat_liability_gbp": vat_liability,
         "sections": sections,
     }

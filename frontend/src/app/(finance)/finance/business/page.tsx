@@ -125,6 +125,15 @@ export default function BusinessFinancePage() {
   const directorsLoan = accounts
     .filter((account) => account.account_type === "directors_loan")
     .reduce((sum, account) => sum + account.balance_gbp, 0);
+  const vatReserveAccounts = accounts.filter(
+    (account) => account.account_type === "vat_reserve",
+  );
+  // Prefer the VAT pot account (QuickFile 1210) over snapshot, which may still
+  // hold creditor VAT liability from older syncs.
+  const vatReserveGbp =
+    vatReserveAccounts.length > 0
+      ? vatReserveAccounts.reduce((sum, account) => sum + account.balance_gbp, 0)
+      : snapshot?.vat_reserve_gbp;
 
   return (
     <AppShell>
@@ -143,7 +152,7 @@ export default function BusinessFinancePage() {
         <MetricTile label="Turnover (month)" value={snapshot?.turnover_gbp} />
         <MetricTile label="Expenses (month)" value={snapshot?.expenses_gbp} />
         <MetricTile label="Profit estimate" value={snapshot?.profit_estimate_gbp} positive />
-        <MetricTile label="VAT reserve" value={snapshot?.vat_reserve_gbp} />
+        <MetricTile label="VAT reserve" value={vatReserveGbp} hint="Cash in VAT pot" />
         <MetricTile label="Corp tax reserve" value={snapshot?.corp_tax_reserve_gbp} />
         <MetricTile label="Debtors" value={snapshot?.debtors_gbp} />
         <MetricTile
