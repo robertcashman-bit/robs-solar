@@ -129,7 +129,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               label="Combined external debt"
               value={externalDebt}
               warning={externalDebt > 0}
-              hint={`${formatGbp(overview.total_personal_debt_gbp)} personal · ${formatGbp(overview.total_business_debt_gbp)} company`}
+              hint={`${formatGbp(overview.total_personal_debt_gbp)} personal · ${formatGbp(overview.total_business_debt_gbp)} company. Mortgage and cards below are of which, not extra.`}
             />
             <MetricTile
               label="Combined cash available"
@@ -269,13 +269,13 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 label="Personal debts"
                 value={overview.total_personal_debt_gbp}
                 warning={overview.total_personal_debt_gbp > 0}
-                hint="Cards, loans, and mortgage"
+                hint="Includes cards, loans, and mortgage — not extra to the tiles below"
               />
               <MetricTile
-                label="Personal credit cards"
+                label="Of which personal credit cards"
                 value={overview.personal_credit_card_balances_gbp}
                 warning={overview.personal_credit_card_balances_gbp > 0}
-                hint="Personal cards only"
+                hint="Subset of personal debts"
               />
               <MetricTile
                 label="Available credit"
@@ -310,7 +310,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 }
               />
               <MetricTile
-                label="Personal house mortgage (placeholder)"
+                label="Of which house mortgage (placeholder)"
                 value={overview.mortgage_configured === false ? null : overview.mortgage_balance_gbp}
                 warning={(overview.mortgage_balance_gbp ?? 0) > 0}
                 hint={
@@ -331,10 +331,10 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 }
               />
               <MetricTile
-                label="High-interest debt"
+                label="Of which high-interest debt"
                 value={overview.high_interest_debt_gbp}
                 warning={(overview.high_interest_debt_gbp ?? 0) > 0}
-                hint="APR 15% or more across all debts — pay this first"
+                hint="APR 15% or more — subset of the debts above, pay this first"
               />
             </div>
           </section>
@@ -377,6 +377,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 label="Business debts"
                 value={overview.total_business_debt_gbp}
                 warning={overview.total_business_debt_gbp > 0}
+                hint="Company external debts included in combined external debt"
               />
               <MetricTile
                 label="Business VAT pot"

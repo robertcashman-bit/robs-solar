@@ -59,7 +59,11 @@ export default function BusinessFinancePage() {
     debtors_gbp: "",
     creditors_gbp: "",
   });
-  const periodState = useFinancePeriod({ fixedScope: "business" });
+  const periodState = useFinancePeriod({
+    fixedScope: "business",
+    defaultPeriod: "mtd",
+    preferDefaultPeriod: true,
+  });
   const [periodFlow, setPeriodFlow] = useState<PeriodFlowSummary | null>(null);
 
   const load = useCallback(async () => {

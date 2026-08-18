@@ -101,5 +101,10 @@ describe("BusinessFinancePage", () => {
     expect(screen.getByPlaceholderText("Turnover")).toHaveValue("");
     expect(screen.queryByText(/house/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/mortgage/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "This month to date" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "This month to date" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 });

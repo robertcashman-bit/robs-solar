@@ -1,7 +1,8 @@
-"""Historical lookback periods for finance read APIs and UI chips.
+"""Lookback periods for finance read APIs and UI chips.
 
-Periods are complete calendar months ending with the previous month
-(so "last month" is never the in-progress current month).
+Historical keys (1m/3m/6m/12m) are complete calendar months ending with the
+previous month. The ``mtd`` key covers the in-progress current month from day 1
+through today (as_of).
 """
 
 from __future__ import annotations
@@ -11,12 +12,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Literal
 
-FinancePeriodKey = Literal["1m", "3m", "6m", "12m"]
+FinancePeriodKey = Literal["mtd", "1m", "3m", "6m", "12m"]
 FinancePeriodScope = Literal["personal", "business", "both"]
 
-PERIOD_KEYS: tuple[FinancePeriodKey, ...] = ("1m", "3m", "6m", "12m")
-PERIOD_MONTHS: dict[str, int] = {"1m": 1, "3m": 3, "6m": 6, "12m": 12}
+PERIOD_KEYS: tuple[FinancePeriodKey, ...] = ("mtd", "1m", "3m", "6m", "12m")
+PERIOD_MONTHS: dict[str, int] = {"mtd": 1, "1m": 1, "3m": 3, "6m": 6, "12m": 12}
 PERIOD_LABELS: dict[str, str] = {
+    "mtd": "This month to date",
     "1m": "Last month",
     "3m": "3 months",
     "6m": "6 months",
@@ -66,10 +68,22 @@ def _add_months(year: int, month: int, delta: int) -> tuple[int, int]:
 
 
 def period_window(period: str, *, as_of: date | None = None) -> PeriodWindow:
-    """Return inclusive ISO date bounds for a historical lookback period."""
+    """Return inclusive ISO date bounds for a lookback or month-to-date period."""
     key = parse_period(period)
-    months = PERIOD_MONTHS[key]
     today = as_of or datetime.now(timezone.utc).date()
+    if key == "mtd":
+        date_from = f"{today.year:04d}-{today.month:02d}-01"
+        date_to = today.isoformat()
+        month_key = f"{today.year:04d}-{today.month:02d}"
+        return PeriodWindow(
+            period=key,
+            label=period_label(key),
+            months_requested=1,
+            date_from=date_from,
+            date_to=date_to,
+            month_keys=(month_key,),
+        )
+    months = PERIOD_MONTHS[key]
     end_year, end_month = _add_months(today.year, today.month, -1)
     start_year, start_month = _add_months(end_year, end_month, -(months - 1))
     date_from = f"{start_year:04d}-{start_month:02d}-01"

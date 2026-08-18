@@ -109,6 +109,60 @@ async def test_period_flow_scope_isolation(
 
 
 @pytest.mark.asyncio
+async def test_period_flow_mtd_uses_current_month_transactions(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services.finance import finance_period as period_mod
+
+    class _DT:
+        timezone = timezone
+
+        @staticmethod
+        def now(tz=None):
+            return datetime(2026, 8, 18, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(period_mod, "datetime", _DT)
+    async with SessionLocal() as db:
+        await db.execute(delete(FinanceTransactionRow))
+        db.add_all(
+            [
+                _txn(
+                    scope="personal",
+                    posted_on="2026-08-05",
+                    description="August pay",
+                    amount_pence=200_000,
+                    category="Income",
+                ),
+                _txn(
+                    scope="personal",
+                    posted_on="2026-08-10",
+                    description="Coffee",
+                    amount_pence=-5_000,
+                    category="Food",
+                ),
+                _txn(
+                    scope="personal",
+                    posted_on="2026-07-10",
+                    description="July only",
+                    amount_pence=300_000,
+                    category="Income",
+                ),
+            ]
+        )
+        await db.commit()
+
+    await login(client, "viewer", "viewer-pass")
+    body = (await client.get("/finance/period-flow?period=mtd&scope=personal")).json()
+    assert body["period"] == "mtd"
+    assert body["label"] == "This month to date"
+    assert body["date_from"] == "2026-08-01"
+    assert body["date_to"] == "2026-08-18"
+    assert body["income_gbp"] == 2000.0
+    assert body["spending_gbp"] == 50.0
+    assert body["transaction_count"] == 2
+
+
+@pytest.mark.asyncio
 async def test_overview_includes_separate_period_flows(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

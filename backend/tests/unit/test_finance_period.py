@@ -15,12 +15,23 @@ from app.services.finance.finance_period import (
 def test_parse_period_accepts_known_keys() -> None:
     assert parse_period("1m") == "1m"
     assert parse_period("3M") == "3m"
+    assert parse_period("mtd") == "mtd"
+    assert parse_period("MTD") == "mtd"
     assert parse_period(None) == "1m"
 
 
 def test_parse_period_rejects_unknown() -> None:
     with pytest.raises(ValueError, match="Invalid period"):
         parse_period("2m")
+
+
+def test_period_window_mtd_includes_current_month_through_today() -> None:
+    window = period_window("mtd", as_of=date(2026, 8, 18))
+    assert window.date_from == "2026-08-01"
+    assert window.date_to == "2026-08-18"
+    assert window.month_keys == ("2026-08",)
+    assert window.months_requested == 1
+    assert window.label == "This month to date"
 
 
 def test_parse_scope_accepts_personal_business_both() -> None:

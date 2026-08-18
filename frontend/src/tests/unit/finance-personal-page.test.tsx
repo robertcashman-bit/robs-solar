@@ -96,7 +96,12 @@ describe("PersonalFinancePage", () => {
     expect(screen.getByPlaceholderText("Income")).toHaveValue("");
     expect(screen.getByText("Personal house (your half)")).toBeInTheDocument();
     expect(screen.getByText("Your half of £700,000. Other half ignored.")).toBeInTheDocument();
-    expect(screen.getByText("Personal house mortgage (placeholder)")).toBeInTheDocument();
-    expect(screen.getByText("Placeholder £175,000 for now.")).toBeInTheDocument();
+    expect(screen.getByText("Of which house mortgage (placeholder)")).toBeInTheDocument();
+    expect(screen.getByText(/Placeholder £175,000 for now/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "This month to date" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "This month to date" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 });

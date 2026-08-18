@@ -52,7 +52,11 @@ export default function PersonalFinancePage() {
     household_bills_gbp: "",
     debt_repayments_gbp: "",
   });
-  const periodState = useFinancePeriod({ fixedScope: "personal" });
+  const periodState = useFinancePeriod({
+    fixedScope: "personal",
+    defaultPeriod: "mtd",
+    preferDefaultPeriod: true,
+  });
   const [periodFlow, setPeriodFlow] = useState<PeriodFlowSummary | null>(null);
 
   const load = useCallback(async () => {
@@ -168,10 +172,10 @@ export default function PersonalFinancePage() {
           hint="Your half of £700,000. Other half ignored."
         />
         <MetricTile
-          label="Personal house mortgage (placeholder)"
+          label="Of which house mortgage (placeholder)"
           value={mortgage > 0 ? mortgage : null}
           warning={mortgage > 0}
-          hint="Placeholder £175,000 for now."
+          hint="Placeholder £175,000 for now. Included in personal debts on Overview."
         />
         <MetricTile
           label="Personal director's loan receivable"

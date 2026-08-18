@@ -117,9 +117,9 @@ async def get_overview(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     live: bool = Query(default=False),
     fresh: bool = Query(default=False),
-    period: str | None = Query(default=None, pattern=r"^(1m|3m|6m|12m)$"),
-    personal_period: str | None = Query(default=None, pattern=r"^(1m|3m|6m|12m)$"),
-    business_period: str | None = Query(default=None, pattern=r"^(1m|3m|6m|12m)$"),
+    period: str | None = Query(default=None, pattern=r"^(mtd|1m|3m|6m|12m)$"),
+    personal_period: str | None = Query(default=None, pattern=r"^(mtd|1m|3m|6m|12m)$"),
+    business_period: str | None = Query(default=None, pattern=r"^(mtd|1m|3m|6m|12m)$"),
     scope: str | None = Query(default=None, pattern=r"^(personal|business|both)$"),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
@@ -680,7 +680,7 @@ async def dismiss_insight(
 @router.get("/reports", response_model=FinanceReportsResponse)
 async def get_reports(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
-    period: str = Query(default="1m", pattern=r"^(1m|3m|6m|12m)$"),
+    period: str = Query(default="1m", pattern=r"^(mtd|1m|3m|6m|12m)$"),
     scope: str | None = Query(default=None, pattern=r"^(personal|business|both)$"),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
@@ -1214,7 +1214,7 @@ async def detect_transfers(
 
 @router.get("/period-flow")
 async def period_flow(
-    period: str = Query(default="1m", pattern=r"^(1m|3m|6m|12m)$"),
+    period: str = Query(default="1m", pattern=r"^(mtd|1m|3m|6m|12m)$"),
     scope: FinanceScope = FinanceScope.PERSONAL,
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),

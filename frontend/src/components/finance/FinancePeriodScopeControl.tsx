@@ -75,17 +75,24 @@ export function FinancePeriodScopeControl({
   className,
   coverageNote,
 }: FinancePeriodScopeControlProps) {
+  const heading = dualPeriod
+    ? "Historical period"
+    : periodLabel(period);
+  const blurb = dualPeriod
+    ? "Look back over stored transactions. Point-in-time balances stay current."
+    : period === "mtd"
+      ? "Income and spending from stored transactions this calendar month so far. Cash, debts, and other balances stay current."
+      : "Look back over stored transactions. Point-in-time balances stay current.";
+
   return (
     <section
       className={className ?? "space-y-3"}
-      aria-label="Historical period"
+      aria-label={heading}
     >
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold">Historical period</h2>
-          <p className="mt-0.5 text-xs text-[var(--muted)]">
-            Look back over stored transactions. Point-in-time balances stay current.
-          </p>
+          <h2 className="text-sm font-semibold sm:text-base">{heading}</h2>
+          <p className="mt-0.5 text-xs text-[var(--muted)]">{blurb}</p>
         </div>
         {showScope && onScopeChange ? (
           <div className="flex gap-1 rounded-lg border border-[var(--border)] p-1">

@@ -15,12 +15,29 @@ describe("FinancePeriodScopeControl", () => {
         showScope={false}
       />,
     );
+    expect(screen.getByRole("heading", { name: "Last month" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "This month to date" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Last month" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
     await user.click(screen.getByRole("button", { name: "3 months" }));
     expect(onPeriodChange).toHaveBeenCalledWith("3m");
+  });
+
+  it("labels the section This month to date when mtd is selected", () => {
+    render(
+      <FinancePeriodScopeControl
+        period="mtd"
+        onPeriodChange={vi.fn()}
+        showScope={false}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "This month to date" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "This month to date" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("renders dual personal and business period rows", async () => {
