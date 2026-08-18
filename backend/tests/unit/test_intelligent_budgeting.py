@@ -79,6 +79,33 @@ def test_median_outliers_and_volatility() -> None:
     assert classify_volatility(1.5, recurring=False) == "EXCEPTIONAL"
 
 
+def test_exclude_outlier_transactions_drops_exceptional_amounts() -> None:
+    from types import SimpleNamespace
+
+    from app.services.finance.finance_history_stats import exclude_outlier_transactions
+
+    rows = [SimpleNamespace(amount_pence=-5000) for _ in range(9)]
+    rows.append(SimpleNamespace(amount_pence=-900000))
+    kept, outliers, meta = exclude_outlier_transactions(rows)
+    assert len(outliers) == 1
+    assert abs(outliers[0].amount_pence) == 900000
+    assert len(kept) == 9
+    assert meta["excluded_count"] == 1
+    assert meta["unsafe"] is False
+
+    clean = [SimpleNamespace(amount_pence=-5000) for _ in range(12)]
+    kept_clean, outliers_clean, meta_clean = exclude_outlier_transactions(clean)
+    assert outliers_clean == []
+    assert len(kept_clean) == 12
+    assert meta_clean["excluded_count"] == 0
+
+    tiny = [SimpleNamespace(amount_pence=-5000), SimpleNamespace(amount_pence=-900000)]
+    kept_tiny, outliers_tiny, meta_tiny = exclude_outlier_transactions(tiny)
+    assert outliers_tiny == []
+    assert len(kept_tiny) == 2
+    assert meta_tiny["excluded_count"] == 0
+
+
 def test_categoriser_tesla_and_transfer() -> None:
     hit = finance_categoriser_service.categorise_description(
         "TESLA FINANCE PLC", scope="business"
