@@ -25,6 +25,11 @@ export type FinanceTxn = {
   account_name: string;
 };
 
+export type FinanceCategoryOption = {
+  parent: string;
+  scope: string;
+};
+
 export const FINANCE_TXN_PAGE_SIZE = 50;
 const LAST_TXNS_KEY = FINANCE_LAST_TRANSACTIONS_KEY;
 
@@ -36,6 +41,7 @@ type CachedTxns = {
   dateTo: string;
   rows: FinanceTxn[];
   categories: string[];
+  categoryOptions?: FinanceCategoryOption[];
   hasMore: boolean;
 };
 
@@ -43,6 +49,7 @@ type FetchedTxns = {
   key: string;
   rows: FinanceTxn[];
   categories: string[];
+  categoryOptions: FinanceCategoryOption[];
   hasMore: boolean;
 };
 
@@ -82,6 +89,17 @@ function writeLastTxns(payload: CachedTxns): void {
   }
 }
 
+function normalizeCategoryOptions(
+  cats: Array<{ parent?: string; scope?: string }>,
+): FinanceCategoryOption[] {
+  return cats
+    .map((item) => ({
+      parent: String(item.parent || "").trim(),
+      scope: String(item.scope || "").trim(),
+    }))
+    .filter((item) => item.parent);
+}
+
 export function useFinanceTransactions(
   user: UserInfo | null | undefined,
   filter: string,
@@ -111,11 +129,15 @@ export function useFinanceTransactions(
           key: cacheKey,
           rows: cached.rows,
           categories: cached.categories,
+          categoryOptions:
+            cached.categoryOptions ??
+            cached.categories.map((parent) => ({ parent, scope: "" })),
           hasMore: cached.hasMore,
         }
       : null);
   const rows = active?.rows ?? [];
   const categories = active?.categories ?? [];
+  const categoryOptions = active?.categoryOptions ?? [];
   const hasMore = Boolean(active?.hasMore);
   const loading = Boolean(enabled && !active);
 
@@ -126,10 +148,13 @@ export function useFinanceTransactions(
       setError(null);
       try {
         const params = new URLSearchParams();
+        const catParams = new URLSearchParams();
         if (scopeKey === "personal" || scopeKey === "business") {
           params.set("scope", scopeKey);
+          catParams.set("scope", scopeKey);
         } else if (filter === "personal" || filter === "business") {
           params.set("scope", filter);
+          catParams.set("scope", filter);
         }
         if (
           filter !== "all" &&
@@ -145,15 +170,19 @@ export function useFinanceTransactions(
         const offset =
           append && fetched?.key === cacheKey ? fetched.rows.length : 0;
         params.set("offset", String(offset));
+        const categoriesPath = catParams.toString()
+          ? `/finance/categories?${catParams}`
+          : "/finance/categories";
         const [data, cats] = await Promise.all([
           apiClient.get<FinanceTxn[]>(`/finance/transactions?${params}`),
-          apiClient.get<Array<{ parent: string }>>("/finance/categories"),
+          apiClient.get<Array<{ parent: string; scope?: string }>>(categoriesPath),
         ]);
         if (!isFinanceCacheWriteCurrent(cacheEpoch)) {
           return;
         }
+        const nextCategoryOptions = normalizeCategoryOptions(cats);
         const nextCategories = [
-          ...new Set(cats.map((item) => item.parent).filter(Boolean)),
+          ...new Set(nextCategoryOptions.map((item) => item.parent)),
         ];
         const nextHasMore = data.length === FINANCE_TXN_PAGE_SIZE;
         const nextRows =
@@ -164,6 +193,7 @@ export function useFinanceTransactions(
           key: cacheKey,
           rows: nextRows,
           categories: nextCategories,
+          categoryOptions: nextCategoryOptions,
           hasMore: nextHasMore,
         });
         if (
@@ -182,6 +212,7 @@ export function useFinanceTransactions(
             dateTo: "",
             rows: data,
             categories: nextCategories,
+            categoryOptions: nextCategoryOptions,
             hasMore: nextHasMore,
           });
         }
@@ -192,7 +223,41 @@ export function useFinanceTransactions(
         );
       }
     },
-    [enabled, filter, scopeKey, trimmedQ, from, to, cacheKey, fetched],
+    [enabled, filter, scopeKey, trimmedQ, from, to, cacheKey, fetched, setError, setFetched],
+  );
+
+  const patchRow = useCallback(
+    (txnId: number, patch: Partial<FinanceTxn>) => {
+      setFetched((current) => {
+        if (!current || current.key !== cacheKey) return current;
+        return {
+          ...current,
+          rows: current.rows.map((row) =>
+            row.id === txnId ? { ...row, ...patch } : row,
+          ),
+          categories:
+            patch.category && !current.categories.includes(patch.category)
+              ? [...current.categories, patch.category]
+              : current.categories,
+          categoryOptions:
+            patch.category &&
+            !current.categoryOptions.some(
+              (item) =>
+                item.parent === patch.category &&
+                item.scope === String(patch.scope || ""),
+            )
+              ? [
+                  ...current.categoryOptions,
+                  {
+                    parent: patch.category,
+                    scope: String(patch.scope || ""),
+                  },
+                ]
+              : current.categoryOptions,
+        };
+      });
+    },
+    [cacheKey, setFetched],
   );
 
   useFinanceReload(() => load(false), enabled);
@@ -200,12 +265,14 @@ export function useFinanceTransactions(
   return {
     rows,
     categories,
+    categoryOptions,
     loading,
     refreshing,
     error,
     hasMore,
     loadMore: () => load(true),
     reload: () => load(false),
+    patchRow,
     setError,
   };
 }

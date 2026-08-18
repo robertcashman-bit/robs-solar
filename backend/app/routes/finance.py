@@ -1155,13 +1155,16 @@ async def bulk_categorise_transactions(
     category = str(body.get("category") or "").strip()
     if not category:
         raise HTTPException(status_code=400, detail="Category is required")
-    return await finance_ledger_service.bulk_categorise(
-        db,
-        txn_ids,
-        category=category,
-        create_rule=bool(body.get("create_rule")),
-        actor="user",
-    )
+    try:
+        return await finance_ledger_service.bulk_categorise(
+            db,
+            txn_ids,
+            category=category,
+            create_rule=bool(body.get("create_rule")),
+            actor="user",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/transactions/{txn_id}/category")
@@ -1175,14 +1178,20 @@ async def categorise_transaction(
     await enforce_write_rate_limit(request)
     from app.services.finance.finance_ledger_service import finance_ledger_service
 
-    result = await finance_ledger_service.set_category(
-        db,
-        txn_id,
-        category=str(body.get("category") or ""),
-        subcategory=str(body.get("subcategory") or ""),
-        create_rule=bool(body.get("create_rule")),
-        actor="user",
-    )
+    category = str(body.get("category") or "").strip()
+    if not category:
+        raise HTTPException(status_code=400, detail="Category is required")
+    try:
+        result = await finance_ledger_service.set_category(
+            db,
+            txn_id,
+            category=category,
+            subcategory=str(body.get("subcategory") or ""),
+            create_rule=bool(body.get("create_rule")),
+            actor="user",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return result
@@ -1548,10 +1557,16 @@ async def add_finance_category(
     await enforce_write_rate_limit(request)
     from app.services.finance.category_registry import add_custom_category
 
+    scope = str(body.get("scope") or "personal").strip().lower()
+    category = str(body.get("category") or "").strip()
+    if scope not in {"personal", "business"}:
+        raise HTTPException(status_code=400, detail="Scope must be personal or business")
+    if not category:
+        raise HTTPException(status_code=400, detail="Category is required")
     return await add_custom_category(
         db,
-        scope=str(body.get("scope") or "personal"),
-        category=str(body.get("category") or ""),
+        scope=scope,
+        category=category,
         subcategory=str(body.get("subcategory") or ""),
     )
 
