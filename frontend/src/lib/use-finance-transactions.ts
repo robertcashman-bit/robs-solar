@@ -223,7 +223,7 @@ export function useFinanceTransactions(
         );
       }
     },
-    [enabled, filter, scopeKey, trimmedQ, from, to, cacheKey, fetched],
+    [enabled, filter, scopeKey, trimmedQ, from, to, cacheKey, fetched, setError, setFetched],
   );
 
   const patchRow = useCallback(
@@ -257,7 +257,7 @@ export function useFinanceTransactions(
         };
       });
     },
-    [cacheKey],
+    [cacheKey, setFetched],
   );
 
   useFinanceReload(() => load(false), enabled);

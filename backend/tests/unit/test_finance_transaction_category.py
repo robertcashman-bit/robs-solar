@@ -77,7 +77,7 @@ async def test_set_category_persists_and_registers_scoped_name(
     assert updated.json()["scope"] == "personal"
     assert updated.json()["category_confidence"] == "HIGH"
 
-    refreshed = await client.get(f"/finance/transactions?scope=personal&q=tesco")
+    refreshed = await client.get("/finance/transactions?scope=personal&q=tesco")
     assert refreshed.json()[0]["category"] == "Rob Personal Snacks"
 
     personal_cats = await client.get("/finance/categories?scope=personal")
