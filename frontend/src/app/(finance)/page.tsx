@@ -14,11 +14,17 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import { canWrite } from "@/lib/permissions";
+import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { useFinanceOverview } from "@/lib/use-finance-overview";
+import { useFinancePeriod } from "@/lib/use-finance-period";
 
 export default function FinanceOverviewPage() {
   const { user, gated, redirecting } = useRequireAuth();
-  const { overview, loading, refreshing, error, refresh, reload } = useFinanceOverview(user);
+  const periodState = useFinancePeriod({ dualPeriod: true, defaultScope: "both" });
+  const { overview, loading, refreshing, error, refresh, reload } = useFinanceOverview(user, {
+    personalPeriod: periodState.personalPeriod,
+    businessPeriod: periodState.businessPeriod,
+  });
   const [status, setStatus] = useState<string | null>(null);
 
 
@@ -63,6 +69,24 @@ export default function FinanceOverviewPage() {
             quickfileSyncedAt={overview.quickfile_synced_at}
             lunchflowSyncedAt={overview.lunchflow_synced_at}
           />
+          <div className="mb-6">
+            <FinancePeriodScopeControl
+              dualPeriod
+              period={periodState.period}
+              personalPeriod={periodState.personalPeriod}
+              businessPeriod={periodState.businessPeriod}
+              onPeriodChange={periodState.setPeriod}
+              onPersonalPeriodChange={periodState.setPersonalPeriod}
+              onBusinessPeriodChange={periodState.setBusinessPeriod}
+              showScope={false}
+              coverageNote={
+                [overview.personal_period_flow?.coverage_note, overview.business_period_flow?.coverage_note]
+                  .filter(Boolean)
+                  .join(" ")
+                || null
+              }
+            />
+          </div>
           <WidgetErrorBoundary fallback="Unable to load dashboard figures.">
           <FinanceOverviewView
             overview={overview}

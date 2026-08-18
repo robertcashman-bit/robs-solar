@@ -112,6 +112,8 @@ class FinanceOverviewService:
         *,
         refresh_live: bool = False,
         fresh: bool = False,
+        personal_period: str = "1m",
+        business_period: str = "1m",
     ) -> FinanceOverviewResponse:
         started = time.perf_counter()
         if month is None:
@@ -120,6 +122,10 @@ class FinanceOverviewService:
         from app.services.finance.finance_overview_cache_service import (
             finance_overview_cache_service,
         )
+        from app.services.finance.finance_period import parse_period
+
+        personal_period = parse_period(personal_period)
+        business_period = parse_period(business_period)
 
         # Login / first paint must never wait on QuickFile or Lunch Flow.
         if refresh_live:
@@ -130,19 +136,31 @@ class FinanceOverviewService:
             await finance_live_refresh_service.ensure_fresh(db)
             await finance_overview_cache_service.clear(db, month)
 
+        overview = None
         if not refresh_live and not fresh:
             fingerprint = await finance_overview_cache_service.fingerprint(db)
             cached = await finance_overview_cache_service.read(
                 db, month, current_fingerprint=fingerprint
             )
             if cached is not None:
-                cached.compute_ms = round((time.perf_counter() - started) * 1000, 1)
-                return cached
+                overview = cached
 
-        overview = await self._compute_overview(db, month, refresh_live=refresh_live)
+        if overview is None:
+            overview = await self._compute_overview(db, month, refresh_live=refresh_live)
+            fingerprint = await finance_overview_cache_service.fingerprint(db)
+            # Cache base snapshot figures without period overlays so lookback
+            # choices never poison the shared month cache.
+            overview.personal_period_flow = None
+            overview.business_period_flow = None
+            await finance_overview_cache_service.write(db, month, overview, fingerprint)
+
+        await self._attach_period_flows(
+            db,
+            overview,
+            personal_period=personal_period,
+            business_period=business_period,
+        )
         overview.compute_ms = round((time.perf_counter() - started) * 1000, 1)
-        fingerprint = await finance_overview_cache_service.fingerprint(db)
-        await finance_overview_cache_service.write(db, month, overview, fingerprint)
         return overview
 
     async def _compute_overview(
@@ -400,6 +418,28 @@ class FinanceOverviewService:
                 except Exception:
                     pass
         return overview
+
+    async def _attach_period_flows(
+        self,
+        db: AsyncSession,
+        overview: FinanceOverviewResponse,
+        *,
+        personal_period: str,
+        business_period: str,
+    ) -> None:
+        from app.schemas.finance import PeriodFlowSummary
+        from app.services.finance.finance_ledger_service import finance_ledger_service
+
+        personal = await finance_ledger_service.period_flow_totals(
+            db, period=personal_period, scope="personal"
+        )
+        business = await finance_ledger_service.period_flow_totals(
+            db, period=business_period, scope="business"
+        )
+        personal.pop("month_keys", None)
+        business.pop("month_keys", None)
+        overview.personal_period_flow = PeriodFlowSummary(**personal)
+        overview.business_period_flow = PeriodFlowSummary(**business)
 
     async def _sync_stamp(self, db: AsyncSession, source: str) -> str | None:
         try:

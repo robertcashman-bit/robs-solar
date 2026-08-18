@@ -75,4 +75,24 @@ describe("useFinanceOverview", () => {
     expect(screen.getByText("cash:2500")).toBeInTheDocument();
     await waitFor(() => expect(get).toHaveBeenCalled());
   });
+
+  it("requests overview with personal and business period query params", async () => {
+    function PeriodProbe() {
+      const { overview } = useFinanceOverview(
+        { username: "rob", role: "admin" },
+        { personalPeriod: "3m", businessPeriod: "6m" },
+      );
+      return <p>{overview ? "loaded" : "waiting"}</p>;
+    }
+    get.mockResolvedValue({
+      ...stored,
+      personal_period_flow: null,
+      business_period_flow: null,
+    });
+    render(<PeriodProbe />);
+    await waitFor(() => expect(get).toHaveBeenCalled());
+    const url = String(get.mock.calls[0][0]);
+    expect(url).toContain("personal_period=3m");
+    expect(url).toContain("business_period=6m");
+  });
 });

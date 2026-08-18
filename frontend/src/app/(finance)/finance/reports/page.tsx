@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { AccountStatements } from "@/components/finance/AccountStatements";
+import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { ActiveBudgetCard } from "@/components/finance/ActiveBudgetCard";
 import { BudgetVsActualPanel } from "@/components/finance/BudgetVsActualPanel";
 import { FinanceHistoryCharts } from "@/components/finance/FinanceHistoryCharts";
@@ -27,6 +28,7 @@ import {
   type FinanceReports,
 } from "@/lib/finance-schemas";
 import { FINANCE_CHANGED_EVENT } from "@/lib/finance-events";
+import { useFinancePeriod } from "@/lib/use-finance-period";
 import { currentMonthKey, formatGbp, formatMonthLabel } from "@/lib/money";
 import { z } from "zod";
 
@@ -39,6 +41,7 @@ export default function ReportsPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [month, setMonth] = useState(currentMonthKey());
   const [reloadNonce, setReloadNonce] = useState(0);
+  const periodState = useFinancePeriod({ defaultScope: "both" });
 
 
   useEffect(() => {
@@ -47,7 +50,9 @@ export default function ReportsPage() {
       void (async () => {
         try {
           const [reportData, accountData, debtData] = await Promise.all([
-            apiClient.get<unknown>(`/finance/reports?month=${month}`),
+            apiClient.get<unknown>(
+              `/finance/reports?month=${month}&period=${periodState.period}&scope=${periodState.scope}`,
+            ),
             apiClient.get<unknown>("/finance/accounts"),
             apiClient.get<unknown>("/finance/liabilities"),
           ]);
@@ -71,7 +76,7 @@ export default function ReportsPage() {
       window.clearTimeout(timer);
       window.removeEventListener(FINANCE_CHANGED_EVENT, onChanged);
     };
-  }, [user, month, reloadNonce]);
+  }, [user, month, reloadNonce, periodState.period, periodState.scope]);
 
   function exportSnapshot(format: "csv" | "json") {
     if (!reports) return;
@@ -172,6 +177,23 @@ export default function ReportsPage() {
         </div>
       ) : null}
       {status ? <div className="mt-4"><SuccessBanner message={status} /></div> : null}
+      <div className="mt-6">
+        <FinancePeriodScopeControl
+          period={periodState.period}
+          onPeriodChange={periodState.setPeriod}
+          scope={periodState.scope}
+          onScopeChange={periodState.setScope}
+          coverageNote={
+            [
+              reports?.personal_period_flow?.coverage_note,
+              reports?.business_period_flow?.coverage_note,
+            ]
+              .filter(Boolean)
+              .join(" ")
+            || null
+          }
+        />
+      </div>
       {reports ? (
         <div className="mt-6 space-y-8">
           <ActiveBudgetCard budget={reports.active_budget} />

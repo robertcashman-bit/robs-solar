@@ -6,6 +6,8 @@ import type { FinanceReports } from "@/lib/finance-schemas";
 
 const emptyReports: FinanceReports = {
   month: "2026-08",
+  period: "1m",
+  scope: "both",
   personal_snapshot: null,
   business_snapshot: null,
   net_worth_gbp: 0,

@@ -257,6 +257,56 @@ class FinanceLedgerService:
             await db.commit()
         return {"updated": updated, "category": category[:64]}
 
+    async def period_flow_totals(
+        self,
+        db: AsyncSession,
+        *,
+        period: str,
+        scope: str,
+        as_of=None,
+    ) -> dict[str, Any]:
+        """Income and spending for a historical lookback window, scoped."""
+        from app.services.finance.finance_period import coverage_note, parse_scope, period_window
+
+        scope_key = parse_scope(scope, default="personal")
+        if scope_key == "both":
+            raise ValueError("period_flow_totals requires personal or business scope")
+        window = period_window(period, as_of=as_of)
+        stmt = select(FinanceTransactionRow).where(
+            _active_tx_filter(),
+            FinanceTransactionRow.scope == scope_key,
+            FinanceTransactionRow.posted_on >= window.date_from,
+            FinanceTransactionRow.posted_on <= window.date_to,
+            FinanceTransactionRow.is_transfer.is_(False),
+            FinanceTransactionRow.excluded_from_budget.is_(False),
+        )
+        rows = list((await db.scalars(stmt)).all())
+        income_pence = sum(row.amount_pence for row in rows if row.amount_pence > 0)
+        spend_pence = sum(-row.amount_pence for row in rows if row.amount_pence < 0)
+        months_present = {row.posted_on[:7] for row in rows if row.posted_on}
+        earliest = min((row.posted_on for row in rows), default=None)
+        partial, note = coverage_note(
+            window=window,
+            earliest_posted_on=earliest,
+            months_with_data=len(months_present),
+        )
+        return {
+            "period": window.period,
+            "scope": scope_key,
+            "label": window.label,
+            "date_from": window.date_from,
+            "date_to": window.date_to,
+            "months_requested": window.months_requested,
+            "months_with_data": len(months_present),
+            "month_keys": list(window.month_keys),
+            "transaction_count": len(rows),
+            "income_gbp": from_pence(income_pence),
+            "spending_gbp": from_pence(spend_pence),
+            "surplus_gbp": from_pence(income_pence - spend_pence),
+            "history_partial": partial,
+            "coverage_note": note,
+        }
+
     async def month_flow_totals(
         self,
         db: AsyncSession,
@@ -283,7 +333,85 @@ class FinanceLedgerService:
             "net_gbp": from_pence(income_pence - spend_pence),
         }
 
+    async def spending_by_category_range(
+        self,
+        db: AsyncSession,
+        *,
+        date_from: str,
+        date_to: str,
+        scope: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        category_expr = func.nullif(func.trim(FinanceTransactionRow.category), "")
+        labelled = func.coalesce(category_expr, "Uncategorised")
+        stmt = (
+            select(
+                labelled.label("category"),
+                func.sum(-FinanceTransactionRow.amount_pence).label("spend_pence"),
+                func.count(FinanceTransactionRow.id).label("txn_count"),
+            )
+            .where(
+                _active_tx_filter(),
+                FinanceTransactionRow.posted_on >= date_from,
+                FinanceTransactionRow.posted_on <= date_to,
+                FinanceTransactionRow.is_transfer.is_(False),
+                FinanceTransactionRow.excluded_from_budget.is_(False),
+                FinanceTransactionRow.amount_pence < 0,
+            )
+            .group_by(labelled)
+            .order_by(func.sum(-FinanceTransactionRow.amount_pence).desc())
+            .limit(max(1, min(limit, 50)))
+        )
+        if scope in {"personal", "business"}:
+            stmt = stmt.where(FinanceTransactionRow.scope == scope)
+        rows = (await db.execute(stmt)).all()
+        return [
+            {
+                "category": str(row.category or "Uncategorised"),
+                "amount_gbp": from_pence(int(row.spend_pence or 0)),
+                "transaction_count": int(row.txn_count or 0),
+            }
+            for row in rows
+        ]
+
+    async def largest_expenses_range(
+        self,
+        db: AsyncSession,
+        *,
+        date_from: str,
+        date_to: str,
+        scope: str | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        stmt = (
+            select(FinanceTransactionRow)
+            .where(
+                _active_tx_filter(),
+                FinanceTransactionRow.posted_on >= date_from,
+                FinanceTransactionRow.posted_on <= date_to,
+                FinanceTransactionRow.is_transfer.is_(False),
+                FinanceTransactionRow.amount_pence < 0,
+            )
+            .order_by(FinanceTransactionRow.amount_pence.asc())
+            .limit(max(1, min(limit, 25)))
+        )
+        if scope in {"personal", "business"}:
+            stmt = stmt.where(FinanceTransactionRow.scope == scope)
+        rows = list((await db.scalars(stmt)).all())
+        return [
+            {
+                "id": row.id,
+                "posted_on": row.posted_on,
+                "description": row.description,
+                "category": row.category or "Uncategorised",
+                "amount_gbp": from_pence(row.amount_pence),
+                "account_name": row.account_name,
+            }
+            for row in rows
+        ]
+
     async def spending_by_category(
+
         self,
         db: AsyncSession,
         month: str,

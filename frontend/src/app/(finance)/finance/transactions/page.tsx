@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
@@ -11,6 +12,8 @@ import { apiClient } from "@/lib/api-client";
 import { notifyFinanceChanged } from "@/lib/finance-events";
 import { formatGbp } from "@/lib/money";
 import { canWrite } from "@/lib/permissions";
+import { periodDateRange } from "@/lib/finance-period";
+import { useFinancePeriod } from "@/lib/use-finance-period";
 import { useFinanceTransactions } from "@/lib/use-finance-transactions";
 import { useRequireAuth } from "@/lib/use-require-auth";
 
@@ -35,6 +38,8 @@ export default function TransactionsPage() {
   const [category, setCategory] = useState("Food");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const periodState = useFinancePeriod({ defaultScope: "both" });
+  const range = periodDateRange(periodState.period);
   const {
     rows,
     categories,
@@ -45,7 +50,14 @@ export default function TransactionsPage() {
     loadMore,
     reload,
     setError,
-  } = useFinanceTransactions(user, filter, q);
+  } = useFinanceTransactions(
+    user,
+    filter,
+    q,
+    range.dateFrom,
+    range.dateTo,
+    periodState.scope,
+  );
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -61,11 +73,14 @@ export default function TransactionsPage() {
     setBusy(true);
     setError(null);
     try {
-      const result = await apiClient.post<{ updated: number }>("/finance/transactions/bulk-category", {
-        ids: [...selected],
-        category,
-        create_rule: createRule,
-      });
+      const result = await apiClient.post<{ updated: number }>(
+        "/finance/transactions/bulk-category",
+        {
+          ids: [...selected],
+          category,
+          create_rule: createRule,
+        },
+      );
       setMessage(`Updated ${result.updated} transaction(s)`);
       setSelected(new Set());
       notifyFinanceChanged();
@@ -92,6 +107,12 @@ export default function TransactionsPage() {
         {error ? <ErrorBanner message={error} /> : null}
         {message ? <SuccessBanner message={message} /> : null}
         <SavedFiguresBanner refreshing={refreshing} />
+        <FinancePeriodScopeControl
+          period={periodState.period}
+          onPeriodChange={periodState.setPeriod}
+          scope={periodState.scope}
+          onScopeChange={periodState.setScope}
+        />
         <div className="flex flex-wrap gap-2">
           {FILTERS.map((item) => (
             <button
@@ -153,7 +174,11 @@ export default function TransactionsPage() {
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void apiClient.post("/finance/transfers/detect").then(() => reload())}
+                onClick={() =>
+                  void apiClient
+                    .post("/finance/transfers/detect")
+                    .then(() => reload())
+                }
                 className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
               >
                 Detect transfers
@@ -188,7 +213,10 @@ export default function TransactionsPage() {
                 </tr>
               ) : (
                 rows.map((row) => (
-                  <tr key={row.id} className="border-b border-[var(--border)]/50">
+                  <tr
+                    key={row.id}
+                    className="border-b border-[var(--border)]/50"
+                  >
                     <td className="px-3 py-2">
                       <input
                         type="checkbox"
@@ -197,11 +225,15 @@ export default function TransactionsPage() {
                         disabled={!writable}
                       />
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">{row.posted_on}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {row.posted_on}
+                    </td>
                     <td className="px-3 py-2">
                       {row.description}
                       {row.is_transfer ? (
-                        <span className="ml-2 text-xs text-amber-700">transfer</span>
+                        <span className="ml-2 text-xs text-amber-700">
+                          transfer
+                        </span>
                       ) : null}
                     </td>
                     <td className="px-3 py-2">{formatGbp(row.amount_gbp)}</td>

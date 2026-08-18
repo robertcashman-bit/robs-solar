@@ -70,10 +70,10 @@ describe("FinanceOverviewView", () => {
     expect(screen.getByText("Combined net worth")).toBeInTheDocument();
     expect(screen.getByText("Personal net worth")).toBeInTheDocument();
     expect(screen.getByText("Company position")).toBeInTheDocument();
-    expect(screen.getByText("Pension")).toBeInTheDocument();
+    expect(screen.getByText("Pension (current)")).toBeInTheDocument();
     expect(screen.getByText("Property")).toBeInTheDocument();
     expect(screen.getByText("Director's loan")).toBeInTheDocument();
-    expect(screen.getByText("Cash available")).toBeInTheDocument();
+    expect(screen.getByText("Cash available (current)")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Active Budget" })).toBeInTheDocument();
     expect(screen.getByText(/Balanced · balanced/i)).toBeInTheDocument();
     expect(screen.getByText("Planned expenditure")).toBeInTheDocument();
@@ -167,6 +167,49 @@ describe("FinanceOverviewView", () => {
     expect(
       screen.getAllByText(/Budget plan estimate — not live income or spending/i).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("uses historical period flow tiles when ledger totals are present", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          personal_period_flow: {
+            period: "1m",
+            scope: "personal",
+            label: "Last month",
+            date_from: "2026-07-01",
+            date_to: "2026-07-31",
+            months_requested: 1,
+            months_with_data: 1,
+            transaction_count: 4,
+            income_gbp: 3100,
+            spending_gbp: 900,
+            surplus_gbp: 2200,
+            history_partial: false,
+            coverage_note: "",
+          },
+          business_period_flow: {
+            period: "3m",
+            scope: "business",
+            label: "3 months",
+            date_from: "2026-05-01",
+            date_to: "2026-07-31",
+            months_requested: 3,
+            months_with_data: 2,
+            transaction_count: 2,
+            income_gbp: 8000,
+            spending_gbp: 2500,
+            surplus_gbp: 5500,
+            history_partial: true,
+            coverage_note: "Showing available history from 2026-06-01 (2 of 3 months).",
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText("Income (Last month)")).toBeInTheDocument();
+    expect(screen.getByText("Turnover (3 months)")).toBeInTheDocument();
+    expect(screen.getAllByText(/Showing available history from 2026-06-01/).length).toBeGreaterThan(0);
   });
 
   it("labels open-banking monthly flow as live sync", () => {

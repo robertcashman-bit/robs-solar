@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { z } from "zod";
 
 import { AccountManager } from "@/components/finance/AccountManager";
+import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { MetricTile } from "@/components/finance/MetricTile";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
@@ -14,11 +15,14 @@ import { apiClient } from "@/lib/api-client";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import {
   financeAccountSchema,
+  periodFlowSummarySchema,
   personalFinanceSnapshotSchema,
   type FinanceAccount,
+  type PeriodFlowSummary,
   type PersonalFinanceSnapshot,
 } from "@/lib/finance-schemas";
 import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
+import { useFinancePeriod } from "@/lib/use-finance-period";
 import { useFinanceReload } from "@/lib/use-finance-reload";
 import { currentMonthKey, isCurrentMonthSnapshot, parseGbp } from "@/lib/money";
 import { notifyFinanceChanged } from "@/lib/finance-events";
@@ -48,13 +52,20 @@ export default function PersonalFinancePage() {
     household_bills_gbp: "",
     debt_repayments_gbp: "",
   });
+  const periodState = useFinancePeriod({ fixedScope: "personal" });
+  const [periodFlow, setPeriodFlow] = useState<PeriodFlowSummary | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [accts, snaps] = await Promise.all([
+      const [accts, snaps, flow] = await Promise.all([
         apiClient.get<unknown>("/finance/accounts?scope=personal"),
         apiClient.get<unknown>("/finance/snapshots/personal"),
+        apiClient.get<unknown>(
+          `/finance/period-flow?period=${periodState.period}&scope=personal`,
+        ),
       ]);
+      const parsedFlow = periodFlowSummarySchema.safeParse(flow);
+      setPeriodFlow(parsedFlow.success ? parsedFlow.data : null);
       setAccounts(z.array(financeAccountSchema).parse(accts));
       const parsed = z.array(personalFinanceSnapshotSchema).parse(snaps);
       const current = parsed.find((item) => isCurrentMonthSnapshot(item.snapshot_date)) ?? null;
@@ -71,7 +82,7 @@ export default function PersonalFinancePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load personal finance");
     }
-  }, []);
+  }, [periodState.period]);
 
 
   useFinanceReload(load, Boolean(user));
@@ -128,10 +139,18 @@ export default function PersonalFinancePage() {
       <div className="mt-4">
         <SavedFiguresBanner refreshing={refreshing} />
       </div>
+      <div className="mt-6">
+        <FinancePeriodScopeControl
+          period={periodState.period}
+          onPeriodChange={periodState.setPeriod}
+          showScope={false}
+          coverageNote={periodFlow?.coverage_note || null}
+        />
+      </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <MetricTile label="Personal cash" value={cash} hint="Positive current accounts only" />
+        <MetricTile label="Personal cash (current)" value={cash} hint="Positive current accounts only" />
         <MetricTile
-          label="Pension"
+          label="Pension (current)"
           value={pension}
           positive
           hint={pension > 0 ? "Included in net worth" : "Add the pot here so net worth includes it"}
@@ -143,11 +162,44 @@ export default function PersonalFinancePage() {
           hint="Director's loan"
         />
         <MetricTile label="Personal assets" value={assets} hint="Pension, property, other" />
-        <MetricTile label="Monthly income" value={snapshot?.monthly_income_gbp} />
         <MetricTile
-          label="Monthly surplus"
-          value={snapshot?.surplus_deficit_gbp}
-          positive={(snapshot?.surplus_deficit_gbp ?? 0) >= 0}
+          label={
+            periodFlow && periodFlow.transaction_count > 0
+              ? `Income (${periodFlow.label})`
+              : "Monthly income"
+          }
+          value={
+            periodFlow && periodFlow.transaction_count > 0
+              ? periodFlow.income_gbp
+              : snapshot?.monthly_income_gbp
+          }
+          hint={
+            periodFlow && periodFlow.transaction_count > 0
+              ? periodFlow.coverage_note || "Stored transactions"
+              : "Snapshot"
+          }
+        />
+        <MetricTile
+          label={
+            periodFlow && periodFlow.transaction_count > 0
+              ? `Surplus (${periodFlow.label})`
+              : "Monthly surplus"
+          }
+          value={
+            periodFlow && periodFlow.transaction_count > 0
+              ? periodFlow.surplus_gbp
+              : snapshot?.surplus_deficit_gbp
+          }
+          positive={
+            (periodFlow && periodFlow.transaction_count > 0
+              ? periodFlow.surplus_gbp
+              : snapshot?.surplus_deficit_gbp ?? 0) >= 0
+          }
+          hint={
+            periodFlow && periodFlow.transaction_count > 0
+              ? periodFlow.coverage_note || "Stored transactions"
+              : "Snapshot"
+          }
         />
       </div>
       <p className="mt-6 text-sm text-[var(--muted)]">

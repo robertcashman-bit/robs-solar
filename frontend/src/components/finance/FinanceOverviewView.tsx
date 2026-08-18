@@ -15,6 +15,10 @@ type FinanceOverviewViewProps = {
   onDismissInsight?: (id: number) => void;
 };
 
+function flowLabel(prefix: string, periodLabel?: string | null) {
+  return periodLabel ? `${prefix} (${periodLabel})` : prefix;
+}
+
 export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverviewViewProps) {
   const [scopeView, setScopeView] = useState<"combined" | "personal" | "business">("combined");
   const [showSafeCalc, setShowSafeCalc] = useState(false);
@@ -36,6 +40,31 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
   const personalSafe = safe.personal;
   const businessSafe = safe.business;
   const combinedSafe = safe.combined;
+  const personalFlow = overview.personal_period_flow;
+  const businessFlow = overview.business_period_flow;
+  const useLedgerPeriod = Boolean(personalFlow && personalFlow.transaction_count > 0);
+  const periodIncome = useLedgerPeriod ? personalFlow!.income_gbp : overview.monthly_income_gbp;
+  const periodSpending = useLedgerPeriod ? personalFlow!.spending_gbp : overview.monthly_spending_gbp;
+  const periodSurplus = useLedgerPeriod ? personalFlow!.surplus_gbp : overview.monthly_surplus_gbp;
+  const periodFlowHint = useLedgerPeriod
+    ? (personalFlow!.coverage_note || `${personalFlow!.label} · stored transactions`)
+    : monthlyFlowHint(overview.monthly_flow_source);
+  const hasPeriodFlow = useLedgerPeriod || overview.monthly_flow_source !== "none";
+  const incomeLabel = useLedgerPeriod
+    ? flowLabel("Income", personalFlow!.label)
+    : overview.monthly_flow_source === "budget"
+      ? "Planned income"
+      : "Monthly income";
+  const spendingLabel = useLedgerPeriod
+    ? flowLabel("Spending", personalFlow!.label)
+    : overview.monthly_flow_source === "budget"
+      ? "Planned spending"
+      : "Monthly spending";
+  const surplusLabel = useLedgerPeriod
+    ? flowLabel("Surplus", personalFlow!.label)
+    : overview.monthly_flow_source === "budget"
+      ? "Planned surplus"
+      : "Monthly surplus";
 
   return (
     <div className="space-y-8">
@@ -126,9 +155,10 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
       <section>
         <h2 className="solar-section-title">Balances</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Combined net worth is {PERSONAL_NAME}&apos;s personal assets plus {COMPANY_NAME},
-          minus external debt. Director&apos;s loan is shown separately and left out of the
-          combined total so the same IOU is not counted twice.
+          Current snapshot — not filtered by the historical period above. Combined net worth is{" "}
+          {PERSONAL_NAME}&apos;s personal assets plus {COMPANY_NAME}, minus external debt.
+          Director&apos;s loan is shown separately and left out of the combined total so the same
+          IOU is not counted twice.
         </p>
         {noCash ? (
           <p className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--muted)]">
@@ -167,20 +197,20 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
             hint={`${formatGbp(overview.total_personal_debt_gbp)} personal · ${formatGbp(overview.total_business_debt_gbp)} company`}
           />
           <MetricTile
-            label="Monthly cashflow"
-            value={
-              overview.monthly_flow_source === "none" ? null : overview.monthly_surplus_gbp
-            }
-            positive={overview.monthly_surplus_gbp >= 0}
-            warning={overview.monthly_surplus_gbp < 0}
+            label={useLedgerPeriod ? flowLabel("Cashflow", personalFlow!.label) : "Monthly cashflow"}
+            value={hasPeriodFlow ? periodSurplus : null}
+            positive={periodSurplus >= 0}
+            warning={periodSurplus < 0}
             hint={
-              overview.monthly_flow_source === "budget"
-                ? "Budget plan estimate — not live cashflow"
-                : monthlyFlowHint(overview.monthly_flow_source)
+              useLedgerPeriod
+                ? periodFlowHint
+                : overview.monthly_flow_source === "budget"
+                  ? "Budget plan estimate — not live cashflow"
+                  : monthlyFlowHint(overview.monthly_flow_source)
             }
           />
           <MetricTile
-            label="Cash available"
+            label="Cash available (current)"
             value={cashAvailable}
             warning={cashAvailable < 0}
             hint={`${formatGbp(overview.personal_bank_balance_gbp)} personal · ${formatGbp(overview.business_bank_balance_gbp)} company`}
@@ -242,7 +272,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               warning={overview.cash_after_bills_gbp < 500}
             />
             <MetricTile
-              label="Pension"
+              label="Pension (current)"
               value={overview.pension_configured === false ? null : overview.pension_value_gbp}
               positive
               hint={overview.pension_configured === false ? "Add a pension account to track this" : undefined}
@@ -327,7 +357,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               }
             />
             <MetricTile
-              label="VAT reserve"
+              label="VAT reserve (current)"
               value={overview.vat_reserve_gbp}
               warning={overview.vat_reserve_warning}
               hint={overview.vat_reserve_warning ? "VAT reserve appears low" : "Tax provision (not yet paid)"}
@@ -389,48 +419,83 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
       ) : null}
 
       <section>
-        <h2 className="solar-section-title">Monthly flow</h2>
+        <h2 className="solar-section-title">
+          {useLedgerPeriod ? `Personal flow · ${personalFlow!.label}` : "Monthly flow"}
+        </h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Personal household cashflow. {monthlyFlowHint(overview.monthly_flow_source)}. Company
-          turnover lives on the {COMPANY_NAME} page.
+          {useLedgerPeriod
+            ? `Personal household cashflow for ${personalFlow!.label} (${personalFlow!.date_from} to ${personalFlow!.date_to}). ${periodFlowHint}.`
+            : `Personal household cashflow. ${periodFlowHint}.`}{" "}
+          Company turnover for the business period is below when ledger history exists.
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MetricTile
-            label={
-              overview.monthly_flow_source === "budget" ? "Planned income" : "Monthly income"
-            }
-            value={overview.monthly_flow_source === "none" ? null : overview.monthly_income_gbp}
+            label={incomeLabel}
+            value={hasPeriodFlow ? periodIncome : null}
             positive
-            hint={monthlyFlowHint(overview.monthly_flow_source)}
+            hint={periodFlowHint}
           />
           <MetricTile
-            label={
-              overview.monthly_flow_source === "budget" ? "Planned spending" : "Monthly spending"
-            }
-            value={overview.monthly_flow_source === "none" ? null : overview.monthly_spending_gbp}
-            hint={monthlyFlowHint(overview.monthly_flow_source)}
+            label={spendingLabel}
+            value={hasPeriodFlow ? periodSpending : null}
+            hint={periodFlowHint}
           />
           <MetricTile
             label="Household bills"
-            value={overview.monthly_flow_source === "none" ? null : overview.household_bills_gbp}
+            value={
+              useLedgerPeriod && personalFlow!.months_requested > 1
+                ? null
+                : overview.monthly_flow_source === "none"
+                  ? null
+                  : overview.household_bills_gbp
+            }
             hint={
-              overview.monthly_flow_source === "budget"
-                ? "Not set on the budget plan — use a snapshot for bills"
-                : monthlyFlowHint(overview.monthly_flow_source)
+              useLedgerPeriod && personalFlow!.months_requested > 1
+                ? "Bills are shown for a single-month window"
+                : overview.monthly_flow_source === "budget"
+                  ? "Not set on the budget plan — use a snapshot for bills"
+                  : periodFlowHint
             }
           />
           <MetricTile
-            label={
-              overview.monthly_flow_source === "budget" ? "Planned surplus" : "Monthly surplus"
-            }
-            value={
-              overview.monthly_flow_source === "none" ? null : overview.monthly_surplus_gbp
-            }
-            positive={overview.monthly_surplus_gbp >= 0}
-            warning={overview.monthly_surplus_gbp < 0}
-            hint={monthlyFlowHint(overview.monthly_flow_source)}
+            label={surplusLabel}
+            value={hasPeriodFlow ? periodSurplus : null}
+            positive={periodSurplus >= 0}
+            warning={periodSurplus < 0}
+            hint={periodFlowHint}
           />
         </div>
+        {businessFlow ? (
+          <div className="mt-6">
+            <h3 className="text-sm font-semibold">
+              {COMPANY_SHORT} P&amp;L · {businessFlow.label}
+            </h3>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              {businessFlow.coverage_note
+                || `${businessFlow.date_from} to ${businessFlow.date_to} · stored transactions`}
+            </p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <MetricTile
+                label={flowLabel("Turnover", businessFlow.label)}
+                value={businessFlow.transaction_count > 0 ? businessFlow.income_gbp : null}
+                positive
+                hint={businessFlow.coverage_note || "Stored business credits"}
+              />
+              <MetricTile
+                label={flowLabel("Expenses", businessFlow.label)}
+                value={businessFlow.transaction_count > 0 ? businessFlow.spending_gbp : null}
+                hint={businessFlow.coverage_note || "Stored business debits"}
+              />
+              <MetricTile
+                label={flowLabel("Surplus", businessFlow.label)}
+                value={businessFlow.transaction_count > 0 ? businessFlow.surplus_gbp : null}
+                positive={businessFlow.surplus_gbp >= 0}
+                warning={businessFlow.surplus_gbp < 0}
+                hint={businessFlow.coverage_note || "Income minus spending"}
+              />
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section>

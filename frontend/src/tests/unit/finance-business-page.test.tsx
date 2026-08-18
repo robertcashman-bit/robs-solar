@@ -36,6 +36,23 @@ vi.mock("@/lib/api-client", () => ({
           },
         ];
       }
+      if (path.startsWith("/finance/period-flow")) {
+        return {
+          period: "1m",
+          scope: "business",
+          label: "Last month",
+          date_from: "2026-07-01",
+          date_to: "2026-07-31",
+          months_requested: 1,
+          months_with_data: 0,
+          transaction_count: 0,
+          income_gbp: 0,
+          spending_gbp: 0,
+          surplus_gbp: 0,
+          history_partial: true,
+          coverage_note: "No stored transactions in last month.",
+        };
+      }
       if (path === "/finance/snapshots/business") {
         return [
           {
@@ -77,7 +94,7 @@ describe("BusinessFinancePage", () => {
     render(<BusinessFinancePage />);
     expect(await screen.findByText("Vat Account")).toBeInTheDocument();
     // VAT pot account wins over stale snapshot liability (2956.27).
-    expect(tile("VAT reserve").getByText("£0.47")).toBeInTheDocument();
+    expect(tile("VAT reserve (current)").getByText("£0.47")).toBeInTheDocument();
     expect(tile("Turnover (month)").getByText("—")).toBeInTheDocument();
     expect(screen.queryByText("£9,999.00")).not.toBeInTheDocument();
     expect(screen.queryByText("£2,956.27")).not.toBeInTheDocument();
