@@ -23,8 +23,15 @@ from app.services.finance.category_registry import apply_confirmed_rules, list_c
 from app.services.finance.finance_budget_plan_service import finance_budget_plan_service
 from app.services.finance.money import from_pence, quantize_gbp
 
-WINDOW_WEIGHTS = {3: 0.50, 6: 0.30, 12: 0.20}
-MIN_MONTHS = {3: 2, 6: 3, 12: 6}
+# Primary blend favours multi-year history when enough months exist.
+WINDOW_WEIGHTS = {36: 0.40, 12: 0.35, 6: 0.25}
+# Short personal feeds (e.g. ~3 months of Lunch Flow) still produce a plan.
+SHORT_FALLBACK_WEIGHTS = {3: 1.0}
+MIN_MONTHS = {36: 12, 12: 6, 6: 3, 3: 2}
+# How far back the earliest txn must reach for a window to qualify.
+# 36m accepts 24m+ of coverage so multi-year QuickFile imports are used even
+# when the full 36 calendar months are not yet filled.
+COVERAGE_MONTHS = {36: 24, 12: 12, 6: 6, 3: 3}
 
 
 def _month_start(value: date) -> date:
@@ -55,8 +62,15 @@ def _confidence(*, month_count: int, txn_count: int, cv: float | None, recurring
         return "Insufficient data"
     if recurring and month_count >= 3 and (cv is None or cv <= 0.25):
         return "High"
+    # Multi-year coverage can still be High/Medium with slightly looser CV.
+    if month_count >= 24 and txn_count >= 12 and (cv is None or cv <= 0.55):
+        return "High"
+    if month_count >= 12 and txn_count >= 6 and (cv is None or cv <= 0.50):
+        return "High"
     if month_count >= 6 and txn_count >= 6 and (cv is None or cv <= 0.45):
         return "High"
+    if month_count >= 12 and txn_count >= 6 and (cv is None or cv <= 0.80):
+        return "Medium"
     if month_count >= 3 and txn_count >= 3 and (cv is None or cv <= 0.75):
         return "Medium"
     return "Low"
@@ -128,22 +142,33 @@ class HistoryBudgetService:
             "lines": lines,
             "insufficient": not lines and income_line["insufficient_data"],
             "explanation": (
-                "Recommendations use stored transactions only. Uncategorised rows "
-                "are excluded until you assign a category or confirm a rule. "
-                "Missing windows are dropped and remaining weights are renormalized."
+                "Recommendations use stored transactions only (up to 36 months). "
+                "Uncategorised rows are excluded until you assign a category or "
+                "confirm a rule. Missing windows are dropped and remaining weights "
+                "are renormalized."
             ),
         }
 
-    def _window_averages(
-        self, group: list[FinanceTransactionRow], today: date, *, income: bool
-    ) -> dict[str, Any]:
-        dates = [row.posted_on for row in group]
-        earliest = min(dates) if dates else ""
+    def _collect_windows(
+        self,
+        group: list[FinanceTransactionRow],
+        today: date,
+        *,
+        income: bool,
+        weights: dict[int, float],
+        earliest: str,
+    ) -> dict[int, dict[str, Any]]:
         windows: dict[int, dict[str, Any]] = {}
-        for months, weight in WINDOW_WEIGHTS.items():
+        end = today.isoformat()
+        for months, weight in weights.items():
             start = _add_months(_month_start(today), -(months - 1)).isoformat()
-            end = today.isoformat()
-            if earliest and earliest > start:
+            coverage = COVERAGE_MONTHS.get(months, months)
+            coverage_start = _add_months(
+                _month_start(today), -(coverage - 1)
+            ).isoformat()
+            # Compare year-months so a mid-month earliest txn in the coverage
+            # month still qualifies (day-of-month must not drop the window).
+            if earliest and earliest[:7] > coverage_start[:7]:
                 continue
             in_window = [row for row in group if start <= row.posted_on <= end]
             month_keys = _distinct_months([row.posted_on for row in in_window], start, end)
@@ -161,6 +186,24 @@ class HistoryBudgetService:
                 "txn_count": len(in_window),
                 "month_count": len(month_keys),
             }
+        return windows
+
+    def _window_averages(
+        self, group: list[FinanceTransactionRow], today: date, *, income: bool
+    ) -> dict[str, Any]:
+        dates = [row.posted_on for row in group]
+        earliest = min(dates) if dates else ""
+        windows = self._collect_windows(
+            group, today, income=income, weights=WINDOW_WEIGHTS, earliest=earliest
+        )
+        if not windows:
+            windows = self._collect_windows(
+                group,
+                today,
+                income=income,
+                weights=SHORT_FALLBACK_WEIGHTS,
+                earliest=earliest,
+            )
         if not windows:
             return {"available": {}, "recommended_gbp": None, "weights": {}, "formula": ""}
         total_weight = sum(item["weight"] for item in windows.values())

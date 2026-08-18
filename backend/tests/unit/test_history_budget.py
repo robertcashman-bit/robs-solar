@@ -1,6 +1,9 @@
 """History budget math: windows, renormalize, annual provision, insufficient data."""
 
-from datetime import datetime, timezone
+from __future__ import annotations
+
+import json
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -8,7 +11,11 @@ from app.db.models import FinanceTransactionRow
 from app.db.session import SessionLocal
 from app.services.finance.finance_health_service import finance_health_service
 from app.services.finance.finance_sinking_fund_service import _contribution
-from app.services.finance.history_budget_service import history_budget_service
+from app.services.finance.history_budget_service import (
+    _add_months,
+    _month_start,
+    history_budget_service,
+)
 
 
 def _tx(**kwargs) -> FinanceTransactionRow:
@@ -25,12 +32,17 @@ def _tx(**kwargs) -> FinanceTransactionRow:
         category=kwargs.get("category", "Food"),
         source="manual",
         fingerprint=kwargs.get("fingerprint", kwargs["posted_on"] + str(kwargs["amount_pence"])),
-        is_transfer=False,
+        is_transfer=kwargs.get("is_transfer", False),
         is_deleted=False,
         currency="GBP",
         created_at=now,
         updated_at=now,
     )
+
+
+def _month_iso(today: date, months_ago: int, day: int = 15) -> str:
+    start = _add_months(_month_start(today), -months_ago)
+    return start.replace(day=min(day, 28)).isoformat()
 
 
 @pytest.mark.asyncio
@@ -74,6 +86,163 @@ async def test_weighted_windows_and_insufficient() -> None:
         empty = await history_budget_service.preview(db, "business")
         assert empty["lines"] == []
         assert empty["income"]["insufficient_data"] is True
+
+
+@pytest.mark.asyncio
+async def test_36_month_window_used_from_stored_totals_only() -> None:
+    """Full 36 months of steady spend → 36m window participates; amount from txs only."""
+    today = datetime.now(timezone.utc).date()
+    async with SessionLocal() as db:
+        for months_ago in range(36):
+            db.add(
+                _tx(
+                    posted_on=_month_iso(today, months_ago),
+                    amount_pence=-3000,
+                    fingerprint=f"food-36-{months_ago}",
+                    category="Food",
+                )
+            )
+            db.add(
+                _tx(
+                    posted_on=_month_iso(today, months_ago, day=5),
+                    amount_pence=200000,
+                    fingerprint=f"income-36-{months_ago}",
+                    category="Salary",
+                    description="PAY",
+                )
+            )
+        await db.commit()
+        preview = await history_budget_service.preview(db, "personal")
+        food = next(item for item in preview["lines"] if item["category"] == "Food")
+        assert food["insufficient_data"] is False
+        assert food["amount_gbp"] == 30.0
+        basis = json.loads(food["basis_json"])
+        assert "36" in basis.get("windows", {}) or "36" in basis.get("weights", {})
+        assert food["confidence"] in {"High", "Medium"}
+        # Income also blends stored totals only (£2000/mo).
+        assert preview["income"]["insufficient_data"] is False
+        assert preview["income"]["amount_gbp"] == 2000.0
+        income_basis = json.loads(preview["income"]["basis_json"])
+        assert "36" in income_basis.get("windows", {}) or "36" in income_basis.get(
+            "weights", {}
+        )
+        assert "36" in preview["explanation"]
+
+
+@pytest.mark.asyncio
+async def test_24_month_history_still_enables_36_month_window() -> None:
+    """24 months of QuickFile-style history qualifies the 36m window (coverage=24)."""
+    today = datetime.now(timezone.utc).date()
+    async with SessionLocal() as db:
+        for months_ago in range(24):
+            db.add(
+                _tx(
+                    posted_on=_month_iso(today, months_ago),
+                    amount_pence=-5000,
+                    fingerprint=f"food-24-{months_ago}",
+                    category="Food",
+                )
+            )
+        await db.commit()
+        preview = await history_budget_service.preview(db, "personal")
+        food = next(item for item in preview["lines"] if item["category"] == "Food")
+        basis = json.loads(food["basis_json"])
+        assert "36" in basis.get("windows", {})
+        # Amount is derived only from the £50/mo stored rows (no invented figures).
+        assert food["amount_gbp"] > 0
+        assert food["amount_gbp"] <= 50.0
+        assert food["confidence"] in {"High", "Medium"}
+
+
+@pytest.mark.asyncio
+async def test_short_history_falls_back_to_3_month_window() -> None:
+    """Only 3 months (Lunch Flow style) → 36/12 dropped; 3m still returns lines."""
+    today = datetime.now(timezone.utc).date()
+    async with SessionLocal() as db:
+        for months_ago in range(3):
+            db.add(
+                _tx(
+                    posted_on=_month_iso(today, months_ago),
+                    amount_pence=-4500,
+                    fingerprint=f"food-3-{months_ago}",
+                    category="Food",
+                )
+            )
+            db.add(
+                _tx(
+                    posted_on=_month_iso(today, months_ago, day=3),
+                    amount_pence=150000,
+                    fingerprint=f"pay-3-{months_ago}",
+                    category="Salary",
+                    description="PAY",
+                )
+            )
+        await db.commit()
+        preview = await history_budget_service.preview(db, "personal")
+        assert preview["lines"], "short history must still produce expense lines"
+        food = next(item for item in preview["lines"] if item["category"] == "Food")
+        assert food["amount_gbp"] == 45.0
+        basis = json.loads(food["basis_json"])
+        weights = {int(key): value for key, value in basis.get("weights", {}).items()}
+        assert 36 not in weights
+        assert 12 not in weights
+        assert 3 in weights
+        assert preview["income"]["amount_gbp"] == 1500.0
+        income_basis = json.loads(preview["income"]["basis_json"])
+        income_weights = {
+            int(key): value for key, value in income_basis.get("weights", {}).items()
+        }
+        assert 36 not in income_weights
+        assert 12 not in income_weights
+        assert 3 in income_weights
+
+
+@pytest.mark.asyncio
+async def test_transfers_and_uncategorised_excluded_from_history_budget() -> None:
+    today = datetime.now(timezone.utc).date()
+    async with SessionLocal() as db:
+        for months_ago in range(6):
+            db.add(
+                _tx(
+                    posted_on=_month_iso(today, months_ago),
+                    amount_pence=-2000,
+                    fingerprint=f"food-ex-{months_ago}",
+                    category="Food",
+                )
+            )
+        # Transfer and blank category must not create lines or inflate averages.
+        db.add(
+            _tx(
+                posted_on=_month_iso(today, 0),
+                amount_pence=-99999,
+                fingerprint="xfer",
+                category="Transfers",
+                is_transfer=True,
+                description="INTERNAL TRANSFER",
+            )
+        )
+        db.add(
+            _tx(
+                posted_on=_month_iso(today, 0),
+                amount_pence=-88888,
+                fingerprint="uncat-big",
+                category="",
+                description="UNKNOWN MERCHANT",
+            )
+        )
+        await db.commit()
+        preview = await history_budget_service.preview(db, "personal")
+        assert preview["uncategorised_count"] == 1
+        categories = {item["category"] for item in preview["lines"]}
+        assert "Food" in categories
+        assert "Transfers" not in categories
+        assert "" not in categories
+        food = next(item for item in preview["lines"] if item["category"] == "Food")
+        # £20/mo only — transfer and uncategorised amounts must not appear.
+        assert food["amount_gbp"] == 20.0
+        assert 999.99 not in (food["amount_gbp"],)
+        assert "999.99" not in food["basis_json"]
+        assert "888.88" not in food["basis_json"]
 
 
 @pytest.mark.asyncio
