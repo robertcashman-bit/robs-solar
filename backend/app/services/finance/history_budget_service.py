@@ -143,6 +143,7 @@ class HistoryBudgetService:
             "insufficient": not lines and income_line["insufficient_data"],
             "explanation": (
                 "Recommendations use stored transactions only (up to 36 months). "
+                "Exceptionally large one-off txs are excluded before averaging. "
                 "Uncategorised rows are excluded until you assign a category or "
                 "confirm a rule. Missing windows are dropped and remaining weights "
                 "are renormalized."
@@ -231,33 +232,41 @@ class HistoryBudgetService:
         scope: str,
         kind: str,
     ) -> dict[str, Any]:
-        annual = _annual_provision(
-            [row.posted_on for row in group],
-            [row.amount_pence for row in group],
+        from app.services.finance.finance_history_stats import (
+            classify_volatility,
+            exclude_outlier_transactions,
+            median_gbp,
+            remove_outliers,
         )
-        windowed = self._window_averages(group, today, income=kind == "income")
+
+        filtered, _outlier_txs, outlier_meta = exclude_outlier_transactions(group)
+        annual = _annual_provision(
+            [row.posted_on for row in filtered],
+            [row.amount_pence for row in filtered],
+        )
+        windowed = self._window_averages(filtered, today, income=kind == "income")
         monthly_totals: dict[str, float] = defaultdict(float)
-        for row in group:
+        for row in filtered:
             monthly_totals[row.posted_on[:7]] += from_pence(
                 row.amount_pence if kind == "income" else -row.amount_pence
             )
         cv = _coefficient_of_variation(list(monthly_totals.values()))
+        excluded_txs = int(outlier_meta.get("excluded_count") or 0)
         if annual and (windowed["recommended_gbp"] is None or annual["monthly_gbp"] > 0):
             amount = annual["monthly_gbp"]
-            basis = annual
+            basis = {
+                **annual,
+                "outlier_txs_excluded": excluded_txs,
+                "txn_count": len(filtered),
+                "txn_count_before_outliers": len(group),
+            }
             confidence = _confidence(
                 month_count=len(monthly_totals),
-                txn_count=len(group),
+                txn_count=len(filtered),
                 cv=cv,
                 recurring=True,
             )
         elif windowed["recommended_gbp"] is not None:
-            from app.services.finance.finance_history_stats import (
-                classify_volatility,
-                median_gbp,
-                remove_outliers,
-            )
-
             series = list(monthly_totals.values())
             kept, outliers = remove_outliers(series)
             med = median_gbp(kept or series)
@@ -274,7 +283,9 @@ class HistoryBudgetService:
                 "windows": windowed["available"],
                 "weights": windowed["weights"],
                 "formula": windowed["formula"],
-                "txn_count": len(group),
+                "txn_count": len(filtered),
+                "txn_count_before_outliers": len(group),
+                "outlier_txs_excluded": excluded_txs,
                 "median_gbp": med,
                 "volatility": volatility,
                 "outlier_months": len(outliers),
@@ -286,15 +297,40 @@ class HistoryBudgetService:
             }
             confidence = _confidence(
                 month_count=len(monthly_totals),
-                txn_count=len(group),
+                txn_count=len(filtered),
                 cv=cv,
                 recurring=False,
             )
         else:
             amount = 0.0
-            basis = {"kind": "insufficient", "txn_count": len(group)}
+            basis = {
+                "kind": "insufficient",
+                "txn_count": len(filtered),
+                "txn_count_before_outliers": len(group),
+                "outlier_txs_excluded": excluded_txs,
+            }
             confidence = "Insufficient data"
+
+        if outlier_meta.get("unsafe"):
+            basis["outlier_filter_unsafe"] = True
+            basis["would_exclude_txs"] = int(outlier_meta.get("would_exclude_count") or 0)
+            if confidence != "Insufficient data":
+                confidence = "Low"
+
         insufficient = confidence == "Insufficient data" or amount is None
+        source_note = basis.get("formula") or (
+            "Insufficient stored history" if insufficient else "History average"
+        )
+        if excluded_txs:
+            source_note = f"{source_note}; excluded {excluded_txs} exceptional txn(s)"
+        outlier_months = int(basis.get("outlier_months") or 0)
+        if outlier_months:
+            source_note = f"{source_note}; excluded {outlier_months} outlier month(s)"
+        if outlier_meta.get("unsafe"):
+            source_note = (
+                f"{source_note}; exceptional filter unsafe — kept original "
+                f"{len(group)} txn(s)"
+            )
         return {
             "scope": scope,
             "category": category,
@@ -303,43 +339,58 @@ class HistoryBudgetService:
             "insufficient_data": insufficient,
             "basis_json": json.dumps(basis, default=str),
             "source": "history",
-            "source_note": basis.get("formula")
-            or ("Insufficient stored history" if insufficient else "History average"),
+            "source_note": source_note,
         }
 
     def _recommend_income(self, rows: list[FinanceTransactionRow], today: date) -> dict[str, Any]:
-        windowed = self._window_averages(rows, today, income=True)
+        from app.services.finance.finance_history_stats import exclude_outlier_transactions
+
+        filtered, _outlier_txs, outlier_meta = exclude_outlier_transactions(rows)
+        windowed = self._window_averages(filtered, today, income=True)
         monthly_totals: dict[str, float] = defaultdict(float)
-        for row in rows:
+        for row in filtered:
             monthly_totals[row.posted_on[:7]] += from_pence(row.amount_pence)
         cv = _coefficient_of_variation(list(monthly_totals.values()))
+        excluded_txs = int(outlier_meta.get("excluded_count") or 0)
         if windowed["recommended_gbp"] is None:
             return {
                 "amount_gbp": 0.0,
                 "insufficient_data": True,
                 "confidence": "Insufficient data",
-                "basis_json": json.dumps({"kind": "insufficient", "txn_count": len(rows)}),
+                "basis_json": json.dumps(
+                    {
+                        "kind": "insufficient",
+                        "txn_count": len(filtered),
+                        "txn_count_before_outliers": len(rows),
+                        "outlier_txs_excluded": excluded_txs,
+                    }
+                ),
             }
         confidence = _confidence(
             month_count=len(monthly_totals),
-            txn_count=len(rows),
+            txn_count=len(filtered),
             cv=cv,
             recurring=False,
         )
+        if outlier_meta.get("unsafe") and confidence != "Insufficient data":
+            confidence = "Low"
+        basis = {
+            "kind": "weighted_average",
+            "windows": windowed["available"],
+            "weights": windowed["weights"],
+            "formula": windowed["formula"],
+            "txn_count": len(filtered),
+            "txn_count_before_outliers": len(rows),
+            "outlier_txs_excluded": excluded_txs,
+        }
+        if outlier_meta.get("unsafe"):
+            basis["outlier_filter_unsafe"] = True
+            basis["would_exclude_txs"] = int(outlier_meta.get("would_exclude_count") or 0)
         return {
             "amount_gbp": float(windowed["recommended_gbp"] or 0),
             "insufficient_data": confidence == "Insufficient data",
             "confidence": confidence,
-            "basis_json": json.dumps(
-                {
-                    "kind": "weighted_average",
-                    "windows": windowed["available"],
-                    "weights": windowed["weights"],
-                    "formula": windowed["formula"],
-                    "txn_count": len(rows),
-                },
-                default=str,
-            ),
+            "basis_json": json.dumps(basis, default=str),
         }
 
     async def create_plan(self, db: AsyncSession, body: BudgetPlanFromHistory):

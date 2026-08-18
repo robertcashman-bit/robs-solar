@@ -59,6 +59,55 @@ def remove_outliers(values: list[float]) -> tuple[list[float], list[float]]:
     return kept, outliers
 
 
+def exclude_outlier_transactions(
+    rows: list[Any],
+    *,
+    min_keep: int = 2,
+    min_sample: int = 4,
+    median_multiplier: float = 3.0,
+) -> tuple[list[Any], list[Any], dict[str, Any]]:
+    """Drop exceptionally large txs by |amount_pence| before monthly aggregation.
+
+    Uses a fence of max(median_multiplier × median(|amount|), Tukey upper fence).
+    Never invents replacement amounts. Small samples (< min_sample) are left
+    unchanged. If filtering would leave fewer than min_keep rows, the original
+    set is kept and ``unsafe`` is set so callers can mark Low/insufficient.
+    """
+    meta: dict[str, Any] = {
+        "excluded_count": 0,
+        "kept_count": len(rows),
+        "unsafe": False,
+        "fence_pence": None,
+        "would_exclude_count": 0,
+    }
+    if len(rows) < min_sample:
+        return list(rows), [], meta
+
+    abs_amounts = [abs(int(row.amount_pence)) for row in rows]
+    med = statistics.median(abs_amounts)
+    ordered = sorted(abs_amounts)
+    q1 = statistics.median(ordered[: len(ordered) // 2])
+    q3 = statistics.median(ordered[(len(ordered) + 1) // 2 :])
+    iqr = q3 - q1
+    tukey_high = q3 + 1.5 * iqr
+    fence = max(float(median_multiplier) * float(med), float(tukey_high))
+    meta["fence_pence"] = int(round(fence))
+
+    kept = [row for row in rows if abs(int(row.amount_pence)) <= fence]
+    outliers = [row for row in rows if abs(int(row.amount_pence)) > fence]
+    meta["would_exclude_count"] = len(outliers)
+
+    if len(kept) < min_keep:
+        meta["unsafe"] = True
+        meta["excluded_count"] = 0
+        meta["kept_count"] = len(rows)
+        return list(rows), [], meta
+
+    meta["excluded_count"] = len(outliers)
+    meta["kept_count"] = len(kept)
+    return kept, outliers, meta
+
+
 def classify_volatility(cv: float | None, *, recurring: bool) -> str:
     if recurring and (cv is None or cv <= 0.15):
         return "FIXED"

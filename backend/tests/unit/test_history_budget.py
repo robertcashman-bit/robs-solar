@@ -246,6 +246,66 @@ async def test_transfers_and_uncategorised_excluded_from_history_budget() -> Non
 
 
 @pytest.mark.asyncio
+async def test_exceptional_one_off_txn_excluded_before_monthly_average() -> None:
+    """Nine £50 bills + one £9,000 one-off → ~£50/mo, not dragged by £9k."""
+    today = datetime.now(timezone.utc).date()
+    async with SessionLocal() as db:
+        for months_ago in range(9):
+            db.add(
+                _tx(
+                    posted_on=_month_iso(today, months_ago),
+                    amount_pence=-5000,
+                    fingerprint=f"bill-typical-{months_ago}",
+                    category="Home improvements",
+                )
+            )
+        db.add(
+            _tx(
+                posted_on=_month_iso(today, 1, day=20),
+                amount_pence=-900000,
+                fingerprint="solar-one-off",
+                category="Home improvements",
+                description="SOLAR INSTALLATION",
+            )
+        )
+        await db.commit()
+        preview = await history_budget_service.preview(db, "personal")
+        line = next(item for item in preview["lines"] if item["category"] == "Home improvements")
+        assert line["insufficient_data"] is False
+        # Typical £50/mo scale — must not be a mean pulled toward £9k.
+        assert 40.0 <= line["amount_gbp"] <= 55.0
+        basis = json.loads(line["basis_json"])
+        assert basis["outlier_txs_excluded"] == 1
+        assert basis["txn_count"] == 9
+        assert basis["txn_count_before_outliers"] == 10
+        assert "excluded 1 exceptional txn" in line["source_note"]
+        assert "9000" not in line["source_note"]
+
+
+@pytest.mark.asyncio
+async def test_clean_series_unchanged_when_no_txn_outliers() -> None:
+    """Steady category with no exceptional txs keeps the same recommendation."""
+    today = datetime.now(timezone.utc).date()
+    async with SessionLocal() as db:
+        for months_ago in range(12):
+            db.add(
+                _tx(
+                    posted_on=_month_iso(today, months_ago),
+                    amount_pence=-5000,
+                    fingerprint=f"clean-{months_ago}",
+                    category="Food",
+                )
+            )
+        await db.commit()
+        preview = await history_budget_service.preview(db, "personal")
+        food = next(item for item in preview["lines"] if item["category"] == "Food")
+        assert food["amount_gbp"] == 50.0
+        basis = json.loads(food["basis_json"])
+        assert basis.get("outlier_txs_excluded", 0) == 0
+        assert "exceptional txn" not in food["source_note"]
+
+
+@pytest.mark.asyncio
 async def test_annual_bill_divided_by_twelve() -> None:
     async with SessionLocal() as db:
         db.add(
