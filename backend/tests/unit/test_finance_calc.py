@@ -429,14 +429,15 @@ def test_null_interest_rate_known_is_treated_as_known() -> None:
     assert total == 12.0
 
 
-def test_snapshot_vat_reserve_beats_tiny_vat_account() -> None:
+def test_vat_reserve_account_beats_snapshot_liability() -> None:
+    """Live case: pot is £0.47; snapshot wrongly holds 2200+2202 liability."""
     totals = compute_totals(
         [AccountView(1, "business", "vat_reserve", "Vat Account", 0.47)],
         [],
         None,
         SnapshotView(vat_reserve_gbp=2956.27),
     )
-    assert totals.vat_reserve_gbp == 2956.27
+    assert totals.vat_reserve_gbp == 0.47
 
 
 def test_vat_account_used_when_snapshot_empty() -> None:
@@ -447,3 +448,23 @@ def test_vat_account_used_when_snapshot_empty() -> None:
         SnapshotView(),
     )
     assert totals.vat_reserve_gbp == 400.0
+
+
+def test_snapshot_vat_reserve_used_when_no_vat_account() -> None:
+    totals = compute_totals(
+        [],
+        [],
+        None,
+        SnapshotView(vat_reserve_gbp=500.0),
+    )
+    assert totals.vat_reserve_gbp == 500.0
+
+
+def test_zero_vat_account_beats_snapshot_liability() -> None:
+    totals = compute_totals(
+        [AccountView(1, "business", "vat_reserve", "Vat Account", 0.0)],
+        [],
+        None,
+        SnapshotView(vat_reserve_gbp=2956.27),
+    )
+    assert totals.vat_reserve_gbp == 0.0

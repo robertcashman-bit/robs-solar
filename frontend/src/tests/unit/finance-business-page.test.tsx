@@ -25,11 +25,11 @@ vi.mock("@/lib/api-client", () => ({
             id: 1,
             scope: "business",
             account_type: "vat_reserve",
-            name: "VAT pot",
-            provider: "",
-            balance_gbp: 250,
+            name: "Vat Account",
+            provider: "quickfile",
+            balance_gbp: 0.47,
             notes: "",
-            source: "manual",
+            source: "quickfile",
             is_active: true,
             created_at: "2010-01-01T00:00:00Z",
             updated_at: "2010-01-01T00:00:00Z",
@@ -43,7 +43,8 @@ vi.mock("@/lib/api-client", () => ({
             snapshot_date: "2010-01-01",
             turnover_gbp: 9999,
             expenses_gbp: 8888,
-            vat_reserve_gbp: 777,
+            // Stale creditor liability wrongly stored as reserve — must not win.
+            vat_reserve_gbp: 2956.27,
             corp_tax_reserve_gbp: 666,
             debtors_gbp: 555,
             creditors_gbp: 444,
@@ -74,11 +75,12 @@ function tile(label: string) {
 describe("BusinessFinancePage", () => {
   it("does not treat an older snapshot as this month's figures", async () => {
     render(<BusinessFinancePage />);
-    expect(await screen.findByText("VAT pot")).toBeInTheDocument();
-    expect(tile("VAT reserve").getByText("—")).toBeInTheDocument();
+    expect(await screen.findByText("Vat Account")).toBeInTheDocument();
+    // VAT pot account wins over stale snapshot liability (2956.27).
+    expect(tile("VAT reserve").getByText("£0.47")).toBeInTheDocument();
     expect(tile("Turnover (month)").getByText("—")).toBeInTheDocument();
     expect(screen.queryByText("£9,999.00")).not.toBeInTheDocument();
-    expect(screen.queryByText("£777.00")).not.toBeInTheDocument();
+    expect(screen.queryByText("£2,956.27")).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("Turnover")).toHaveValue("");
   });
 });

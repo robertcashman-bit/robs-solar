@@ -365,13 +365,11 @@ def compute_totals(
 
     vat_accounts = _sum_type(accounts_list, "vat_reserve")
     corp_accounts = _sum_type(accounts_list, "corp_tax_reserve")
-    # Snapshot reserves are the planned liability. A nearly-empty VAT bank
-    # pot must not hide a recorded reserve from QuickFile / the monthly snapshot.
-    vat_reserve = (
-        round(business.vat_reserve_gbp, 2)
-        if business.vat_reserve_gbp > 0
-        else vat_accounts
-    )
+    # VAT reserve is cash in the vat_reserve pot (e.g. QuickFile 1210 Vat Account).
+    # Snapshot vat_reserve_gbp was historically filled with creditor VAT liability
+    # (2200+2202); never let that overwrite a real pot balance, even a tiny one.
+    has_vat_account = any(account.account_type == "vat_reserve" for account in accounts_list)
+    vat_reserve = vat_accounts if has_vat_account else round(business.vat_reserve_gbp, 2)
     corp_reserve = (
         round(business.corp_tax_reserve_gbp, 2)
         if business.corp_tax_reserve_gbp > 0

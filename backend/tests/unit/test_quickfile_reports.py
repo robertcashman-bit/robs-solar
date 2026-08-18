@@ -84,6 +84,11 @@ BS_FIXTURE = {
                         "Amount": 8883.0,
                     },
                     {
+                        "NominalCode": 1210,
+                        "NominalAccountName": "Vat Account",
+                        "Amount": 0.47,
+                    },
+                    {
                         "NominalCode": 1201,
                         "NominalAccountName": "Bank current account",
                         "Amount": 16117.0,
@@ -176,6 +181,7 @@ def test_parse_balance_sheet_full_extracts_all_lines() -> None:
     result = parse_balance_sheet_full(BS_FIXTURE, to_date="2026-01-31")
 
     assert result["debtors_gbp"] == 8883.0
+    assert result["vat_reserve_gbp"] == 0.47
     assert result["vat_liability_gbp"] == 3872.86
     assert result["current_liabilities_gbp"] == 8000.0
 
@@ -187,7 +193,7 @@ def test_parse_balance_sheet_full_extracts_all_lines() -> None:
     assert fixed["lines"][0]["nominal_code"] == "1000"
 
     current_assets = sections[1]
-    assert len(current_assets["lines"]) == 2
+    assert len(current_assets["lines"]) == 3
 
     current_liabilities = sections[2]
     assert current_liabilities["label"] == "Creditors: amounts falling due within one year"

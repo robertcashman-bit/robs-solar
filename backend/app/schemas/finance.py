@@ -812,6 +812,7 @@ class QuickFileBalanceSheetSummary(BaseModel):
     capital_and_reserves_gbp: float
     debtors_gbp: float = 0.0
     creditors_gbp: float = 0.0
+    vat_reserve_gbp: float = 0.0
     vat_liability_gbp: float = 0.0
     sections: list[QuickFileReportSection] = Field(default_factory=list)
 

@@ -133,7 +133,8 @@ class QuickFileReportsService:
         )
         debtors = bs.debtors_gbp if bs else 0.0
         creditors = bs.creditors_gbp if bs else 0.0
-        vat_reserve = bs.vat_liability_gbp if bs else 0.0
+        # Cash in the VAT pot (current asset), never creditor-side VAT liability.
+        vat_reserve = bs.vat_reserve_gbp if bs else 0.0
         profit = pl.net_profit_gbp
         cash_draw = max(0.0, profit - creditors)
         breakdown = {

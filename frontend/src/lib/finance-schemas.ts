@@ -465,6 +465,7 @@ export const quickFileBalanceSheetSchema = z.object({
   capital_and_reserves_gbp: z.number(),
   debtors_gbp: z.number().optional().default(0),
   creditors_gbp: z.number().optional().default(0),
+  vat_reserve_gbp: z.number().optional().default(0),
   vat_liability_gbp: z.number().optional().default(0),
   sections: z.array(quickFileReportSectionSchema).optional().default([]),
 });

@@ -114,6 +114,7 @@ const fullReports: QuickFileReports = {
     capital_and_reserves_gbp: 20000,
     debtors_gbp: 8883,
     creditors_gbp: 5000,
+    vat_reserve_gbp: 0,
     vat_liability_gbp: 3000,
     sections: [
       {
