@@ -307,9 +307,9 @@ export default function PersonalFinancePage() {
             ariaLabel="Personal debts of which"
             items={[
               {
-                label: "Of which house mortgage (placeholder)",
+                label: "Of which house mortgage",
                 value: mortgage > 0 ? mortgage : null,
-                hint: "Placeholder £175,000 for now. From the personal mortgage liability.",
+                hint: "Confirmed half-share of £164,421. From the personal mortgage liability.",
               },
               {
                 label: "Of which personal credit cards",
@@ -362,9 +362,10 @@ export default function PersonalFinancePage() {
       </section>
 
       <p className="mt-6 text-sm text-[var(--muted)]">
-        The live app records your stated pension pot on first start. Edit the
-        Pension account if that figure changes. Director&apos;s loan direction
-        follows the liability register (Robert owes the company, or the company owes Robert).
+        The live app records your stated pension pot and personal mortgage
+        half-share on first start. Edit those rows if the figures change.
+        Director&apos;s loan direction follows the liability register (Robert
+        owes the company, or the company owes Robert).
       </p>
 
       <div className="mt-8">

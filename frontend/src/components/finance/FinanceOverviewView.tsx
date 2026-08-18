@@ -21,7 +21,7 @@ function flowLabel(prefix: string, periodLabel?: string | null) {
 }
 
 const HOUSE_HINT = "Your half of £700,000. Other half ignored.";
-const MORTGAGE_HINT = "Placeholder £175,000 for now.";
+const MORTGAGE_HINT = "Confirmed half-share of £164,421 joint mortgage.";
 const COMBINED_LABEL = "Combined (personal + company, director's loan counted once)";
 
 export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverviewViewProps) {
@@ -274,7 +274,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               ariaLabel="Combined external debt of which"
               items={[
                 {
-                  label: "Of which house mortgage (placeholder)",
+                  label: "Of which house mortgage",
                   value: overview.mortgage_configured === false ? null : overview.mortgage_balance_gbp,
                   hint: overview.mortgage_configured === false ? "Add a mortgage to track this" : MORTGAGE_HINT,
                 },
@@ -348,7 +348,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                       ? []
                       : [
                           {
-                            label: "Of which house mortgage (placeholder)",
+                            label: "Of which house mortgage",
                             value:
                               overview.mortgage_configured === false
                                 ? null

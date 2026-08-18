@@ -69,7 +69,7 @@ vi.mock("@/lib/api-client", () => ({
             scope: "personal",
             name: "House mortgage",
             debt_type: "mortgage",
-            balance_gbp: 175000,
+            balance_gbp: 82210.5,
             interest_rate_pct: 4,
             minimum_payment_gbp: 900,
             overpayment_gbp: 0,
@@ -174,12 +174,12 @@ describe("PersonalFinancePage", () => {
     expect(screen.getByPlaceholderText("Income")).toHaveValue("");
     expect(screen.getByText("Personal house (your half)")).toBeInTheDocument();
     expect(screen.getByText("Your half of £700,000. Other half ignored.")).toBeInTheDocument();
-    expect(screen.getByText("Of which house mortgage (placeholder)")).toBeInTheDocument();
-    const mortgageRow = screen.getByText("Of which house mortgage (placeholder)").closest("li");
-    expect(mortgageRow).toHaveTextContent("£175,000.00");
+    expect(screen.getByText("Of which house mortgage")).toBeInTheDocument();
+    const mortgageRow = screen.getByText("Of which house mortgage").closest("li");
+    expect(mortgageRow).toHaveTextContent("£82,210.50");
     expect(screen.getByText(/From the personal mortgage liability/)).toBeInTheDocument();
     expect(tile("Personal assets").getByText("£407,740.06")).toBeInTheDocument();
-    expect(tile("Personal debts").getByText("£175,000.00")).toBeInTheDocument();
+    expect(tile("Personal debts").getByText("£82,210.50")).toBeInTheDocument();
     expect(screen.getByText("Director's loan payable")).toBeInTheDocument();
     expect(screen.queryByText("Director's loan receivable")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Income, spend & surplus" })).toBeInTheDocument();

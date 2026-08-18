@@ -47,9 +47,13 @@ async def _restore_finance_if_empty() -> None:
 
 
 async def _seed_stated_finance() -> None:
-    from app.services.finance.finance_seed_service import ensure_stated_pension
+    from app.services.finance.finance_seed_service import (
+        ensure_stated_mortgage_half,
+        ensure_stated_pension,
+    )
 
     await ensure_stated_pension()
+    await ensure_stated_mortgage_half()
 
 
 app = FastAPI(title="Rob's Finance API", version="0.1.0", lifespan=lifespan)

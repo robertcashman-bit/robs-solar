@@ -37,7 +37,7 @@ const overview: FinanceOverview = financeOverviewSchema.parse({
   corp_tax_reserve_warning: false,
   credit_card_balances_gbp: 800,
   loan_balances_gbp: 400,
-  mortgage_balance_gbp: 175000,
+  mortgage_balance_gbp: 82210.5,
   pension_value_gbp: 50000,
   directors_loan_gbp: 0,
   net_worth_estimate_gbp: 100000,
@@ -100,8 +100,8 @@ describe("FinanceOverviewView", () => {
     expect(screen.getAllByText("Business / company position").length).toBeGreaterThan(0);
     expect(screen.getByText("Personal house (your half)")).toBeInTheDocument();
     expect(screen.getByText("Your half of £700,000. Other half ignored.")).toBeInTheDocument();
-    expect(screen.getByText("Of which house mortgage (placeholder)")).toBeInTheDocument();
-    expect(screen.getByText("Placeholder £175,000 for now.")).toBeInTheDocument();
+    expect(screen.getByText("Of which house mortgage")).toBeInTheDocument();
+    expect(screen.getByText("Confirmed half-share of £164,421 joint mortgage.")).toBeInTheDocument();
     expect(screen.getByText("Of which personal credit cards")).toBeInTheDocument();
     expect(screen.getByText("High-interest debt")).toBeInTheDocument();
     expect(
@@ -137,7 +137,7 @@ describe("FinanceOverviewView", () => {
     await user.click(screen.getByRole("button", { name: "business" }));
     expect(screen.getByText("Business VAT pot")).toBeInTheDocument();
     expect(screen.queryByText("Personal house (your half)")).not.toBeInTheDocument();
-    expect(screen.queryByText("Of which house mortgage (placeholder)")).not.toBeInTheDocument();
+    expect(screen.queryByText("Of which house mortgage")).not.toBeInTheDocument();
   });
 
   it("wires dismiss on insights when a handler is provided", async () => {

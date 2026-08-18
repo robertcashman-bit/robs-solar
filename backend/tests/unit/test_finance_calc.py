@@ -49,16 +49,16 @@ def test_personal_and_business_debt_stay_separate() -> None:
             LiabilityView(1, "personal", "MBNA", "credit_card", 800, 22.9, 25),
             LiabilityView(2, "business", "Van finance", "business_loan", 4000, 8.0, 180),
             LiabilityView(3, "personal", "Lloyds loan", "loan", 10923.14, 6.0, 200),
-            LiabilityView(4, "personal", "House", "mortgage", 175000, 4.0, 900),
+            LiabilityView(4, "personal", "House", "mortgage", 82210.50, 4.0, 900),
         ],
     )
-    assert totals.personal_debt_gbp == 800 + 10923.14 + 175000
+    assert totals.personal_debt_gbp == 800 + 10923.14 + 82210.50
     assert totals.business_debt_gbp == 4000
     assert totals.credit_card_gbp == 800
     assert totals.personal_credit_card_gbp == 800
     assert totals.loan_gbp == 4000
     assert totals.personal_loan_gbp == 10923.14
-    assert totals.mortgage_gbp == 175000
+    assert totals.mortgage_gbp == 82210.50
 
 
 def test_loan_balances_exclude_personal_from_business_total() -> None:
@@ -320,7 +320,7 @@ def test_personal_and_company_positions_cancel_internal_loan() -> None:
 
 
 def test_house_and_mortgage_move_personal_and_combined_not_business() -> None:
-    """House (your half) £350k − mortgage £175k = +£175k personal and combined equity."""
+    """House (your half) £350k − mortgage £82,210.50 = +£267,789.50 personal and combined equity."""
     base_accounts = [
         AccountView(1, "personal", "current", "Current", 2000),
         AccountView(2, "business", "current", "Business", 5000),
@@ -341,9 +341,9 @@ def test_house_and_mortgage_move_personal_and_combined_not_business() -> None:
             LiabilityView(
                 3,
                 "personal",
-                "House mortgage (placeholder)",
+                "House mortgage",
                 "mortgage",
-                175000,
+                82210.50,
                 0.0,
                 0,
             ),
@@ -369,13 +369,13 @@ def test_house_and_mortgage_move_personal_and_combined_not_business() -> None:
         )
 
     assert after.property_gbp == 350000
-    assert after.mortgage_gbp == 175000
-    assert personal_from(after) - personal_from(before) == 175000
-    assert after.net_worth_gbp - before.net_worth_gbp == 175000
+    assert after.mortgage_gbp == 82210.50
+    assert personal_from(after) - personal_from(before) == 267789.50
+    assert after.net_worth_gbp - before.net_worth_gbp == 267789.50
     assert company_from(after) == company_from(before)
     assert after.business_debt_gbp == before.business_debt_gbp
     # House equity stays on the personal stack only.
-    assert personal_from(after) == personal_from(before) + 350000 - 175000
+    assert personal_from(after) == personal_from(before) + 350000 - 82210.50
 
 
 def test_resolve_monthly_flow_prefers_snapshot_then_budget_over_open_banking() -> None:
