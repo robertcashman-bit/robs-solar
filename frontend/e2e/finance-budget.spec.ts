@@ -32,13 +32,24 @@ test("suggested budgets can be edited, saved, and activated", async ({ page }) =
   await page.goto("/finance/debts");
   await page.goto("/finance/budget");
   await page.getByRole("tab", { name: "Suggested" }).click();
-  await expect(page.getByText(uniqueName)).toBeVisible();
-  await page.getByRole("button", { name: "Open" }).first().click();
+  const savedPlan = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Saved budgets" }) })
+    .locator("li")
+    .filter({ hasText: uniqueName });
+  await expect(savedPlan).toBeVisible();
+  await savedPlan.getByRole("button", { name: "Open" }).click();
   await expect(page.getByLabel("Budget name")).toHaveValue(uniqueName);
 
   await page.reload();
   await page.getByRole("tab", { name: "Suggested" }).click();
-  await expect(page.getByText(uniqueName)).toBeVisible();
+  await expect(
+    page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "Saved budgets" }) })
+      .locator("li")
+      .filter({ hasText: uniqueName }),
+  ).toBeVisible();
   await expect(page.getByText("Active").first()).toBeVisible();
 
   await page.getByRole("tab", { name: "vs Actual" }).click();
