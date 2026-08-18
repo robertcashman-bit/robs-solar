@@ -1,13 +1,26 @@
 import Link from "next/link";
 
+import { ActiveBudgetsBreakdown } from "@/components/finance/ActiveBudgetsBreakdown";
 import type { ActiveBudgetSummary } from "@/lib/finance-schemas";
 import { formatGbp } from "@/lib/money";
 
 type ActiveBudgetCardProps = {
-  budget: ActiveBudgetSummary | null | undefined;
+  /** Legacy single-summary prop — ignored when dual fetch is available. */
+  budget?: ActiveBudgetSummary | null;
+  /** Prefer fetching both scoped active plans with full line lists. */
+  dualBreakdown?: boolean;
 };
 
-export function ActiveBudgetCard({ budget }: ActiveBudgetCardProps) {
+/**
+ * Shows active budget(s). By default renders the dual personal + business
+ * breakdown with every plan line. Pass dualBreakdown={false} for the legacy
+ * rolled-up card used only where a summary object is already in hand.
+ */
+export function ActiveBudgetCard({ budget, dualBreakdown = true }: ActiveBudgetCardProps) {
+  if (dualBreakdown) {
+    return <ActiveBudgetsBreakdown />;
+  }
+
   if (!budget) {
     return (
       <section
