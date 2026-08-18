@@ -80,9 +80,12 @@ export default function TransactionsPage() {
     return categories;
   }, [categories, categoryOptions, filter, periodState.scope]);
 
+  const effectiveBulkCategory = bulkCategoryNames.includes(category)
+    ? category
+    : bulkCategoryNames[0] || "";
   const selectedCategory = useNewCategory
     ? newCategory.trim()
-    : category || bulkCategoryNames[0] || "";
+    : effectiveBulkCategory;
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -186,7 +189,7 @@ export default function TransactionsPage() {
                 ) : (
                   <select
                     className="mt-1 block rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2"
-                    value={bulkCategoryNames.includes(category) ? category : bulkCategoryNames[0] || ""}
+                    value={effectiveBulkCategory}
                     onChange={(e) => {
                       if (e.target.value === "__new__") {
                         setUseNewCategory(true);
