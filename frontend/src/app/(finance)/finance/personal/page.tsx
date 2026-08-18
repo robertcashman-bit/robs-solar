@@ -202,7 +202,7 @@ export default function PersonalFinancePage() {
   const spendingValue = usePeriod
     ? periodFlow!.spending_gbp
     : activeBudget
-      ? activeBudget.monthly_total_gbp
+      ? activeBudget.totals.total_spending_gbp
       : null;
   const spendingHint = usePeriod
     ? periodFlow!.coverage_note || "Stored transactions"
