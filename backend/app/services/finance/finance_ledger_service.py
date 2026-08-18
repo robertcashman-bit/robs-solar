@@ -9,13 +9,43 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import FinanceTransactionRow
-from app.services.finance.category_registry import confirm_rule
+from app.services.finance.category_registry import (
+    add_custom_category,
+    confirm_rule,
+    list_categories,
+)
 from app.services.finance.finance_audit_service import finance_audit_service
 from app.services.finance.money import from_pence
 
 
 def _active_tx_filter():
     return FinanceTransactionRow.is_deleted.is_(False)
+
+
+async def _ensure_scoped_category(
+    db: AsyncSession,
+    *,
+    scope: str,
+    category: str,
+    subcategory: str = "",
+) -> None:
+    """Persist a new category name into the scoped registry only.
+
+    Personal custom names must not appear in the business picker, and vice versa.
+    Seeded / already-known names are left untouched.
+    """
+    cleaned = category.strip()[:64]
+    if not cleaned or scope not in {"personal", "business"}:
+        return
+    existing = await list_categories(db, scope=scope)
+    if any(str(item.get("parent") or "").lower() == cleaned.lower() for item in existing):
+        return
+    await add_custom_category(
+        db,
+        scope=scope,
+        category=cleaned,
+        subcategory=subcategory[:64],
+    )
 
 
 class FinanceLedgerService:
@@ -187,9 +217,12 @@ class FinanceLedgerService:
         row = await db.get(FinanceTransactionRow, txn_id)
         if row is None or row.is_deleted:
             return None
+        cleaned = category.strip()[:64]
+        if not cleaned:
+            raise ValueError("Category is required")
         previous = row.category
-        row.category = category[:64]
-        row.subcategory = subcategory[:64]
+        row.category = cleaned
+        row.subcategory = subcategory.strip()[:64]
         if hasattr(row, "category_confidence"):
             row.category_confidence = (confidence or "HIGH")[:16]
         row.updated_at = datetime.now(timezone.utc)
@@ -201,6 +234,12 @@ class FinanceLedgerService:
             previous_value=previous,
             new_value=row.category,
             actor=actor,
+        )
+        await _ensure_scoped_category(
+            db,
+            scope=row.scope,
+            category=row.category,
+            subcategory=row.subcategory,
         )
         if create_rule and row.description.strip():
             await confirm_rule(
@@ -222,17 +261,22 @@ class FinanceLedgerService:
         create_rule: bool = False,
         actor: str = "user",
     ) -> dict[str, Any]:
+        cleaned = category.strip()[:64]
+        if not cleaned:
+            raise ValueError("Category is required")
         updated = 0
         rule_pattern = ""
+        scopes: set[str] = set()
         for txn_id in txn_ids[:200]:
             row = await db.get(FinanceTransactionRow, txn_id)
             if row is None or row.is_deleted:
                 continue
             previous = row.category
-            row.category = category[:64]
+            row.category = cleaned
             if hasattr(row, "category_confidence"):
                 row.category_confidence = "HIGH"
             row.updated_at = datetime.now(timezone.utc)
+            scopes.add(row.scope)
             if not rule_pattern and row.description.strip():
                 rule_pattern = row.description.strip()[:80]
             await finance_audit_service.record(
@@ -245,17 +289,19 @@ class FinanceLedgerService:
                 actor=actor,
             )
             updated += 1
+        for scope in sorted(scopes):
+            await _ensure_scoped_category(db, scope=scope, category=cleaned)
         if create_rule and rule_pattern:
             scope_row = await db.get(FinanceTransactionRow, txn_ids[0])
             await confirm_rule(
                 db,
                 pattern=rule_pattern,
-                category=category[:64],
+                category=cleaned,
                 scope=scope_row.scope if scope_row else "personal",
             )
         else:
             await db.commit()
-        return {"updated": updated, "category": category[:64]}
+        return {"updated": updated, "category": cleaned}
 
     async def period_flow_totals(
         self,

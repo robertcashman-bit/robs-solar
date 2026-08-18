@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
+import { TransactionCategoryEditor } from "@/components/finance/TransactionCategoryEditor";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
@@ -35,7 +36,9 @@ export default function TransactionsPage() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [category, setCategory] = useState("Food");
+  const [category, setCategory] = useState("");
+  const [newCategory, setNewCategory] = useState("");
+  const [useNewCategory, setUseNewCategory] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const periodState = useFinancePeriod({ defaultScope: "both" });
@@ -43,12 +46,14 @@ export default function TransactionsPage() {
   const {
     rows,
     categories,
+    categoryOptions,
     loading,
     refreshing,
     error,
     hasMore,
     loadMore,
     reload,
+    patchRow,
     setError,
   } = useFinanceTransactions(
     user,
@@ -58,6 +63,26 @@ export default function TransactionsPage() {
     range.dateTo,
     periodState.scope,
   );
+
+  const bulkCategoryNames = useMemo(() => {
+    if (periodState.scope === "personal" || periodState.scope === "business") {
+      return categories;
+    }
+    if (filter === "personal" || filter === "business") {
+      return [
+        ...new Set(
+          categoryOptions
+            .filter((item) => item.scope === filter)
+            .map((item) => item.parent),
+        ),
+      ];
+    }
+    return categories;
+  }, [categories, categoryOptions, filter, periodState.scope]);
+
+  const selectedCategory = useNewCategory
+    ? newCategory.trim()
+    : category || bulkCategoryNames[0] || "";
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -70,6 +95,11 @@ export default function TransactionsPage() {
 
   const bulk = async (createRule: boolean) => {
     if (!selected.size) return;
+    const nextCategory = selectedCategory.trim();
+    if (!nextCategory) {
+      setError("Choose or enter a category");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -77,12 +107,14 @@ export default function TransactionsPage() {
         "/finance/transactions/bulk-category",
         {
           ids: [...selected],
-          category,
+          category: nextCategory,
           create_rule: createRule,
         },
       );
       setMessage(`Updated ${result.updated} transaction(s)`);
       setSelected(new Set());
+      setUseNewCategory(false);
+      setNewCategory("");
       notifyFinanceChanged();
       await reload();
     } catch (err) {
@@ -101,7 +133,7 @@ export default function TransactionsPage() {
       <PageHeader
         eyebrow="Finance"
         title="Transactions"
-        description="Review, search, and bulk-categorise. Transfers stay out of spend totals."
+        description="Review, search, and recategorise. Transfers stay out of spend totals."
       />
       <div className="mt-6 space-y-4">
         {error ? <ErrorBanner message={error} /> : null}
@@ -143,21 +175,51 @@ export default function TransactionsPage() {
             <>
               <label className="text-sm">
                 <span className="text-[var(--muted)]">Set category</span>
-                <select
-                  className="mt-1 block rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                >
-                  {categories.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                {useNewCategory ? (
+                  <input
+                    className="mt-1 block rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    placeholder="New category name"
+                    aria-label="New bulk category name"
+                  />
+                ) : (
+                  <select
+                    className="mt-1 block rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+                    value={bulkCategoryNames.includes(category) ? category : bulkCategoryNames[0] || ""}
+                    onChange={(e) => {
+                      if (e.target.value === "__new__") {
+                        setUseNewCategory(true);
+                        setNewCategory("");
+                        return;
+                      }
+                      setCategory(e.target.value);
+                    }}
+                  >
+                    {bulkCategoryNames.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                    <option value="__new__">Add new category…</option>
+                  </select>
+                )}
               </label>
+              {useNewCategory ? (
+                <button
+                  type="button"
+                  className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
+                  onClick={() => {
+                    setUseNewCategory(false);
+                    setNewCategory("");
+                  }}
+                >
+                  Pick existing
+                </button>
+              ) : null}
               <button
                 type="button"
-                disabled={busy || !selected.size}
+                disabled={busy || !selected.size || !selectedCategory}
                 onClick={() => void bulk(false)}
                 className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-50"
               >
@@ -165,7 +227,7 @@ export default function TransactionsPage() {
               </button>
               <button
                 type="button"
-                disabled={busy || !selected.size}
+                disabled={busy || !selected.size || !selectedCategory}
                 onClick={() => void bulk(true)}
                 className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm disabled:opacity-50"
               >
@@ -238,12 +300,25 @@ export default function TransactionsPage() {
                     </td>
                     <td className="px-3 py-2">{formatGbp(row.amount_gbp)}</td>
                     <td className="px-3 py-2">
-                      {row.category || "—"}
-                      {row.category_confidence ? (
-                        <span className="ml-1 text-xs text-[var(--muted)]">
-                          {row.category_confidence}
-                        </span>
-                      ) : null}
+                      <TransactionCategoryEditor
+                        txnId={row.id}
+                        scope={row.scope}
+                        category={row.category}
+                        categoryConfidence={row.category_confidence}
+                        options={categoryOptions}
+                        canEdit={writable}
+                        disabled={busy}
+                        onError={(msg) => setError(msg)}
+                        onUpdated={(next) => {
+                          setMessage(`Category set to ${next.category}`);
+                          patchRow(row.id, {
+                            category: next.category,
+                            category_confidence: next.category_confidence,
+                            scope: row.scope,
+                          });
+                          notifyFinanceChanged();
+                        }}
+                      />
                     </td>
                     <td className="px-3 py-2">{row.scope}</td>
                   </tr>
