@@ -95,8 +95,10 @@ describe("ReportsPage", () => {
     expect(screen.getByRole("heading", { name: "Personal" })).toBeInTheDocument();
     expect(screen.getByText(/Save a snapshot on Personal/i)).toBeInTheDocument();
     expect(screen.getByText("Personal cash")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Personal P&L compare" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Business P&L compare" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Active budgets" })).toBeInTheDocument();
-    expect(screen.getByText("No active personal plan yet.")).toBeInTheDocument();
+    expect(await screen.findByText("No active personal plan yet.")).toBeInTheDocument();
     expect(screen.getByText("No active business plan yet.")).toBeInTheDocument();
     expect(screen.getByText("Budget vs actual")).toBeInTheDocument();
     expect(screen.getByText("QuickFile statements")).toBeInTheDocument();

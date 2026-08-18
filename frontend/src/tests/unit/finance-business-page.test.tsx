@@ -36,6 +36,9 @@ vi.mock("@/lib/api-client", () => ({
           },
         ];
       }
+      if (path.startsWith("/finance/liabilities")) {
+        return [];
+      }
       if (path.startsWith("/finance/period-flow")) {
         return {
           period: "1m",
@@ -107,6 +110,9 @@ describe("BusinessFinancePage", () => {
     expect(screen.getByPlaceholderText("Turnover")).toHaveValue("");
     expect(screen.queryByText(/house/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/mortgage/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Turnover, spend & profit" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Position" })).toBeInTheDocument();
+    expect(screen.getByText("Business debts")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "This month to date" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "This month to date" })).toHaveAttribute(
       "aria-pressed",

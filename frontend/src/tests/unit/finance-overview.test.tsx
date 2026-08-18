@@ -90,6 +90,9 @@ describe("FinanceOverviewView", () => {
 
   it("renders labelled personal, business, and combined stacks with house hints", () => {
     render(<FinanceOverviewView overview={overview} />);
+    expect(screen.getByRole("heading", { name: "Net worth" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "This period flow" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Position" })).toBeInTheDocument();
     expect(
       screen.getByText("Combined (personal + company, director's loan counted once)"),
     ).toBeInTheDocument();
@@ -114,6 +117,7 @@ describe("FinanceOverviewView", () => {
     expect(screen.getByRole("heading", { name: "Active budgets" })).toBeInTheDocument();
     expect(screen.getByText("Food")).toBeInTheDocument();
     expect(screen.getByText("Software / IT")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Safe to spend" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Connect banks" })).toHaveAttribute(
       "href",
       "/finance/connect",

@@ -7,7 +7,8 @@ test.use({ storageState: { cookies: [], origins: [] } });
 test("finance overview is default landing", async ({ page }) => {
   await loginAsAdmin(page);
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Totals by scope" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Net worth" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Position" })).toBeVisible();
 });
 
 test("energy dashboard is removed", async ({ page }) => {

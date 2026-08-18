@@ -6,6 +6,7 @@ import { z } from "zod";
 import { AccountManager } from "@/components/finance/AccountManager";
 import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { MetricTile } from "@/components/finance/MetricTile";
+import { MetricWithOfWhich } from "@/components/finance/OfWhichBreakdown";
 import { PlComparePanel } from "@/components/finance/PlComparePanel";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
@@ -148,8 +149,18 @@ export default function PersonalFinancePage() {
     .filter((a) => a.account_type === "other_asset")
     .reduce((s, a) => s + a.balance_gbp, 0);
   const assets = cash + pension + property + otherAssets;
-  const mortgage = liabilities
-    .filter((d) => d.is_active && d.debt_type === "mortgage" && d.scope === "personal")
+  const activePersonalDebts = liabilities.filter(
+    (d) => d.is_active && d.scope === "personal" && d.debt_type !== "directors_loan",
+  );
+  const personalDebts = activePersonalDebts.reduce((s, d) => s + d.balance_gbp, 0);
+  const mortgage = activePersonalDebts
+    .filter((d) => d.debt_type === "mortgage")
+    .reduce((s, d) => s + d.balance_gbp, 0);
+  const creditCards = activePersonalDebts
+    .filter((d) => d.debt_type === "credit_card")
+    .reduce((s, d) => s + d.balance_gbp, 0);
+  const personalLoans = activePersonalDebts
+    .filter((d) => d.debt_type === "loan")
     .reduce((s, d) => s + d.balance_gbp, 0);
   const directorOwes = liabilities
     .filter(
@@ -188,7 +199,16 @@ export default function PersonalFinancePage() {
     : activeBudget
       ? "Typical personal budget plan"
       : undefined;
-
+  const spendingValue = usePeriod
+    ? periodFlow!.spending_gbp
+    : activeBudget
+      ? activeBudget.totals.total_spending_gbp
+      : null;
+  const spendingHint = usePeriod
+    ? periodFlow!.coverage_note || "Stored transactions"
+    : activeBudget
+      ? "Typical personal budget plan"
+      : undefined;
   return (
     <AppShell>
       <PageHeader
@@ -209,83 +229,148 @@ export default function PersonalFinancePage() {
           coverageNote={periodFlow?.coverage_note || null}
         />
       </div>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <MetricTile label="Personal bank" value={cash} hint="Positive current accounts only" />
-        {overdraft > 0 ? (
-          <MetricTile label="Personal overdraft" value={overdraft} warning hint="Shown separately from assets" />
-        ) : null}
-        <MetricTile
-          label="Personal pension"
-          value={pension}
-          positive
-          hint={pension > 0 ? "Included in personal net worth" : "Add the pot here so net worth includes it"}
-        />
-        <MetricTile
-          label="Personal house (your half)"
-          value={property > 0 ? property : null}
-          positive={property > 0}
-          hint="Your half of £700,000. Other half ignored."
-        />
-        <MetricTile
-          label="Of which house mortgage (placeholder)"
-          value={mortgage > 0 ? mortgage : null}
-          warning={mortgage > 0}
-          hint="Placeholder £175,000 for now. From the personal mortgage liability."
-        />
-        {directorOwes > 0 ? (
+
+      {/* Hero: this-period income / spend / surplus (period label is the control heading above) */}
+      <section className="mt-8" aria-label="This period cashflow">
+        <h2 className="solar-section-title">Income, spend &amp; surplus</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          For the selected window above. Source labelled on each tile.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <MetricTile
-            label="Director's loan payable"
-            value={directorOwes}
-            warning
-            hint={`Robert owes the company ${formatGbp(directorOwes)}. Cancels in combined net worth.`}
-          />
-        ) : null}
-        {companyOwes > 0 ? (
-          <MetricTile
-            label="Director's loan receivable"
-            value={companyOwes}
+            label={
+              usePeriod
+                ? `Personal income (${periodFlow!.label})`
+                : activeBudget
+                  ? "Personal planned income"
+                  : "Personal monthly income"
+            }
+            value={incomeValue}
             positive
-            hint="Company owes you — cancels in combined net worth"
+            hint={incomeHint}
           />
-        ) : null}
-        <MetricTile
-          label="Personal assets"
-          value={assets}
-          hint="Pension + house share + other assets + positive personal cash"
-        />
-        <MetricTile
-          label={
-            usePeriod
-              ? `Personal income (${periodFlow!.label})`
-              : activeBudget
-                ? "Personal planned income"
-                : "Personal monthly income"
-          }
-          value={incomeValue}
-          hint={incomeHint}
-        />
-        <MetricTile
-          label={
-            usePeriod
-              ? `Personal surplus (${periodFlow!.label})`
-              : activeBudget
-                ? "Personal planned surplus"
-                : "Personal monthly surplus"
-          }
-          value={surplusValue}
-          positive={(surplusValue ?? 0) >= 0}
-          warning={(surplusValue ?? 0) < 0}
-          hint={surplusHint}
-        />
-      </div>
+          <MetricTile
+            label={
+              usePeriod
+                ? `Personal spending (${periodFlow!.label})`
+                : activeBudget
+                  ? "Personal planned spending"
+                  : "Personal monthly spending"
+            }
+            value={spendingValue}
+            hint={spendingHint}
+          />
+          <MetricTile
+            label={
+              usePeriod
+                ? `Personal surplus (${periodFlow!.label})`
+                : activeBudget
+                  ? "Personal planned surplus"
+                  : "Personal monthly surplus"
+            }
+            value={surplusValue}
+            positive={(surplusValue ?? 0) >= 0}
+            warning={(surplusValue ?? 0) < 0}
+            hint={surplusHint}
+          />
+        </div>
+      </section>
+
+      {/* Position */}
+      <section className="mt-8" aria-label="Personal position">
+        <h2 className="solar-section-title">Position</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Bank, assets, and debts now. Nested of-which rows are subsets — not extra debt.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <MetricWithOfWhich
+            ariaLabel="Personal bank of which"
+            items={
+              overdraft > 0
+                ? [{ label: "Of which personal overdraft", value: overdraft, hint: "Shown separately from assets" }]
+                : []
+            }
+          >
+            <MetricTile
+              label="Personal bank"
+              value={cash}
+              warning={overdraft > 0}
+              hint="Positive current accounts only"
+            />
+          </MetricWithOfWhich>
+          <MetricTile
+            label="Personal assets"
+            value={assets}
+            hint="Pension + house share + other assets + positive personal cash"
+          />
+          <MetricWithOfWhich
+            ariaLabel="Personal debts of which"
+            items={[
+              {
+                label: "Of which house mortgage (placeholder)",
+                value: mortgage > 0 ? mortgage : null,
+                hint: "Placeholder £175,000 for now. From the personal mortgage liability.",
+              },
+              {
+                label: "Of which personal credit cards",
+                value: creditCards > 0 ? creditCards : null,
+                hint: "Subset of personal debts",
+              },
+              {
+                label: "Of which personal loans",
+                value: personalLoans > 0 ? personalLoans : null,
+                hint: "Subset of personal debts — not mortgage",
+              },
+            ]}
+          >
+            <MetricTile
+              label="Personal debts"
+              value={personalDebts}
+              warning={personalDebts > 0}
+              hint="Includes cards, loans, and mortgage — of which rows below are subsets"
+            />
+          </MetricWithOfWhich>
+          <MetricTile
+            label="Personal pension"
+            value={pension}
+            positive
+            hint={pension > 0 ? "Included in personal net worth" : "Add the pot here so net worth includes it"}
+          />
+          <MetricTile
+            label="Personal house (your half)"
+            value={property > 0 ? property : null}
+            positive={property > 0}
+            hint="Your half of £700,000. Other half ignored."
+          />
+          {directorOwes > 0 ? (
+            <MetricTile
+              label="Director's loan payable"
+              value={directorOwes}
+              warning
+              hint={`Robert owes the company ${formatGbp(directorOwes)}. Cancels in combined net worth.`}
+            />
+          ) : null}
+          {companyOwes > 0 ? (
+            <MetricTile
+              label="Director's loan receivable"
+              value={companyOwes}
+              positive
+              hint="Company owes you — cancels in combined net worth"
+            />
+          ) : null}
+        </div>
+      </section>
+
       <p className="mt-6 text-sm text-[var(--muted)]">
         The live app records your stated pension pot on first start. Edit the
         Pension account if that figure changes. Director&apos;s loan direction
         follows the liability register (Robert owes the company, or the company owes Robert).
       </p>
+
       <div className="mt-8">
         <PlComparePanel scope="personal" title="Personal profit & loss compare" />
       </div>
+
       <section className="mt-8">
         <h2 className="solar-section-title">Accounts</h2>
         <AccountManager

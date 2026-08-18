@@ -175,11 +175,14 @@ describe("PersonalFinancePage", () => {
     expect(screen.getByText("Personal house (your half)")).toBeInTheDocument();
     expect(screen.getByText("Your half of £700,000. Other half ignored.")).toBeInTheDocument();
     expect(screen.getByText("Of which house mortgage (placeholder)")).toBeInTheDocument();
-    expect(tile("Of which house mortgage (placeholder)").getByText("£175,000.00")).toBeInTheDocument();
+    const mortgageRow = screen.getByText("Of which house mortgage (placeholder)").closest("li");
+    expect(mortgageRow).toHaveTextContent("£175,000.00");
     expect(screen.getByText(/From the personal mortgage liability/)).toBeInTheDocument();
     expect(tile("Personal assets").getByText("£407,740.06")).toBeInTheDocument();
+    expect(tile("Personal debts").getByText("£175,000.00")).toBeInTheDocument();
     expect(screen.getByText("Director's loan payable")).toBeInTheDocument();
     expect(screen.queryByText("Director's loan receivable")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Income, spend & surplus" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "This month to date" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "This month to date" })).toHaveAttribute(
       "aria-pressed",
