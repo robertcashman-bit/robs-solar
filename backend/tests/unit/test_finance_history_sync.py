@@ -311,10 +311,19 @@ async def test_quickfile_first_sync_commits_with_deep_lookback(
 
 
 @pytest.mark.asyncio
-async def test_quickfile_force_full_clears_markers_before_sync(
+async def test_quickfile_force_full_uses_ten_year_lookback_without_clearing_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, object] = {"cleared": False}
+    """force_full must not wipe markers before the import finishes.
+
+    Clearing up front left production with a stale last_sync when the Vercel
+    default 300s maxDuration killed the request mid year-chunk walk.
+    """
+    captured: dict[str, object] = {
+        "cleared": False,
+        "commit_calls": 0,
+        "windows": [],
+    }
 
     class FakeProvider:
         def __init__(self, _config) -> None:
@@ -326,18 +335,31 @@ async def test_quickfile_force_full_clears_markers_before_sync(
         async def fetch_debtors_gbp(self) -> float:
             return 0.0
 
-        async def sync_transactions(self, *, since=None):
-            captured["since"] = since
-            return []
+        async def sync_transactions(self, *, since=None, until=None):
+            captured["windows"].append((since, until))
+            return [
+                {
+                    "amount_gbp": -1.0,
+                    "date": (since or "2020-01-01")[:10],
+                    "posted_on": (since or "2020-01-01")[:10],
+                    "description": "chunk",
+                    "external_id": f"tx-{since}-{until}",
+                    "account_external_id": "1200",
+                    "account_name": "Current",
+                    "currency": "GBP",
+                    "scope": "business",
+                }
+            ]
 
     async def clear_full(_db) -> None:
         captured["cleared"] = True
 
     async def needs_full(_db) -> bool:
-        return bool(captured["cleared"])
+        return False
 
     async def mark_full(_db, **_kwargs) -> None:
         captured["marked_full"] = True
+        captured["lookback"] = _kwargs.get("lookback_days")
 
     async def noop(_db) -> None:
         return None
@@ -346,7 +368,12 @@ async def test_quickfile_force_full_clears_markers_before_sync(
         return []
 
     async def commit(db, rows, *, source, actor="import", persist=True):
-        return {"imported": 0, "duplicate_count": 0, "rejected_count": 0}
+        captured["commit_calls"] = int(captured["commit_calls"]) + 1
+        return {
+            "imported": len(rows),
+            "duplicate_count": 0,
+            "rejected_count": 0,
+        }
 
     async def fake_backup(*_a, **_k):
         return None
@@ -392,13 +419,17 @@ async def test_quickfile_force_full_clears_markers_before_sync(
     )
     from app.services.finance.sync_lookback import QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
 
-    assert captured["cleared"] is True
+    assert captured["cleared"] is False
     assert captured["marked_full"] is True
+    assert captured["lookback"] == QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
+    assert int(captured["commit_calls"]) >= 2
+    assert len(captured["windows"]) >= 2
     expected = (
         datetime.now(timezone.utc) - timedelta(days=QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS)
     ).date().isoformat()
-    assert captured["since"] == expected
+    assert captured["windows"][0][0] == expected
     assert f"{QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS}-day" in result.message
+    assert result.imported >= 2
 
 
 @pytest.mark.asyncio

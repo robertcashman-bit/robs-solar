@@ -86,4 +86,22 @@ describe("apiClient timeouts", () => {
     });
     expect(error).not.toMatchObject({ status: 401 });
   });
+
+  it("maps Vercel function timeout 504 into a retryable import message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ error: { code: "FUNCTION_INVOCATION_TIMEOUT" } }),
+          { status: 504, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    await expect(
+      apiClient.post("/finance/integrations/quickfile/sync?force_full=true"),
+    ).rejects.toMatchObject({
+      status: 504,
+      message: expect.stringMatching(/timed out before the import finished/i),
+    });
+  });
 });

@@ -187,7 +187,8 @@ describe("QuickFileSettingsPanel", () => {
 
     render(<QuickFileSettingsPanel />);
     expect(await screen.findByText("Connected")).toBeInTheDocument();
-    expect(screen.getByText(/daily 1000-request QuickFile quota/i)).toBeInTheDocument();
+    expect(screen.getByText(/daily 1000-request quota/i)).toBeInTheDocument();
+    expect(screen.getByText(/not Lunch Flow personal bank history/i)).toBeInTheDocument();
 
     const syncNow = screen.getByRole("button", { name: /Sync now/i });
     const importFull = screen.getByRole("button", { name: /Import full history/i });

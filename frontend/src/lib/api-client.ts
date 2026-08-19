@@ -120,7 +120,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = response.statusText;
     try {
       const body = await response.json();
-      const raw = body.detail ?? detail;
+      const raw = body.detail ?? body.error?.message ?? body.message ?? detail;
       if (typeof raw === "string") {
         detail = raw;
       } else if (Array.isArray(raw)) {
@@ -138,6 +138,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       }
     } catch {
       // ignore parse errors
+    }
+    if (response.status === 504 || /FUNCTION_INVOCATION_TIMEOUT/i.test(detail)) {
+      detail =
+        "The server timed out before the import finished. Any year chunks already "
+        + "saved are kept — click Import full history again to continue.";
     }
     throw new ApiError(String(detail), response.status);
   }

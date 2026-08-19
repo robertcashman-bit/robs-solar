@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,7 @@ from app.services.finance.finance_import_service import finance_import_service
 from app.services.finance.quickfile_reports_service import quickfile_reports_service
 from app.services.finance.sync_lookback import (
     QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS,
+    lookback_date_chunks,
     quickfile_lookback_days,
     quickfile_lookback_since,
 )
@@ -120,6 +122,7 @@ class QuickFileSyncService:
         - Daily cron passes ``incremental_only=True`` (~90 days, never 3650).
         - Explicit Sync may run a one-year first import when history is empty.
         - ``force_full=True`` is the only path that runs the ~10-year window.
+          It commits year-by-year so a platform timeout keeps earlier years.
         """
         if await quickfile_settings_service.is_quota_blocked(db) and not force_full:
             status = await quickfile_settings_service.get_status(db)
@@ -133,7 +136,10 @@ class QuickFileSyncService:
             )
 
         if force_full:
-            await quickfile_settings_service.clear_full_history_import(db)
+            # Do not clear full-import markers up front. ``use_force_full`` already
+            # selects the ~10-year lookback; wiping markers first left production
+            # with a stale last_sync when Vercel killed the request at the default
+            # 300s maxDuration before mark_synced / mark_full_history_imported.
             initial = False
             use_force_full = True
         elif incremental_only:
@@ -156,7 +162,6 @@ class QuickFileSyncService:
         try:
             accounts = await provider.sync_accounts()
             debtors_gbp = await provider.fetch_debtors_gbp()
-            raw_txs = await provider.sync_transactions(since=since)
         except IntegrationNotConfiguredError:
             raise
         except QuickFileError as exc:
@@ -170,13 +175,29 @@ class QuickFileSyncService:
             db, accounts, debtors_gbp
         )
 
-        imported = await finance_import_service.commit(
-            db,
-            raw_txs,
-            source="quickfile",
-            actor="import",
-            persist=True,
-        )
+        try:
+            if use_force_full:
+                imported = await self._commit_force_full_by_year(
+                    db, provider, since=since
+                )
+            else:
+                raw_txs = await provider.sync_transactions(since=since)
+                imported = await finance_import_service.commit(
+                    db,
+                    raw_txs,
+                    source="quickfile",
+                    actor="import",
+                    persist=True,
+                )
+        except IntegrationNotConfiguredError:
+            raise
+        except QuickFileError as exc:
+            await quickfile_settings_service.record_error(db, str(exc))
+            raise
+        except Exception as exc:
+            await quickfile_settings_service.record_error(db, str(exc))
+            raise
+
         if use_force_full:
             await quickfile_settings_service.mark_full_history_imported(
                 db, lookback_days=QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
@@ -193,10 +214,17 @@ class QuickFileSyncService:
             window = f"{days}-day first sync"
         else:
             window = f"{days}-day incremental"
+        imported_n = int(imported.get("imported", 0) or 0)
+        duplicates_n = int(imported.get("duplicate_count", 0) or 0)
+        rejected_n = int(imported.get("rejected_count", 0) or 0)
         message = (
             f"Synced {synced} QuickFile account(s); "
-            f"imported {imported.get('imported', 0)} transaction(s) ({window})"
+            f"imported {imported_n} transaction(s) ({window})"
         )
+        if duplicates_n:
+            message += f"; {duplicates_n} already present"
+        if rejected_n:
+            message += f"; {rejected_n} rejected"
         message += f"; debtors control {debtors_gbp:.2f} GBP"
 
         reports_synced = False
@@ -218,11 +246,55 @@ class QuickFileSyncService:
             accounts_synced=synced,
             debtors_gbp=debtors_gbp,
             reports_synced=reports_synced,
-            imported=imported.get("imported", 0),
-            duplicates=imported.get("duplicate_count", 0),
-            rejected=imported.get("rejected_count", 0),
+            imported=imported_n,
+            duplicates=duplicates_n,
+            rejected=rejected_n,
             message=message,
         )
+
+    async def _commit_force_full_by_year(
+        self,
+        db: AsyncSession,
+        provider: QuickFileProvider,
+        *,
+        since: str,
+    ) -> dict:
+        """Fetch + commit one year window at a time for force_full.
+
+        A serverless platform timeout mid-import keeps already-committed years
+        (fingerprints stay idempotent on retry) instead of discarding a giant
+        in-memory buffer that never reached ``finance_import_service.commit``.
+        """
+        until = datetime.now(timezone.utc).date().isoformat()
+        windows = lookback_date_chunks(since[:10], until)
+        imported_total = 0
+        duplicate_total = 0
+        rejected_total = 0
+        for from_date, to_date in windows:
+            raw_txs = await provider.sync_transactions(since=from_date, until=to_date)
+            chunk = await finance_import_service.commit(
+                db,
+                raw_txs,
+                source="quickfile",
+                actor="import",
+                persist=True,
+            )
+            imported_total += int(chunk.get("imported", 0) or 0)
+            duplicate_total += int(chunk.get("duplicate_count", 0) or 0)
+            rejected_total += int(chunk.get("rejected_count", 0) or 0)
+            logger.info(
+                "QuickFile force_full chunk %s..%s: imported=%s duplicates=%s rejected=%s",
+                from_date,
+                to_date,
+                chunk.get("imported", 0),
+                chunk.get("duplicate_count", 0),
+                chunk.get("rejected_count", 0),
+            )
+        return {
+            "imported": imported_total,
+            "duplicate_count": duplicate_total,
+            "rejected_count": rejected_total,
+        }
 
     async def _upsert_accounts_and_debtors(
         self,
@@ -263,8 +335,6 @@ class QuickFileSyncService:
                 FinanceAccountRow.source == FinanceAccountSource.QUICKFILE.value,
             )
         )
-        from datetime import datetime, timezone
-
         now = datetime.now(timezone.utc)
         if row is None:
             row = FinanceAccountRow(
