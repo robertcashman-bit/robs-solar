@@ -353,7 +353,8 @@ def recommend_debt_strategy(liabilities: list[FinanceLiability]) -> DebtStrategy
         strategy=strategy,
         headline=f"Recommended: {strategy_label}",
         message=(
-            f"Focus extra payments on {target.name} ({format_gbp(target.balance_gbp, decimals=0)} at "
+            f"Focus extra payments on {target.name} "
+            f"({format_gbp(target.balance_gbp, decimals=0)} at "
             f"{target.interest_rate_pct:.1f}%). "
             f"{date_clause}"
         ),

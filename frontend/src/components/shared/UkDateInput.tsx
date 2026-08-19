@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type UkDateInputProps = {
   value: string;
@@ -60,11 +60,9 @@ export function UkDateInput({
   id,
   "aria-label": ariaLabel = "Date (dd/mm/yyyy)",
 }: UkDateInputProps) {
-  const [display, setDisplay] = useState(() => (value ? isoToUkDate(value) : ""));
-
-  useEffect(() => {
-    setDisplay(value ? isoToUkDate(value) : "");
-  }, [value]);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const display = editing ? draft : value ? isoToUkDate(value) : "";
 
   return (
     <label className="block space-y-1 text-sm">
@@ -80,9 +78,13 @@ export function UkDateInput({
         value={display}
         required={required}
         aria-label={ariaLabel}
+        onFocus={() => {
+          setDraft(value ? isoToUkDate(value) : "");
+          setEditing(true);
+        }}
         onChange={(event) => {
           const next = event.target.value;
-          setDisplay(next);
+          setDraft(next);
           if (!next.trim()) {
             onChange("");
             return;
@@ -91,18 +93,13 @@ export function UkDateInput({
           if (iso) onChange(iso);
         }}
         onBlur={() => {
-          if (!display.trim()) {
+          if (!draft.trim()) {
             onChange("");
-            setDisplay("");
-            return;
-          }
-          const iso = ukDateToIso(display);
-          if (iso) {
-            onChange(iso);
-            setDisplay(isoToUkDate(iso));
           } else {
-            setDisplay(value ? isoToUkDate(value) : "");
+            const iso = ukDateToIso(draft);
+            if (iso) onChange(iso);
           }
+          setEditing(false);
         }}
       />
     </label>
