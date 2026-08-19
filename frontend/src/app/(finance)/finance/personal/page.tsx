@@ -73,22 +73,43 @@ export default function PersonalFinancePage() {
   const load = useCallback(async () => {
     const errors: string[] = [];
 
-    // Position must not depend on period-flow / budgets — those can time out
-    // independently and previously blanked every tile via Promise.all.
-    try {
-      const [accts, debts, overviewRaw] = await Promise.all([
-        apiClient.get<unknown>("/finance/accounts?scope=personal"),
-        apiClient.get<unknown>("/finance/liabilities?scope=personal"),
-        apiClient.get<unknown>(
-          `/finance/overview?fresh=1&personal_period=${periodState.period}&business_period=${periodState.period}`,
-        ),
-      ]);
-      setAccounts(parseFinanceAccounts(accts));
-      setLiabilities(parseFinanceLiabilities(debts));
-      const parsedOverview = financeOverviewSchema.safeParse(overviewRaw);
+    // Position must not depend on overview period-flows, period-flow, or budgets —
+    // those can time out independently and previously blanked every tile.
+    const [acctsSettled, debtsSettled, overviewSettled] = await Promise.allSettled([
+      apiClient.get<unknown>("/finance/accounts?scope=personal"),
+      apiClient.get<unknown>("/finance/liabilities?scope=personal"),
+      apiClient.get<unknown>(
+        `/finance/overview?fresh=1&personal_period=${periodState.period}&business_period=${periodState.period}`,
+      ),
+    ]);
+    if (acctsSettled.status === "fulfilled") {
+      setAccounts(parseFinanceAccounts(acctsSettled.value));
+    } else {
+      errors.push(
+        acctsSettled.reason instanceof Error
+          ? acctsSettled.reason.message
+          : "Failed to load personal accounts",
+      );
+    }
+    if (debtsSettled.status === "fulfilled") {
+      setLiabilities(parseFinanceLiabilities(debtsSettled.value));
+    } else {
+      errors.push(
+        debtsSettled.reason instanceof Error
+          ? debtsSettled.reason.message
+          : "Failed to load personal liabilities",
+      );
+    }
+    if (overviewSettled.status === "fulfilled") {
+      const parsedOverview = financeOverviewSchema.safeParse(overviewSettled.value);
       setOverview(parsedOverview.success ? parsedOverview.data : null);
-    } catch (err) {
-      errors.push(err instanceof Error ? err.message : "Failed to load personal position");
+    } else {
+      setOverview(null);
+      errors.push(
+        overviewSettled.reason instanceof Error
+          ? overviewSettled.reason.message
+          : "Failed to load overview",
+      );
     }
 
     try {

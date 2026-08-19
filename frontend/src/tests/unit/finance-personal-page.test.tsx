@@ -284,4 +284,112 @@ describe("PersonalFinancePage", () => {
     expect(tile("Personal bank").getByText("-£2,503.91")).toBeInTheDocument();
     expect(screen.getByText("Director's loan receivable")).toBeInTheDocument();
   });
+
+  it("keeps Position tiles when overview fails", async () => {
+    const { apiClient } = await import("@/lib/api-client");
+    const get = apiClient.get as ReturnType<typeof vi.fn>;
+    get.mockImplementation(async (path: string) => {
+      if (path.startsWith("/finance/overview")) {
+        throw new Error("The server took too long to respond.");
+      }
+      if (path === "/finance/accounts?scope=personal") {
+        return [
+          {
+            id: 1,
+            scope: "personal",
+            account_type: "current",
+            name: "Current",
+            provider: "",
+            balance_gbp: 100,
+            notes: "",
+            source: "manual",
+            is_active: true,
+            created_at: "2010-01-01T00:00:00Z",
+            updated_at: "2010-01-01T00:00:00Z",
+          },
+          {
+            id: 2,
+            scope: "personal",
+            account_type: "pension",
+            name: "Pension",
+            provider: "",
+            balance_gbp: 50000,
+            notes: "",
+            source: "manual",
+            is_active: true,
+            created_at: "2010-01-01T00:00:00Z",
+            updated_at: "2010-01-01T00:00:00Z",
+          },
+          {
+            id: 3,
+            scope: "personal",
+            account_type: "property",
+            name: "House",
+            provider: "",
+            balance_gbp: 350000,
+            notes: "",
+            source: "manual",
+            is_active: true,
+            created_at: "2010-01-01T00:00:00Z",
+            updated_at: "2010-01-01T00:00:00Z",
+          },
+        ];
+      }
+      if (path.startsWith("/finance/liabilities")) {
+        return [
+          {
+            id: 14,
+            scope: "personal",
+            name: "House mortgage",
+            debt_type: "mortgage",
+            balance_gbp: 80000,
+            interest_rate_pct: 4,
+            minimum_payment_gbp: 900,
+            overpayment_gbp: 0,
+            original_balance_gbp: null,
+            payment_day: null,
+            credit_limit_gbp: null,
+            account_id: null,
+            notes: "",
+            source: "manual",
+            is_active: true,
+            interest_rate_known: true,
+            dla_direction: null,
+            created_at: "2010-01-01T00:00:00Z",
+            updated_at: "2010-01-01T00:00:00Z",
+          },
+        ];
+      }
+      if (path.startsWith("/finance/period-flow")) {
+        return {
+          period: "mtd",
+          scope: "personal",
+          label: "This month to date",
+          date_from: "2026-08-01",
+          date_to: "2026-08-19",
+          months_requested: 1,
+          months_with_data: 0,
+          transaction_count: 0,
+          income_gbp: 0,
+          spending_gbp: 0,
+          surplus_gbp: 0,
+          history_partial: true,
+          coverage_note: "No stored transactions.",
+        };
+      }
+      if (path.startsWith("/finance/pnl-compare")) {
+        return { scope: "personal", as_of: "2026-08-19", rows: [] };
+      }
+      if (path.startsWith("/finance/budgets/active")) return null;
+      if (path === "/finance/snapshots/personal") return [];
+      return [];
+    });
+
+    render(<PersonalFinancePage />);
+    expect(await screen.findByText("Personal house (your half)")).toBeInTheDocument();
+    expect(tile("Personal house (your half)").getByText("£350,000.00")).toBeInTheDocument();
+    expect(tile("Personal bank").getByText("£100.00")).toBeInTheDocument();
+    expect(tile("Personal pension").getByText("£50,000.00")).toBeInTheDocument();
+    expect(tile("Personal debts").getByText("£80,000.00")).toBeInTheDocument();
+  });
 });

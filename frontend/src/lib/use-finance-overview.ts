@@ -150,11 +150,15 @@ export function useFinanceOverview(
         // Race a short live sync, then always GET stored overview (?fresh=1).
         let liveWarning: string | null = null;
         if (live) {
+          let timeoutId = 0;
+          const livePost = apiClient.post("/finance/live-refresh", {});
+          // Losing side of the race must not surface as unhandledrejection.
+          void livePost.catch(() => undefined);
           try {
             await Promise.race([
-              apiClient.post("/finance/live-refresh", {}),
+              livePost,
               new Promise<never>((_, reject) => {
-                window.setTimeout(() => {
+                timeoutId = window.setTimeout(() => {
                   reject(
                     new Error(
                       "Live sync is taking too long — showing stored figures.",
@@ -168,6 +172,8 @@ export function useFinanceOverview(
               err instanceof Error
                 ? err.message
                 : "Live refresh did not finish";
+          } finally {
+            window.clearTimeout(timeoutId);
           }
         }
         const month = currentMonthKey();

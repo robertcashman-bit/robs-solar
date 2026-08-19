@@ -272,11 +272,14 @@ async def test_historical_reports_do_not_overwrite_stored_debt(
     historical = (await client.get("/finance/reports?month=2026-01")).json()
     assert historical["total_debt_gbp"] == 5000
     assert historical["net_worth_gbp"] == 12000
+    assert historical["external_debt_gbp"] is None
+    assert historical["directors_loan_gbp"] == 0.0
 
     await client.get("/finance/overview?month=2026-01")
     after = (await client.get("/finance/reports?month=2026-01")).json()
     assert after["total_debt_gbp"] == 5000
     assert after["net_worth_gbp"] == 12000
+    assert after["directors_loan_gbp"] == 0.0
 
 
 @pytest.mark.asyncio
