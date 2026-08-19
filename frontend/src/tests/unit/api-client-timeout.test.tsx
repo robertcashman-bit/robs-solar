@@ -6,6 +6,7 @@ import {
   DEFAULT_GET_TIMEOUT_MS,
   LIVE_REFRESH_TIMEOUT_MS,
   MUTATION_TIMEOUT_MS,
+  QUICKFILE_FORCE_FULL_SYNC_TIMEOUT_MS,
   REPORTS_GET_TIMEOUT_MS,
   apiClient,
   resolveTimeoutMs,
@@ -58,6 +59,16 @@ describe("apiClient timeouts", () => {
   it("bounds live-refresh POSTs so Refresh cannot hang on the default mutation window", () => {
     expect(resolveTimeoutMs("/finance/live-refresh", "POST")).toBe(LIVE_REFRESH_TIMEOUT_MS);
     expect(LIVE_REFRESH_TIMEOUT_MS).toBeLessThan(MUTATION_TIMEOUT_MS);
+  });
+
+  it("gives QuickFile force_full sync a long mutation timeout", () => {
+    expect(
+      resolveTimeoutMs("/finance/integrations/quickfile/sync?force_full=true", "POST"),
+    ).toBe(QUICKFILE_FORCE_FULL_SYNC_TIMEOUT_MS);
+    expect(
+      resolveTimeoutMs("/finance/integrations/quickfile/sync", "POST"),
+    ).toBe(MUTATION_TIMEOUT_MS);
+    expect(QUICKFILE_FORCE_FULL_SYNC_TIMEOUT_MS).toBeGreaterThan(MUTATION_TIMEOUT_MS);
   });
 
   it("surfaces abort as 504, not 401", async () => {

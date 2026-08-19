@@ -16,9 +16,12 @@ vi.mock("@/lib/api-client", () => ({
   },
 }));
 
-vi.mock("@/lib/auth-context", () => ({
-  useAuth: () => ({ user: { id: "1", role: "admin" }, loading: false }),
-}));
+vi.mock("@/lib/auth-context", () => {
+  const user = { id: "1", role: "admin" };
+  return {
+    useAuth: () => ({ user, loading: false }),
+  };
+});
 
 vi.mock("@/lib/finance-events", () => ({
   notifyFinanceChanged: vi.fn(),
@@ -145,6 +148,8 @@ describe("QuickFileSettingsPanel", () => {
     expect(await screen.findByText(/Connected · quota paused/i)).toBeInTheDocument();
     expect(screen.getByText(/retry after midnight UTC/i)).toBeInTheDocument();
     expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Import full history/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Sync now/i })).not.toBeDisabled();
   });
 
   it("never renders Not configured for a configured:true payload", async () => {
@@ -161,5 +166,49 @@ describe("QuickFileSettingsPanel", () => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
     expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
+  });
+
+  it("Sync now posts without force_full; Import full history posts with force_full=true", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.get).mockResolvedValue({
+      account_number: "6111393904",
+      api_key_set: true,
+      application_id: "app-id",
+      configured: true,
+      connected: true,
+      last_sync_at: "2026-08-18T12:00:00Z",
+      budget_account_external_ids: [],
+    });
+    vi.mocked(apiClient.post).mockResolvedValue({
+      accounts_synced: 1,
+      debtors_gbp: 0,
+      message: "synced",
+    });
+
+    render(<QuickFileSettingsPanel />);
+    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText(/daily 1000-request QuickFile quota/i)).toBeInTheDocument();
+
+    const syncNow = screen.getByRole("button", { name: /Sync now/i });
+    const importFull = screen.getByRole("button", { name: /Import full history/i });
+    expect(syncNow).toBeEnabled();
+    expect(importFull).toBeEnabled();
+
+    await user.click(syncNow);
+    await waitFor(() => {
+      expect(apiClient.post).toHaveBeenCalledWith("/finance/integrations/quickfile/sync");
+    });
+    expect(apiClient.post).not.toHaveBeenCalledWith(
+      expect.stringContaining("force_full"),
+    );
+
+    vi.mocked(apiClient.post).mockClear();
+    await user.click(importFull);
+    await waitFor(() => {
+      expect(apiClient.post).toHaveBeenCalledWith(
+        "/finance/integrations/quickfile/sync?force_full=true",
+      );
+    });
+    expect(apiClient.post).not.toHaveBeenCalledWith("/finance/integrations/quickfile/sync");
   });
 });
