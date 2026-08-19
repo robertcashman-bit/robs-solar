@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useRouter } from "next/navigation";
 
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
@@ -63,15 +70,28 @@ export default function LoginPage() {
     login,
     user,
     loading,
+    authResolved,
     magicCodeEnabled,
     magicCodeDevDelivery,
     requestMagicCode,
     verifyMagicCode,
     consumeMagicLink,
   } = useAuth();
-  const storedEmail = useSyncExternalStore(subscribeLastEmail, readLastEmail, () => "");
-  const magicToken = useSyncExternalStore(subscribeSearch, readMagicToken, () => "");
-  const sendOnOpen = useSyncExternalStore(subscribeSearch, readSendOnOpen, () => false);
+  const storedEmail = useSyncExternalStore(
+    subscribeLastEmail,
+    readLastEmail,
+    () => "",
+  );
+  const magicToken = useSyncExternalStore(
+    subscribeSearch,
+    readMagicToken,
+    () => "",
+  );
+  const sendOnOpen = useSyncExternalStore(
+    subscribeSearch,
+    readSendOnOpen,
+    () => false,
+  );
   const [emailOverride, setEmailOverride] = useState<string | null>(null);
   const email = emailOverride ?? (storedEmail || ROBS_FINANCE_OWNER_EMAIL);
   const [password, setPassword] = useState("");
@@ -91,10 +111,12 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (!loading && user) {
+    // Wait for /auth/me (or login) to resolve — a cached last-session user
+    // must not bounce away from sign-in before an expired cookie is cleared.
+    if (authResolved && user) {
       router.replace("/");
     }
-  }, [loading, user, router]);
+  }, [authResolved, user, router]);
 
   useEffect(() => {
     if (!magicToken || consumedToken.current === magicToken) {
@@ -152,7 +174,14 @@ export default function LoginPage() {
   }, [email, requestMagicCode]);
 
   useEffect(() => {
-    if (!sendOnOpen || !magicCodeEnabled || magicToken || sendingLink || loading || user) {
+    if (
+      !sendOnOpen ||
+      !magicCodeEnabled ||
+      magicToken ||
+      sendingLink ||
+      loading ||
+      user
+    ) {
       return;
     }
     const trimmed = email.trim();
@@ -182,7 +211,7 @@ export default function LoginPage() {
     handleSendCode,
   ]);
 
-  if (!loading && user) {
+  if (authResolved && user) {
     return null;
   }
 
@@ -280,11 +309,17 @@ export default function LoginPage() {
           ) : null}
           {devCode && magicCodeDevDelivery ? (
             <p className="mt-2 rounded-lg bg-[var(--surface)] px-3 py-2 text-sm">
-              Dev code: <span className="font-mono font-semibold tracking-widest">{devCode}</span>
+              Dev code:{" "}
+              <span className="font-mono font-semibold tracking-widest">
+                {devCode}
+              </span>
             </p>
           ) : null}
 
-          <label className="mt-4 block text-sm font-medium" htmlFor="current-password">
+          <label
+            className="mt-4 block text-sm font-medium"
+            htmlFor="current-password"
+          >
             Password
             <input
               id="current-password"
@@ -304,7 +339,11 @@ export default function LoginPage() {
             </div>
           ) : null}
 
-          <button type="submit" disabled={submitting} className="solar-btn-secondary mt-6 w-full">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="solar-btn-secondary mt-6 w-full"
+          >
             {submitting
               ? "Signing in..."
               : magicCodeEnabled
@@ -314,7 +353,10 @@ export default function LoginPage() {
         </form>
 
         {magicCodeEnabled && linkSent ? (
-          <form onSubmit={(event) => void handleVerifyCode(event)} className="mt-6 border-t border-[var(--border)] pt-6">
+          <form
+            onSubmit={(event) => void handleVerifyCode(event)}
+            className="mt-6 border-t border-[var(--border)] pt-6"
+          >
             <label className="block text-sm font-medium" htmlFor="login-code">
               6-digit sign-in code
               <input
