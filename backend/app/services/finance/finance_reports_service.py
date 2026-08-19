@@ -225,6 +225,12 @@ class FinanceReportsService:
             business_snapshot=business,
             net_worth_gbp=net_worth,
             total_debt_gbp=total_debt,
+            external_debt_gbp=(
+                overview.external_debt_gbp if month == current_month else None
+            ),
+            directors_loan_gbp=(
+                overview.directors_loan_gbp if month == current_month else totals.directors_loan_gbp
+            ),
             debt_reduction_gbp=debt_reduction,
             energy_savings_gbp=0,
             energy_savings_vs_forecast="",
