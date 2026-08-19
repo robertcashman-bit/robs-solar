@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AppSettingRow, BusinessFinanceSnapshotRow
 from app.integrations.quickfile_client import QuickFileClient, QuickFileError
-from app.integrations.quickfile_reports import parse_balance_sheet, parse_profit_and_loss
+from app.integrations.quickfile_reports import (
+    normalize_parsed_balance_sheet,
+    parse_balance_sheet,
+    parse_profit_and_loss,
+)
 from app.schemas.finance import (
     QuickFileBalanceSheetSummary,
     QuickFileConfig,
@@ -31,6 +35,14 @@ def _month_start(today: datetime) -> str:
 
 def _year_start(today: datetime) -> str:
     return today.date().replace(month=1, day=1).isoformat()
+
+
+def _normalize_reports_payload(payload: dict) -> dict:
+    """Fix misfiled 2xxx lines on stored reports without requiring a re-sync."""
+    balance_sheet = payload.get("balance_sheet")
+    if isinstance(balance_sheet, dict) and balance_sheet.get("sections"):
+        payload["balance_sheet"] = normalize_parsed_balance_sheet(balance_sheet)
+    return payload
 
 
 class QuickFileReportsService:
@@ -64,7 +76,8 @@ class QuickFileReportsService:
         if row is None:
             return None
         try:
-            return QuickFileReportsResponse.model_validate(json.loads(row.value))
+            payload = _normalize_reports_payload(json.loads(row.value))
+            return QuickFileReportsResponse.model_validate(payload)
         except (json.JSONDecodeError, ValueError):
             return None
 

@@ -1,5 +1,7 @@
 """Unit tests for QuickFile P&L and balance sheet report parsing."""
 
+import pytest
+
 from app.integrations.quickfile_reports import (
     parse_balance_sheet_full,
     parse_profit_and_loss_full,
@@ -264,6 +266,172 @@ def test_parse_balance_sheet_rehomes_misfiled_liability_nominals() -> None:
     long_labels = [line["label"] for line in by_key["LongTermLiabilities"]["lines"]]
     assert "Loans" in long_labels
     assert by_key["LongTermLiabilities"]["subtotal_gbp"] == 26855.84
+
+
+def test_normalize_live_stored_balance_sheet_rehoms_2100_and_2300() -> None:
+    """Stored reports (what /finance/reports serves) keep pre-rehome sections until read.
+
+    Live production shape: Current assets still lists 2100/2300 while creditors within
+    one year only has other nominals — the PR #24 parse-time fix never ran on this JSON.
+    """
+    from app.integrations.quickfile_reports import normalize_parsed_balance_sheet
+
+    # Inflated current assets: true assets (~8572) + 2100 + 2300 ≈ 37770.47
+    stored = {
+        "to_date": "2026-08-19",
+        "fixed_assets_gbp": 0.0,
+        "current_assets_gbp": 37770.47,
+        "current_liabilities_gbp": 45662.43,
+        "long_term_liabilities_gbp": 0.0,
+        "capital_and_reserves_gbp": 0.0,
+        "debtors_gbp": 0.0,
+        "creditors_gbp": 0.0,
+        "vat_reserve_gbp": 0.0,
+        "vat_liability_gbp": 0.0,
+        "sections": [
+            {
+                "key": "FixedAssets",
+                "label": "Fixed assets",
+                "lines": [],
+                "subtotal_gbp": 0.0,
+                "is_total": False,
+            },
+            {
+                "key": "CurrentAssets",
+                "label": "Current assets",
+                "lines": [
+                    {
+                        "nominal_code": "1200",
+                        "label": "Debtors Control Account",
+                        "amount_gbp": 5000.0,
+                    },
+                    {
+                        "nominal_code": "1210",
+                        "label": "Vat Account",
+                        "amount_gbp": 0.2,
+                    },
+                    {
+                        "nominal_code": "1250",
+                        "label": "Petty cash",
+                        "amount_gbp": 3572.0,
+                    },
+                    {
+                        "nominal_code": "2100",
+                        "label": "Creditors Control Account",
+                        "amount_gbp": 2342.43,
+                    },
+                    {
+                        "nominal_code": "2300",
+                        "label": "Loans",
+                        "amount_gbp": 26855.84,
+                    },
+                ],
+                "subtotal_gbp": 37770.47,
+                "is_total": False,
+            },
+            {
+                "key": "CurrentLiabilities",
+                "label": "Creditors: amounts falling due within one year",
+                "lines": [
+                    {"nominal_code": "50", "label": "HP Finance", "amount_gbp": 1000.0},
+                    {
+                        "nominal_code": "1201",
+                        "label": "Director's Loan",
+                        "amount_gbp": 5000.0,
+                    },
+                    {"nominal_code": "2200", "label": "VAT Liability", "amount_gbp": 2000.0},
+                    {
+                        "nominal_code": "2202",
+                        "label": "Corporation Tax",
+                        "amount_gbp": 37662.43,
+                    },
+                ],
+                "subtotal_gbp": 45662.43,
+                "is_total": False,
+            },
+            {
+                "key": "LongTermLiabilities",
+                "label": "Creditors: amounts falling due after one year",
+                "lines": [],
+                "subtotal_gbp": 0.0,
+                "is_total": False,
+            },
+            {
+                "key": "CapitalAndReserves",
+                "label": "Capital and reserves",
+                "lines": [],
+                "subtotal_gbp": 0.0,
+                "is_total": True,
+            },
+        ],
+    }
+
+    result = normalize_parsed_balance_sheet(stored)
+    by_key = {section["key"]: section for section in result["sections"]}
+    asset_codes = [line["nominal_code"] for line in by_key["CurrentAssets"]["lines"]]
+    assert "2100" not in asset_codes
+    assert "2300" not in asset_codes
+    assert asset_codes == ["1200", "1210", "1250"]
+    assert result["current_assets_gbp"] == pytest.approx(8572.2)
+    assert by_key["CurrentAssets"]["subtotal_gbp"] == pytest.approx(8572.2)
+
+    current_codes = [line["nominal_code"] for line in by_key["CurrentLiabilities"]["lines"]]
+    assert "2100" in current_codes
+    assert result["creditors_gbp"] == 2342.43
+    assert result["current_liabilities_gbp"] == pytest.approx(45662.43 + 2342.43)
+
+    long_codes = [line["nominal_code"] for line in by_key["LongTermLiabilities"]["lines"]]
+    assert long_codes == ["2300"]
+    assert result["long_term_liabilities_gbp"] == 26855.84
+
+
+def test_normalize_handles_zero_padded_nominal_codes() -> None:
+    from app.integrations.quickfile_reports import normalize_parsed_balance_sheet
+
+    stored = {
+        "to_date": "2026-08-19",
+        "fixed_assets_gbp": 0.0,
+        "current_assets_gbp": 100.0,
+        "current_liabilities_gbp": 0.0,
+        "long_term_liabilities_gbp": 0.0,
+        "capital_and_reserves_gbp": 0.0,
+        "sections": [
+            {
+                "key": "CurrentAssets",
+                "label": "Current assets",
+                "lines": [
+                    {
+                        "nominal_code": "02100",
+                        "label": "Creditors Control Account",
+                        "amount_gbp": 50.0,
+                    },
+                    {
+                        "nominal_code": "02300",
+                        "label": "Loans",
+                        "amount_gbp": 50.0,
+                    },
+                ],
+                "subtotal_gbp": 100.0,
+            },
+            {
+                "key": "CurrentLiabilities",
+                "label": "Creditors: amounts falling due within one year",
+                "lines": [],
+                "subtotal_gbp": 0.0,
+            },
+            {
+                "key": "LongTermLiabilities",
+                "label": "Creditors: amounts falling due after one year",
+                "lines": [],
+                "subtotal_gbp": 0.0,
+            },
+        ],
+    }
+    result = normalize_parsed_balance_sheet(stored)
+    by_key = {section["key"]: section for section in result["sections"]}
+    assert by_key["CurrentAssets"]["lines"] == []
+    assert by_key["CurrentLiabilities"]["lines"][0]["label"] == "Creditors Control Account"
+    assert by_key["LongTermLiabilities"]["lines"][0]["label"] == "Loans"
 
 
 def test_parse_profit_and_loss_full_handles_empty_breakdown() -> None:
