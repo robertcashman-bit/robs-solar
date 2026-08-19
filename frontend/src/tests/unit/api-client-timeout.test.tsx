@@ -104,4 +104,26 @@ describe("apiClient timeouts", () => {
       message: expect.stringMatching(/timed out before the import finished/i),
     });
   });
+
+  it("does not rewrite 504 detail on non-force_full paths", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ detail: "Gateway Timeout" }),
+          { status: 504, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    await expect(apiClient.post("/finance/live-refresh")).rejects.toMatchObject({
+      status: 504,
+      message: "Gateway Timeout",
+    });
+    await expect(
+      apiClient.post("/finance/integrations/quickfile/sync"),
+    ).rejects.toMatchObject({
+      status: 504,
+      message: "Gateway Timeout",
+    });
+  });
 });

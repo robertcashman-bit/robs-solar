@@ -139,7 +139,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // ignore parse errors
     }
-    if (response.status === 504 || /FUNCTION_INVOCATION_TIMEOUT/i.test(detail)) {
+    if (
+      isQuickFileForceFullSyncPath(path)
+      && (response.status === 504 || /FUNCTION_INVOCATION_TIMEOUT/i.test(detail))
+    ) {
       detail =
         "The server timed out before the import finished. Any year chunks already "
         + "saved are kept — click Import full history again to continue.";
