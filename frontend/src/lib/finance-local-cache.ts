@@ -23,6 +23,7 @@ export function clearFinanceLocalCaches(): void {
   try {
     window.localStorage.removeItem(FINANCE_LAST_OVERVIEW_KEY);
     window.localStorage.removeItem(FINANCE_LAST_TRANSACTIONS_KEY);
+    window.localStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
     window.sessionStorage.removeItem(FINANCE_LIVE_REFRESH_AT_KEY);
     window.sessionStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
     window.sessionStorage.removeItem("robs-finance-last-active-budgets");
