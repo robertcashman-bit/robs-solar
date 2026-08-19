@@ -52,5 +52,7 @@ describe("PlComparePanel", () => {
       0,
     );
     expect(screen.queryByText(/No stored transactions in 6 months/)).not.toBeInTheDocument();
+    expect(screen.getByText(/19\/02\/2026 → 19\/08\/2026/)).toBeInTheDocument();
+    expect(screen.getByText(/vs 19\/08\/2025 → 18\/02\/2026/)).toBeInTheDocument();
   });
 });

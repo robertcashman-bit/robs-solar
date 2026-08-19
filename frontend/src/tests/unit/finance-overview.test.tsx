@@ -114,6 +114,10 @@ describe("FinanceOverviewView", () => {
       screen.getByText(/Excludes director's loan/),
     ).toBeInTheDocument();
     expect(screen.getByText("Business VAT pot")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Cash in VAT pot \(paid reserve — not QuickFile VAT liability\)/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Tax provision (not yet paid)")).toBeInTheDocument();
     expect(screen.getByText("Business debtors")).toBeInTheDocument();
     expect(screen.queryByText("External debt")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Active budgets" })).toBeInTheDocument();

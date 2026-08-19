@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatDataQualityIssue,
+  formatInsightMeta,
   formatReconFlagLabel,
+  formatSafeSpendStatus,
+  formatUkDate,
   formatUkDateTime,
 } from "@/lib/finance-labels";
 import { isoToUkDate, ukDateToIso } from "@/components/shared/UkDateInput";
@@ -18,6 +21,22 @@ describe("finance-labels", () => {
     expect(formatDataQualityIssue("possible_personal_on_business")).toBe(
       "Looks personal on a business account",
     );
+  });
+
+  it("humanises insight severity and category codes", () => {
+    expect(formatInsightMeta("warning", "cashflow")).toBe("Warning · Cashflow");
+    expect(formatInsightMeta("critical", "debt")).toBe("Critical · Debt");
+  });
+
+  it("humanises safe-to-spend status codes", () => {
+    expect(formatSafeSpendStatus("HEALTHY")).toBe("Healthy");
+    expect(formatSafeSpendStatus("PROJECTED_SHORTFALL")).toBe("Projected shortfall");
+    expect(formatSafeSpendStatus("BUDGET_PLAN_ONLY")).toBe("Budget plan only");
+  });
+
+  it("formats ISO date-only strings as UK dd/mm/yyyy", () => {
+    expect(formatUkDate("2026-08-19")).toBe("19/08/2026");
+    expect(formatUkDate("2025-08-01")).toBe("01/08/2025");
   });
 
   it("formats Lunch Flow sync stamps like QuickFile", () => {

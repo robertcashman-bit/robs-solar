@@ -25,6 +25,13 @@ STATED_MORTGAGE_NAME = "House mortgage"
 STATED_MORTGAGE_NOTES = "Confirmed half-share of £164,421 joint mortgage"
 _MORTGAGE_SETTING_KEY = "finance.stated_mortgage_half_gbp"
 
+# Confirmed joint house £700,000; Robert's half-share.
+STATED_HOUSE_SHARE_GBP = 350000.0
+STATED_HOUSE_JOINT_GBP = 700000.0
+STATED_HOUSE_NAME = "House (your half)"
+STATED_HOUSE_NOTES = "Confirmed half-share of £700,000 joint property"
+_HOUSE_SETTING_KEY = "finance.stated_house_share_gbp"
+
 
 def is_live_finance_database(database_url: str | None = None) -> bool:
     """True for the real app DB. Test and e2e SQLite files are left alone."""
@@ -187,5 +194,87 @@ async def ensure_stated_mortgage_half() -> FinanceLiabilityRow | None:
             "Recorded personal mortgage half %.2f GBP (joint %.0f)",
             row.balance_gbp,
             STATED_MORTGAGE_JOINT_GBP,
+        )
+        return row
+
+
+def _pick_property_row(rows: list[FinanceAccountRow]) -> FinanceAccountRow | None:
+    if not rows:
+        return None
+    named = next(
+        (
+            row
+            for row in rows
+            if row.name.strip().lower() == STATED_HOUSE_NAME.lower()
+            or "house" in row.name.strip().lower()
+        ),
+        None,
+    )
+    return named or rows[0]
+
+
+async def apply_stated_house_share(
+    db: AsyncSession,
+    *,
+    amount_gbp: float = STATED_HOUSE_SHARE_GBP,
+) -> FinanceAccountRow:
+    """Create or update the personal house share to Robert's confirmed half."""
+    rows = list(
+        (
+            await db.scalars(
+                select(FinanceAccountRow).where(
+                    FinanceAccountRow.scope == "personal",
+                    FinanceAccountRow.account_type == "property",
+                    FinanceAccountRow.is_active.is_(True),
+                )
+            )
+        ).all()
+    )
+    now = datetime.now(timezone.utc)
+    row = _pick_property_row(rows)
+    if row is None:
+        row = FinanceAccountRow(
+            scope="personal",
+            account_type="property",
+            name=STATED_HOUSE_NAME,
+            provider="",
+            balance_gbp=amount_gbp,
+            notes=STATED_HOUSE_NOTES,
+            source="manual",
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(row)
+    else:
+        row.balance_gbp = amount_gbp
+        if not row.name.strip() or "placeholder" in row.name.lower():
+            row.name = STATED_HOUSE_NAME
+        if not row.notes.strip() or "placeholder" in row.notes.lower():
+            row.notes = STATED_HOUSE_NOTES
+        row.updated_at = now
+    flag = await db.get(AppSettingRow, _HOUSE_SETTING_KEY)
+    if flag is None:
+        db.add(AppSettingRow(key=_HOUSE_SETTING_KEY, value=f"{amount_gbp:.2f}"))
+    else:
+        flag.value = f"{amount_gbp:.2f}"
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def ensure_stated_house_share() -> FinanceAccountRow | None:
+    """Apply the stated personal house share once on the live database."""
+    if not is_live_finance_database():
+        return None
+    async with SessionLocal() as db:
+        flag = await db.get(AppSettingRow, _HOUSE_SETTING_KEY)
+        if flag is not None:
+            return None
+        row = await apply_stated_house_share(db)
+        logger.info(
+            "Recorded personal house share %.2f GBP (joint %.0f)",
+            row.balance_gbp,
+            STATED_HOUSE_JOINT_GBP,
         )
         return row
