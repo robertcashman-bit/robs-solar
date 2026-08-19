@@ -17,13 +17,15 @@ import { apiClient } from "@/lib/api-client";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import {
   budgetPlanSchema,
-  financeAccountSchema,
-  financeLiabilitySchema,
+  financeOverviewSchema,
+  parseFinanceAccounts,
+  parseFinanceLiabilities,
   periodFlowSummarySchema,
   personalFinanceSnapshotSchema,
   type BudgetPlan,
   type FinanceAccount,
   type FinanceLiability,
+  type FinanceOverview,
   type PeriodFlowSummary,
   type PersonalFinanceSnapshot,
 } from "@/lib/finance-schemas";
@@ -49,7 +51,8 @@ export default function PersonalFinancePage() {
   const { user, gated, redirecting } = useRequireAuth();
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
   const [liabilities, setLiabilities] = useState<FinanceLiability[]>([]);
-  const [snapshot, setSnapshot] = useState<PersonalFinanceSnapshot | null>(null);
+  const [overview, setOverview] = useState<FinanceOverview | null>(null);
+  const [, setSnapshot] = useState<PersonalFinanceSnapshot | null>(null);
   const [activeBudget, setActiveBudget] = useState<BudgetPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -68,37 +71,68 @@ export default function PersonalFinancePage() {
   const [periodFlow, setPeriodFlow] = useState<PeriodFlowSummary | null>(null);
 
   const load = useCallback(async () => {
+    const errors: string[] = [];
+
+    // Position must not depend on period-flow / budgets — those can time out
+    // independently and previously blanked every tile via Promise.all.
     try {
-      const [accts, debts, snaps, flow, budget] = await Promise.all([
+      const [accts, debts, overviewRaw] = await Promise.all([
         apiClient.get<unknown>("/finance/accounts?scope=personal"),
         apiClient.get<unknown>("/finance/liabilities?scope=personal"),
-        apiClient.get<unknown>("/finance/snapshots/personal"),
         apiClient.get<unknown>(
-          `/finance/period-flow?period=${periodState.period}&scope=personal`,
+          `/finance/overview?fresh=1&personal_period=${periodState.period}&business_period=${periodState.period}`,
         ),
-        apiClient.get<unknown>("/finance/budgets/active?scope=personal").catch(() => null),
       ]);
+      setAccounts(parseFinanceAccounts(accts));
+      setLiabilities(parseFinanceLiabilities(debts));
+      const parsedOverview = financeOverviewSchema.safeParse(overviewRaw);
+      setOverview(parsedOverview.success ? parsedOverview.data : null);
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : "Failed to load personal position");
+    }
+
+    try {
+      const flow = await apiClient.get<unknown>(
+        `/finance/period-flow?period=${periodState.period}&scope=personal`,
+      );
       const parsedFlow = periodFlowSummarySchema.safeParse(flow);
       setPeriodFlow(parsedFlow.success ? parsedFlow.data : null);
-      setAccounts(z.array(financeAccountSchema).parse(accts));
-      setLiabilities(z.array(financeLiabilitySchema).parse(debts));
+    } catch (err) {
+      setPeriodFlow(null);
+      errors.push(err instanceof Error ? err.message : "Failed to load period flow");
+    }
+
+    try {
+      const budget = await apiClient
+        .get<unknown>("/finance/budgets/active?scope=personal")
+        .catch(() => null);
       const parsedBudget = budgetPlanSchema.safeParse(budget);
       setActiveBudget(parsedBudget.success ? parsedBudget.data : null);
-      const parsed = z.array(personalFinanceSnapshotSchema).parse(snaps);
-      const current = parsed.find((item) => isCurrentMonthSnapshot(item.snapshot_date)) ?? null;
-      setSnapshot(current);
-      if (current) {
-        setSnapshotForm({
-          monthly_income_gbp: String(current.monthly_income_gbp),
-          monthly_spending_gbp: String(current.monthly_spending_gbp),
-          household_bills_gbp: String(current.household_bills_gbp),
-          debt_repayments_gbp: String(current.debt_repayments_gbp),
-        });
-      }
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load personal finance");
+    } catch {
+      setActiveBudget(null);
     }
+
+    try {
+      const snaps = await apiClient.get<unknown>("/finance/snapshots/personal");
+      const parsed = z.array(personalFinanceSnapshotSchema).safeParse(snaps);
+      if (parsed.success) {
+        const current =
+          parsed.data.find((item) => isCurrentMonthSnapshot(item.snapshot_date)) ?? null;
+        setSnapshot(current);
+        if (current) {
+          setSnapshotForm({
+            monthly_income_gbp: String(current.monthly_income_gbp),
+            monthly_spending_gbp: String(current.monthly_spending_gbp),
+            household_bills_gbp: String(current.household_bills_gbp),
+            debt_repayments_gbp: String(current.debt_repayments_gbp),
+          });
+        }
+      }
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : "Failed to load snapshots");
+    }
+
+    setError(errors.length ? errors[0] : null);
   }, [periodState.period]);
 
 
@@ -133,51 +167,76 @@ export default function PersonalFinancePage() {
 
   if (gated) return <AuthLoadingShell redirecting={redirecting} />;
 
-  const cash = accounts
+  // Prefer Overview totals (same Neon compute as the dashboard) so Position
+  // cannot drift or blank when a client-side re-sum misses rows.
+  const cashFromAccounts = accounts
     .filter((a) => a.account_type === "current")
     .reduce((s, a) => s + Math.max(a.balance_gbp, 0), 0);
-  const overdraft = accounts
+  const overdraftFromAccounts = accounts
     .filter((a) => a.account_type === "current" && a.balance_gbp < 0)
     .reduce((s, a) => s + Math.abs(a.balance_gbp), 0);
-  const pension = accounts
+  const pensionFromAccounts = accounts
     .filter((a) => a.account_type === "pension")
     .reduce((s, a) => s + a.balance_gbp, 0);
-  const property = accounts
+  const propertyFromAccounts = accounts
     .filter((a) => a.account_type === "property")
     .reduce((s, a) => s + a.balance_gbp, 0);
   const otherAssets = accounts
     .filter((a) => a.account_type === "other_asset")
     .reduce((s, a) => s + a.balance_gbp, 0);
-  const assets = cash + pension + property + otherAssets;
+
+  const bank =
+    overview?.personal_bank_balance_gbp
+    ?? round2(cashFromAccounts - overdraftFromAccounts);
+  const overdraft = overview?.personal_overdraft_gbp ?? overdraftFromAccounts;
+  const pension = overview?.pension_value_gbp ?? pensionFromAccounts;
+  const property = overview?.property_gbp ?? propertyFromAccounts;
+  // personal_bank = positive pots − overdraft, so pots = bank + overdraft.
+  const positivePots = overview
+    ? round2((overview.personal_bank_balance_gbp ?? 0) + (overview.personal_overdraft_gbp ?? 0))
+    : cashFromAccounts;
+  const assets = round2(positivePots + pension + property + otherAssets);
+
   const activePersonalDebts = liabilities.filter(
     (d) => d.is_active && d.scope === "personal" && d.debt_type !== "directors_loan",
   );
-  const personalDebts = activePersonalDebts.reduce((s, d) => s + d.balance_gbp, 0);
-  const mortgage = activePersonalDebts
-    .filter((d) => d.debt_type === "mortgage")
-    .reduce((s, d) => s + d.balance_gbp, 0);
-  const creditCards = activePersonalDebts
-    .filter((d) => d.debt_type === "credit_card")
-    .reduce((s, d) => s + d.balance_gbp, 0);
-  const personalLoans = activePersonalDebts
-    .filter((d) => d.debt_type === "loan")
-    .reduce((s, d) => s + d.balance_gbp, 0);
-  const directorOwes = liabilities
-    .filter(
-      (d) =>
-        d.is_active
-        && d.debt_type === "directors_loan"
-        && d.dla_direction === "director_owes_company",
-    )
-    .reduce((s, d) => s + d.balance_gbp, 0);
-  const companyOwes = liabilities
-    .filter(
-      (d) =>
-        d.is_active
-        && d.debt_type === "directors_loan"
-        && d.dla_direction !== "director_owes_company",
-    )
-    .reduce((s, d) => s + d.balance_gbp, 0);
+  const personalDebtsFromList = activePersonalDebts.reduce((s, d) => s + d.balance_gbp, 0);
+  const personalDebts = overview?.total_personal_debt_gbp ?? personalDebtsFromList;
+  const mortgage =
+    overview?.mortgage_balance_gbp
+    ?? activePersonalDebts
+      .filter((d) => d.debt_type === "mortgage")
+      .reduce((s, d) => s + d.balance_gbp, 0);
+  const creditCards =
+    overview?.personal_credit_card_balances_gbp
+    ?? activePersonalDebts
+      .filter((d) => d.debt_type === "credit_card")
+      .reduce((s, d) => s + d.balance_gbp, 0);
+  const personalLoans =
+    overview?.personal_loan_balances_gbp
+    ?? activePersonalDebts
+      .filter((d) => d.debt_type === "loan")
+      .reduce((s, d) => s + d.balance_gbp, 0);
+  const directorOwes =
+    overview?.director_owes_company_gbp
+    ?? liabilities
+      .filter(
+        (d) =>
+          d.is_active
+          && d.debt_type === "directors_loan"
+          && d.dla_direction === "director_owes_company",
+      )
+      .reduce((s, d) => s + d.balance_gbp, 0);
+  const companyOwes =
+    overview?.company_owes_director_gbp
+    ?? liabilities
+      .filter(
+        (d) =>
+          d.is_active
+          && d.debt_type === "directors_loan"
+          && d.dla_direction !== "director_owes_company",
+      )
+      .reduce((s, d) => s + d.balance_gbp, 0);
   const usePeriod = Boolean(periodFlow && periodFlow.transaction_count > 0);
   const surplusValue = usePeriod
     ? periodFlow!.surplus_gbp
@@ -209,6 +268,7 @@ export default function PersonalFinancePage() {
     : activeBudget
       ? "Typical personal budget plan"
       : undefined;
+
   return (
     <AppShell>
       <PageHeader
@@ -293,9 +353,9 @@ export default function PersonalFinancePage() {
           >
             <MetricTile
               label="Personal bank"
-              value={cash}
-              warning={overdraft > 0}
-              hint="Positive current accounts only"
+              value={bank}
+              warning={bank < 0 || overdraft > 0}
+              hint="Current accounts (net of overdraft) — same as Overview"
             />
           </MetricWithOfWhich>
           <MetricTile
@@ -416,4 +476,8 @@ export default function PersonalFinancePage() {
       ) : null}
     </AppShell>
   );
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }

@@ -586,6 +586,8 @@ export const financeReportsSchema = z.object({
   business_snapshot: businessFinanceSnapshotSchema.nullable().optional(),
   net_worth_gbp: z.number().nullable(),
   total_debt_gbp: z.number().nullable(),
+  external_debt_gbp: z.number().nullable().optional(),
+  directors_loan_gbp: z.number().optional().default(0),
   debt_reduction_gbp: z.number().nullable().optional(),
   energy_savings_gbp: z.number().optional().default(0),
   energy_savings_vs_forecast: z.string().optional().default(""),
@@ -755,3 +757,39 @@ export type BudgetCompare = z.infer<typeof budgetCompareSchema>;
 export type BudgetVsActual = z.infer<typeof budgetVsActualSchema>;
 export type DebtAnalysisItem = z.infer<typeof debtAnalysisItemSchema>;
 export type DebtScenario = z.infer<typeof debtScenarioSchema>;
+
+/** Coerce common API null/empty quirks so one bad row cannot blank Position tiles. */
+function coerceFinanceRow(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const row = raw as Record<string, unknown>;
+  const dla = row.dla_direction;
+  return {
+    ...row,
+    provider: row.provider ?? "",
+    notes: row.notes ?? "",
+    overpayment_gbp: row.overpayment_gbp ?? 0,
+    dla_direction: dla === "" || dla === undefined ? null : dla,
+  };
+}
+
+/** Parse account lists without failing the whole page on a single bad row. */
+export function parseFinanceAccounts(raw: unknown): FinanceAccount[] {
+  if (!Array.isArray(raw)) return [];
+  const out: FinanceAccount[] = [];
+  for (const item of raw) {
+    const parsed = financeAccountSchema.safeParse(coerceFinanceRow(item));
+    if (parsed.success) out.push(parsed.data);
+  }
+  return out;
+}
+
+/** Parse liability lists without failing the whole page on a single bad row. */
+export function parseFinanceLiabilities(raw: unknown): FinanceLiability[] {
+  if (!Array.isArray(raw)) return [];
+  const out: FinanceLiability[] = [];
+  for (const item of raw) {
+    const parsed = financeLiabilitySchema.safeParse(coerceFinanceRow(item));
+    if (parsed.success) out.push(parsed.data);
+  }
+  return out;
+}

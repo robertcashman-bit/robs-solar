@@ -12,6 +12,7 @@ const emptyReports: FinanceReports = {
   business_snapshot: null,
   net_worth_gbp: 0,
   total_debt_gbp: 0,
+  directors_loan_gbp: 0,
   debt_reduction_gbp: 0,
   debt_reduction_available: false,
   energy_savings_gbp: 0,
