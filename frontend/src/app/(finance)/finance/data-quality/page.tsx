@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { apiClient } from "@/lib/api-client";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import { formatGbp } from "@/lib/money";
+import { formatDataQualityIssue } from "@/lib/finance-labels";
 
 type QualityReport = {
   transaction_count: number;
@@ -92,7 +93,7 @@ export default function DataQualityPage() {
                   report.possible_wrong_scope.map((item) => (
                     <li key={item.id}>
                       {item.posted_on ? null : null}
-                      {item.description} · {item.scope} · {item.issue}
+                      {item.description} · {item.scope} · {formatDataQualityIssue(item.issue)}
                     </li>
                   ))
                 )}

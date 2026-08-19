@@ -3,8 +3,10 @@
 import { useCallback, useState } from "react";
 
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
+import { UkDateInput } from "@/components/shared/UkDateInput";
 import { apiClient } from "@/lib/api-client";
 import { notifyFinanceChanged } from "@/lib/finance-events";
+import { formatReconFlagLabel } from "@/lib/finance-labels";
 import { formatGbp } from "@/lib/money";
 import { useFinanceReload } from "@/lib/use-finance-reload";
 
@@ -256,11 +258,9 @@ export function FinanceIntegrityPanel({
               onChange={(event) => setFundForm({ ...fundForm, target_gbp: event.target.value })}
               required
             />
-            <input
-              className="solar-input"
-              type="date"
+            <UkDateInput
               value={fundForm.due_on}
-              onChange={(event) => setFundForm({ ...fundForm, due_on: event.target.value })}
+              onChange={(due_on) => setFundForm({ ...fundForm, due_on })}
               required
             />
             <button type="submit" className="solar-btn-primary" disabled={busy}>
@@ -281,7 +281,7 @@ export function FinanceIntegrityPanel({
           ) : (
             (recon?.flags || []).map((flag, index) => (
               <li key={`${flag.account_name}-${index}`}>
-                {flag.account_name}: {flag.kind} ({flag.status})
+                {flag.account_name}: {formatReconFlagLabel(flag.kind, flag.status)}
               </li>
             ))
           )}

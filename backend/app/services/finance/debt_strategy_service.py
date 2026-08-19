@@ -12,6 +12,7 @@ from app.schemas.finance import (
     FinanceLiability,
 )
 from app.services.finance.finance_calc import is_repayable_debt, monthly_interest_gbp
+from app.services.finance.money import format_gbp
 
 
 def months_to_payoff(
@@ -156,24 +157,66 @@ def scenario_for_extra(
     else:
         target = max(active, key=lambda item: item.balance_gbp)
         reason_suffix = "largest balance (APR unknown)"
-    current_payment = target.minimum_payment_gbp + target.overpayment_gbp
-    if current_payment <= 0 or (target.interest_rate_known and target.interest_rate_pct < 0):
+
+    if target.interest_rate_known and target.interest_rate_pct < 0:
         return DebtScenarioResult(
             extra_gbp=extra_gbp,
             incomplete=True,
-            reason=f"Payment or APR is missing for {target.name}.",
+            reason=f"APR is missing for {target.name}.",
         )
-    months_current = months_to_payoff(target.balance_gbp, target.interest_rate_pct, current_payment)
+
+    recorded_payment = target.minimum_payment_gbp + target.overpayment_gbp
+    interest_only = monthly_interest_gbp(target.balance_gbp, target.interest_rate_pct)
+    assumed_interest_only = False
+    current_payment = recorded_payment
+    if current_payment <= 0:
+        # £0 minimum is a real recorded value (e.g. Capital on Tap). Model the
+        # baseline as interest-only so What-if can still run when APR is known.
+        if not target.interest_rate_known or target.interest_rate_pct <= 0:
+            return DebtScenarioResult(
+                extra_gbp=extra_gbp,
+                incomplete=True,
+                reason=f"Minimum payment is £0.00 and APR is missing for {target.name}.",
+            )
+        if extra_gbp <= 0:
+            return DebtScenarioResult(
+                extra_gbp=extra_gbp,
+                incomplete=True,
+                reason=(
+                    f"Minimum payment is £0.00 on {target.name}. "
+                    f"Enter an extra amount to model payoff (interest-only baseline "
+                    f"{format_gbp(interest_only)}/mo)."
+                ),
+            )
+        current_payment = interest_only
+        assumed_interest_only = True
+
+    payment_with_extra = current_payment + extra_gbp
+    months_current = months_to_payoff(
+        target.balance_gbp, target.interest_rate_pct, current_payment
+    )
     months_extra = months_to_payoff(
-        target.balance_gbp, target.interest_rate_pct, current_payment + extra_gbp
+        target.balance_gbp, target.interest_rate_pct, payment_with_extra
     )
     interest_current = total_interest_paid(
         target.balance_gbp, target.interest_rate_pct, current_payment
     )
     interest_extra = total_interest_paid(
-        target.balance_gbp, target.interest_rate_pct, current_payment + extra_gbp
+        target.balance_gbp, target.interest_rate_pct, payment_with_extra
     )
-    if months_current is None or months_extra is None:
+    if months_extra is None:
+        return DebtScenarioResult(
+            extra_gbp=extra_gbp,
+            months_current=months_current,
+            months_with_extra=months_extra,
+            incomplete=True,
+            reason=(
+                f"Even with {format_gbp(extra_gbp)} extra, payment on {target.name} "
+                f"does not cover interest."
+            ),
+        )
+    # Interest-only baseline never amortises — that is expected for £0 min.
+    if months_current is None and not assumed_interest_only:
         return DebtScenarioResult(
             extra_gbp=extra_gbp,
             months_current=months_current,
@@ -182,21 +225,33 @@ def scenario_for_extra(
             reason=f"Current payment on {target.name} does not cover interest.",
         )
     interest_saved = (
-        round(interest_current - interest_extra, 2)
-        if interest_current is not None and interest_extra is not None
+        round((interest_current or 0) - (interest_extra or 0), 2)
+        if interest_extra is not None
         else None
     )
+    if assumed_interest_only:
+        reason = (
+            f"Extra applied to {target.name} ({reason_suffix}). "
+            f"Assumes interest-only ({format_gbp(interest_only)}/mo) because "
+            f"minimum payment is £0.00."
+        )
+        months_saved = None if months_current is None else max(months_current - months_extra, 0)
+    else:
+        reason = f"Extra applied to {target.name} ({reason_suffix})."
+        months_saved = (
+            None if months_current is None else max(months_current - months_extra, 0)
+        )
     return DebtScenarioResult(
         extra_gbp=extra_gbp,
         months_current=months_current,
         months_with_extra=months_extra,
-        months_saved=max(months_current - months_extra, 0),
+        months_saved=months_saved,
         interest_current_gbp=interest_current,
         interest_with_extra_gbp=interest_extra,
         interest_saved_gbp=interest_saved,
         payoff_date=add_months(date.today(), months_extra).isoformat(),
         incomplete=False,
-        reason=f"Extra applied to {target.name} ({reason_suffix}).",
+        reason=reason,
     )
 
 
@@ -240,15 +295,27 @@ def recommend_debt_strategy(liabilities: list[FinanceLiability]) -> DebtStrategy
 
     target = chosen[0]
     payment = target.minimum_payment_gbp + target.overpayment_gbp
+    interest_only = monthly_interest_gbp(target.balance_gbp, target.interest_rate_pct)
+    assumed_interest_only = False
+    if payment <= 0 and target.interest_rate_known and target.interest_rate_pct > 0:
+        payment = interest_only
+        assumed_interest_only = True
     months = _months_to_payoff(target.balance_gbp, target.interest_rate_pct, payment)
     debt_free = _add_months(date.today(), months).isoformat() if months is not None else None
 
     debts: list[dict[str, Any]] = []
     for item in active:
+        item_payment = item.minimum_payment_gbp + item.overpayment_gbp
+        if (
+            item_payment <= 0
+            and item.interest_rate_known
+            and item.interest_rate_pct > 0
+        ):
+            item_payment = monthly_interest_gbp(item.balance_gbp, item.interest_rate_pct)
         item_months = _months_to_payoff(
             item.balance_gbp,
             item.interest_rate_pct,
-            item.minimum_payment_gbp + item.overpayment_gbp,
+            item_payment,
         )
         debts.append(
             {
@@ -273,14 +340,22 @@ def recommend_debt_strategy(liabilities: list[FinanceLiability]) -> DebtStrategy
         strategy_label = "Avalanche (highest interest first)"
     else:
         strategy_label = "Snowball (smallest balance first)"
+    if debt_free:
+        date_clause = f"Estimated debt-free date for this debt: {debt_free}."
+    elif assumed_interest_only:
+        date_clause = (
+            f"Minimum payment is £0.00 — modelled as interest-only "
+            f"({format_gbp(interest_only)}/mo), so balance does not fall without extras."
+        )
+    else:
+        date_clause = "Current payment is too low to cover interest."
     return DebtStrategyRecommendation(
         strategy=strategy,
         headline=f"Recommended: {strategy_label}",
         message=(
-            f"Focus extra payments on {target.name} ({target.balance_gbp:.0f} GBP at "
+            f"Focus extra payments on {target.name} ({format_gbp(target.balance_gbp, decimals=0)} at "
             f"{target.interest_rate_pct:.1f}%). "
-            f"Estimated debt-free date for this debt: "
-            f"{debt_free or 'payment too low to cover interest'}."
+            f"{date_clause}"
         ),
         debts=debts,
         estimated_debt_free_date=debt_free,

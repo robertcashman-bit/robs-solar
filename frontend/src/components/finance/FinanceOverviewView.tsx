@@ -412,8 +412,16 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 />
                 <MetricTile
                   label="Available credit"
-                  value={overview.available_credit_gbp}
-                  hint="Unused revolving credit limits (all scopes)"
+                  value={
+                    (overview.credit_limit_gbp ?? 0) <= 0 && (overview.available_credit_gbp ?? 0) <= 0
+                      ? null
+                      : overview.available_credit_gbp
+                  }
+                  hint={
+                    (overview.credit_limit_gbp ?? 0) <= 0 && (overview.available_credit_gbp ?? 0) <= 0
+                      ? "No credit limits recorded on cards or revolving facilities"
+                      : "Unused revolving credit limits (all scopes)"
+                  }
                 />
                 <MetricTile
                   label="Personal cash after bills"
@@ -527,12 +535,18 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <MetricTile
               label="Combined est. monthly interest"
-              value={overview.monthly_interest_incomplete ? null : overview.monthly_interest_gbp}
+              value={
+                overview.monthly_interest_incomplete && (overview.monthly_interest_gbp ?? 0) === 0
+                  ? null
+                  : overview.monthly_interest_gbp
+              }
               warning={Boolean(overview.monthly_interest_incomplete) || (overview.monthly_interest_gbp ?? 0) >= 50}
               hint={
-                overview.monthly_interest_incomplete
+                overview.monthly_interest_incomplete && (overview.monthly_interest_gbp ?? 0) === 0
                   ? "APR required for interest forecast"
-                  : "From recorded annual APRs"
+                  : overview.monthly_interest_incomplete
+                    ? "From recorded APRs — some debts still need APR"
+                    : "From recorded annual APRs on Debts"
               }
             />
           </div>

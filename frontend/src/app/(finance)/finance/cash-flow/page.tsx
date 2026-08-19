@@ -8,6 +8,7 @@ import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { UkDateInput } from "@/components/shared/UkDateInput";
 import { apiClient } from "@/lib/api-client";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import { COMPANY_SHORT, PERSONAL_LEDGER } from "@/lib/finance-branding";
@@ -255,11 +256,9 @@ export default function CashFlowPage() {
             onChange={(event) => setForm({ ...form, amount_gbp: event.target.value })}
             required
           />
-          <input
-            className="solar-input"
-            type="date"
+          <UkDateInput
             value={form.forecast_date}
-            onChange={(event) => setForm({ ...form, forecast_date: event.target.value })}
+            onChange={(forecast_date) => setForm({ ...form, forecast_date })}
             required
           />
           <select className="solar-input" value={form.entry_type} onChange={(event) => setForm({ ...form, entry_type: event.target.value })}>

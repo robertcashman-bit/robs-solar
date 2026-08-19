@@ -5,9 +5,9 @@ import Link from "next/link";
 import type { FinanceInsight } from "@/lib/finance-schemas";
 
 const severityStyles: Record<string, string> = {
-  info: "border-sky-400/35 bg-sky-500/10 text-sky-950 dark:text-sky-100",
-  warning: "border-amber-400/35 bg-amber-500/10 text-amber-950 dark:text-amber-100",
-  critical: "border-rose-400/35 bg-rose-500/10 text-rose-950 dark:text-rose-100",
+  info: "border-sky-400/50 bg-sky-500/20 text-[var(--foreground)]",
+  warning: "border-amber-400/50 bg-amber-500/20 text-[var(--foreground)]",
+  critical: "border-rose-400/50 bg-rose-500/20 text-[var(--foreground)]",
 };
 
 type InsightCardProps = {

@@ -305,4 +305,35 @@ describe("FinanceOverviewView", () => {
       screen.getAllByText(/From live Open Banking sync/i).length,
     ).toBeGreaterThan(0);
   });
+
+  it("shows partial monthly interest when some APRs are still missing", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          monthly_interest_gbp: 187.42,
+          monthly_interest_incomplete: true,
+        }}
+      />,
+    );
+    const tile = screen.getByText("Combined est. monthly interest").closest("div");
+    expect(tile).toHaveTextContent("£187.42");
+    expect(tile).toHaveTextContent(/some debts still need APR/);
+    expect(tile).not.toHaveTextContent("APR required for interest forecast");
+  });
+
+  it("explains missing available credit when no limits are recorded", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          available_credit_gbp: 0,
+          credit_limit_gbp: 0,
+        }}
+      />,
+    );
+    const tile = screen.getByText("Available credit").closest("div");
+    expect(tile?.querySelector(".text-2xl")).toHaveTextContent("—");
+    expect(tile).toHaveTextContent(/No credit limits recorded/);
+  });
 });

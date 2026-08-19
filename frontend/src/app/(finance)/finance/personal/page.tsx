@@ -69,6 +69,7 @@ export default function PersonalFinancePage() {
     preferDefaultPeriod: true,
   });
   const [periodFlow, setPeriodFlow] = useState<PeriodFlowSummary | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const load = useCallback(async () => {
     const errors: string[] = [];
@@ -154,6 +155,7 @@ export default function PersonalFinancePage() {
     }
 
     setError(errors.length ? errors[0] : null);
+    setHydrated(true);
   }, [periodState.period]);
 
 
@@ -264,31 +266,41 @@ export default function PersonalFinancePage() {
     : activeBudget
       ? activeBudget.totals.surplus_gbp
       : null;
-  const surplusHint = usePeriod
-    ? periodFlow!.coverage_note || `${periodFlow!.label} · stored transactions`
-    : activeBudget
-      ? "Typical personal budget plan surplus"
-      : "No period transactions or active budget surplus yet";
-  const incomeValue = usePeriod
-    ? periodFlow!.income_gbp
-    : activeBudget
-      ? activeBudget.income_gbp
-      : null;
-  const incomeHint = usePeriod
-    ? periodFlow!.coverage_note || "Stored transactions"
-    : activeBudget
-      ? "Typical personal budget plan"
-      : undefined;
-  const spendingValue = usePeriod
-    ? periodFlow!.spending_gbp
-    : activeBudget
-      ? activeBudget.totals.total_spending_gbp
-      : null;
-  const spendingHint = usePeriod
-    ? periodFlow!.coverage_note || "Stored transactions"
-    : activeBudget
-      ? "Typical personal budget plan"
-      : undefined;
+  const surplusHint = !hydrated
+    ? "Loading…"
+    : usePeriod
+      ? periodFlow!.coverage_note || `${periodFlow!.label} · stored transactions`
+      : activeBudget
+        ? "Typical personal budget plan surplus"
+        : "No period transactions or active budget surplus yet";
+  const incomeValue = !hydrated
+    ? null
+    : usePeriod
+      ? periodFlow!.income_gbp
+      : activeBudget
+        ? activeBudget.income_gbp
+        : null;
+  const incomeHint = !hydrated
+    ? "Loading…"
+    : usePeriod
+      ? periodFlow!.coverage_note || "Stored transactions"
+      : activeBudget
+        ? "Typical personal budget plan"
+        : undefined;
+  const spendingValue = !hydrated
+    ? null
+    : usePeriod
+      ? periodFlow!.spending_gbp
+      : activeBudget
+        ? activeBudget.totals.total_spending_gbp
+        : null;
+  const spendingHint = !hydrated
+    ? "Loading…"
+    : usePeriod
+      ? periodFlow!.coverage_note || "Stored transactions"
+      : activeBudget
+        ? "Typical personal budget plan"
+        : undefined;
 
   return (
     <AppShell>
@@ -363,6 +375,9 @@ export default function PersonalFinancePage() {
         <p className="mt-1 text-sm text-[var(--muted)]">
           Bank, assets, and debts now. Nested of-which rows are subsets — not extra debt.
         </p>
+        {!hydrated ? (
+          <p className="mt-4 text-sm text-[var(--muted)]">Loading position…</p>
+        ) : (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <MetricWithOfWhich
             ariaLabel="Personal bank of which"
@@ -440,6 +455,7 @@ export default function PersonalFinancePage() {
             />
           ) : null}
         </div>
+        )}
       </section>
 
       <p className="mt-6 text-sm text-[var(--muted)]">
@@ -460,6 +476,7 @@ export default function PersonalFinancePage() {
           accounts={accounts}
           types={ACCOUNT_OPTIONS}
           canEdit={canWrite(user)}
+          loading={!hydrated}
           onChanged={load}
           onError={setError}
           onNotice={setStatus}

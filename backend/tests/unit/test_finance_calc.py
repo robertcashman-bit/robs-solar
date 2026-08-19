@@ -524,6 +524,46 @@ def test_null_interest_rate_known_is_treated_as_known() -> None:
     assert total == 12.0
 
 
+def test_monthly_interest_sums_known_aprs_and_flags_missing() -> None:
+    total, incomplete = monthly_interest_from_debts(
+        [
+            LiabilityView(1, "personal", "Virgin", "credit_card", 1000, 24.0, 25),
+            LiabilityView(
+                2,
+                "personal",
+                "Unknown APR",
+                "loan",
+                500,
+                0.0,
+                20,
+                interest_rate_known=False,
+            ),
+        ]
+    )
+    assert incomplete is True
+    assert total == monthly_interest_gbp(1000, 24.0)
+
+
+def test_monthly_interest_ignores_directors_loan_missing_apr() -> None:
+    total, incomplete = monthly_interest_from_debts(
+        [
+            LiabilityView(1, "personal", "Virgin", "credit_card", 1200, 12.0, 25),
+            LiabilityView(
+                2,
+                "business",
+                "Directors Loan",
+                "directors_loan",
+                10287.1,
+                0.0,
+                0,
+                interest_rate_known=False,
+            ),
+        ]
+    )
+    assert incomplete is False
+    assert total == 12.0
+
+
 def test_vat_reserve_account_beats_snapshot_liability() -> None:
     """Live case: pot is £0.47; snapshot wrongly holds 2200+2202 liability."""
     totals = compute_totals(

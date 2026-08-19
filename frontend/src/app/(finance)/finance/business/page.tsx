@@ -70,6 +70,7 @@ export default function BusinessFinancePage() {
     preferDefaultPeriod: true,
   });
   const [periodFlow, setPeriodFlow] = useState<PeriodFlowSummary | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -99,18 +100,17 @@ export default function BusinessFinancePage() {
         });
       }
       setError(null);
-      // Stored QuickFile statements after first paint — never block the page on live QF.
-      void apiClient
-        .get<unknown>("/finance/integrations/quickfile/reports")
-        .then((qfReports) => {
-          const parsedReports = quickFileReportsSchema.safeParse(qfReports);
-          setQuickfileReports(parsedReports.success ? parsedReports.data : null);
-        })
-        .catch(() => {
-          setQuickfileReports(null);
-        });
+      try {
+        const qfReports = await apiClient.get<unknown>("/finance/integrations/quickfile/reports");
+        const parsedReports = quickFileReportsSchema.safeParse(qfReports);
+        setQuickfileReports(parsedReports.success ? parsedReports.data : null);
+      } catch {
+        setQuickfileReports(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load business finance");
+    } finally {
+      setHydrated(true);
     }
   }, [periodState.period]);
 
@@ -227,12 +227,14 @@ export default function BusinessFinancePage() {
                 ? `Business turnover (${periodFlow!.label})`
                 : "Business turnover (month)"
             }
-            value={usePeriod ? periodFlow!.income_gbp : snapshot?.turnover_gbp}
+            value={!hydrated ? null : usePeriod ? periodFlow!.income_gbp : snapshot?.turnover_gbp}
             positive
             hint={
-              usePeriod
-                ? periodFlow!.coverage_note || "Stored transactions"
-                : "Snapshot / QuickFile month"
+              !hydrated
+                ? "Loading…"
+                : usePeriod
+                  ? periodFlow!.coverage_note || "Stored transactions"
+                  : "Snapshot / QuickFile month"
             }
           />
           <MetricTile
@@ -241,11 +243,13 @@ export default function BusinessFinancePage() {
                 ? `Business expenses (${periodFlow!.label})`
                 : "Business expenses (month)"
             }
-            value={usePeriod ? periodFlow!.spending_gbp : snapshot?.expenses_gbp}
+            value={!hydrated ? null : usePeriod ? periodFlow!.spending_gbp : snapshot?.expenses_gbp}
             hint={
-              usePeriod
-                ? periodFlow!.coverage_note || "Stored transactions"
-                : "Snapshot / QuickFile month"
+              !hydrated
+                ? "Loading…"
+                : usePeriod
+                  ? periodFlow!.coverage_note || "Stored transactions"
+                  : "Snapshot / QuickFile month"
             }
           />
           <MetricTile
@@ -254,13 +258,15 @@ export default function BusinessFinancePage() {
                 ? `Business profit (${periodFlow!.label})`
                 : "Business profit estimate"
             }
-            value={usePeriod ? periodFlow!.surplus_gbp : snapshot?.profit_estimate_gbp}
+            value={!hydrated ? null : usePeriod ? periodFlow!.surplus_gbp : snapshot?.profit_estimate_gbp}
             positive={(usePeriod ? periodFlow!.surplus_gbp : snapshot?.profit_estimate_gbp ?? 0) >= 0}
             warning={(usePeriod ? periodFlow!.surplus_gbp : snapshot?.profit_estimate_gbp ?? 0) < 0}
             hint={
-              usePeriod
-                ? periodFlow!.coverage_note || "Stored transactions"
-                : "Snapshot"
+              !hydrated
+                ? "Loading…"
+                : usePeriod
+                  ? periodFlow!.coverage_note || "Stored transactions"
+                  : "Snapshot"
             }
           />
         </div>
@@ -272,6 +278,9 @@ export default function BusinessFinancePage() {
         <p className="mt-1 text-sm text-[var(--muted)]">
           Cash, debts, VAT, and debtors. Of-which business loans only — no personal loans here.
         </p>
+        {!hydrated ? (
+          <p className="mt-4 text-sm text-[var(--muted)]">Loading position…</p>
+        ) : (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <MetricWithOfWhich
             ariaLabel="Business bank of which"
@@ -317,6 +326,7 @@ export default function BusinessFinancePage() {
           />
           <MetricTile label="Business cash to draw" value={snapshot?.cash_available_to_draw_gbp} />
         </div>
+        )}
       </section>
 
       <div className="mt-8">
@@ -351,6 +361,7 @@ export default function BusinessFinancePage() {
           accounts={accounts}
           types={ACCOUNT_OPTIONS}
           canEdit={canWrite(user)}
+          loading={!hydrated}
           onChanged={load}
           onError={setError}
           onNotice={setStatus}

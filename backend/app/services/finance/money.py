@@ -35,3 +35,17 @@ def quantize_gbp(value: object) -> float | None:
     if amount is None:
         return None
     return float(amount.quantize(TWOPLACE, rounding=ROUND_HALF_EVEN))
+
+
+def format_gbp(value: object, *, decimals: int = 2) -> str:
+    """User-facing sterling — prefer £ over the word GBP."""
+    amount = quantize_gbp(value)
+    if amount is None:
+        return "—"
+    quantized = Decimal(str(amount)).quantize(
+        Decimal("0.01") if decimals == 2 else Decimal(10) ** -decimals,
+        rounding=ROUND_HALF_EVEN,
+    )
+    sign = "-" if quantized < 0 else ""
+    body = f"{abs(quantized):,.{decimals}f}"
+    return f"{sign}£{body}"

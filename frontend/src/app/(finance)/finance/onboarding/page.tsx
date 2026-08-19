@@ -78,40 +78,57 @@ export default function OnboardingPage() {
         title="Budgeting onboarding"
         description={`Step ${step + 1} of ${STEPS.length}`}
       />
-      <div className="mt-6 max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
-        <h2 className="text-xl font-semibold">{current.title}</h2>
-        <p className="mt-2 text-sm text-[var(--muted)]">{current.body}</p>
-        <Link
-          href={current.href}
-          className="mt-4 inline-flex rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white"
-        >
-          Open this step
-        </Link>
-        <div className="mt-6 flex gap-2">
-          <button
-            type="button"
-            disabled={step === 0}
-            onClick={() => setStep((value) => Math.max(0, value - 1))}
-            className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm disabled:opacity-40"
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 sm:p-8">
+          <h2 className="text-xl font-semibold">{current.title}</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">{current.body}</p>
+          <Link
+            href={current.href}
+            className="mt-4 inline-flex rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white"
           >
-            Back
-          </button>
-          <button
-            type="button"
-            disabled={step >= STEPS.length - 1}
-            onClick={() => setStep((value) => Math.min(STEPS.length - 1, value + 1))}
-            className="rounded-lg bg-teal-700 px-3 py-2 text-sm text-white disabled:opacity-40"
-          >
-            Next
-          </button>
+            Open this step
+          </Link>
+          <div className="mt-6 flex gap-2">
+            <button
+              type="button"
+              disabled={step === 0}
+              onClick={() => setStep((value) => Math.max(0, value - 1))}
+              className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm disabled:opacity-40"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              disabled={step >= STEPS.length - 1}
+              onClick={() => setStep((value) => Math.min(STEPS.length - 1, value + 1))}
+              className="rounded-lg bg-teal-700 px-3 py-2 text-sm text-white disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
         </div>
-        <ol className="mt-8 space-y-2 text-sm text-[var(--muted)]">
-          {STEPS.map((item, index) => (
-            <li key={item.title} className={index === step ? "font-medium text-[var(--foreground)]" : ""}>
-              {index + 1}. {item.title}
-            </li>
-          ))}
-        </ol>
+        <aside className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
+            All steps
+          </h3>
+          <ol className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+            {STEPS.map((item, index) => (
+              <li key={item.title}>
+                <button
+                  type="button"
+                  onClick={() => setStep(index)}
+                  className={`w-full rounded-lg px-3 py-2 text-left transition ${
+                    index === step
+                      ? "bg-emerald-500/15 font-medium text-[var(--foreground)]"
+                      : "hover:bg-[var(--surface-sunken)]"
+                  }`}
+                >
+                  {index + 1}. {item.title}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </aside>
       </div>
     </AppShell>
   );
