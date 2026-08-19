@@ -24,7 +24,7 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
   const [keyAlreadySet, setKeyAlreadySet] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"save" | "test" | "sync" | null>(null);
+  const [busy, setBusy] = useState<"save" | "test" | "sync" | "sync_full" | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [showKeyForm, setShowKeyForm] = useState(false);
   const didInitialStatusLoad = useRef(false);
@@ -185,6 +185,30 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
     }
   }
 
+  async function importFullHistory() {
+    setError(null);
+    setMessage(null);
+    setBusy("sync_full");
+    try {
+      const data = await apiClient.post<unknown>(
+        "/finance/integrations/quickfile/sync?force_full=true",
+      );
+      const result = quickFileSyncResultSchema.safeParse(data);
+      if (!result.success) {
+        setError("Full history import finished, but the result could not be read.");
+        await load();
+        return;
+      }
+      setMessage(result.data.message);
+      notifyFinanceChanged();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Full history import failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const connected = Boolean(status?.connected || status?.configured);
   const quotaHit = Boolean(
     status?.quota_exhausted_at
@@ -258,33 +282,47 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
       ) : null}
 
       {connected && !showKeyForm ? (
-        <div className="flex flex-wrap gap-2">
+        <div className="space-y-3">
           {!readOnly ? (
             <>
-              <button
-                type="button"
-                className="solar-btn-primary"
-                disabled={busy !== null || loadingStatus}
-                onClick={() => void syncNow()}
-              >
-                {busy === "sync" ? "Syncing…" : "Sync now"}
-              </button>
-              <button
-                type="button"
-                className="solar-btn-secondary"
-                disabled={busy !== null || loadingStatus}
-                onClick={() => void testConnection()}
-              >
-                {busy === "test" ? "Testing…" : "Test"}
-              </button>
-              <button
-                type="button"
-                className="solar-btn-secondary"
-                disabled={busy !== null || loadingStatus}
-                onClick={() => setShowKeyForm(true)}
-              >
-                Update keys
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="solar-btn-primary"
+                  disabled={busy !== null || loadingStatus}
+                  onClick={() => void syncNow()}
+                >
+                  {busy === "sync" ? "Syncing…" : "Sync now"}
+                </button>
+                <button
+                  type="button"
+                  className="solar-btn-secondary"
+                  disabled={busy !== null || loadingStatus || Boolean(status?.quota_exhausted_at)}
+                  onClick={() => void importFullHistory()}
+                >
+                  {busy === "sync_full" ? "Importing…" : "Import full history"}
+                </button>
+                <button
+                  type="button"
+                  className="solar-btn-secondary"
+                  disabled={busy !== null || loadingStatus}
+                  onClick={() => void testConnection()}
+                >
+                  {busy === "test" ? "Testing…" : "Test"}
+                </button>
+                <button
+                  type="button"
+                  className="solar-btn-secondary"
+                  disabled={busy !== null || loadingStatus}
+                  onClick={() => setShowKeyForm(true)}
+                >
+                  Update keys
+                </button>
+              </div>
+              <p className="text-xs text-[var(--muted)]">
+                Import full history uses the daily 1000-request QuickFile quota and can take a long
+                time. Existing transactions are not deleted.
+              </p>
             </>
           ) : null}
         </div>
@@ -327,43 +365,64 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
           </div>
 
           {!readOnly ? (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="solar-btn-secondary"
-                disabled={busy !== null || loadingStatus}
-                onClick={() => void saveSettings()}
-              >
-                {busy === "save" ? "Saving…" : "Save settings"}
-              </button>
-              <button
-                type="button"
-                className="solar-btn-secondary"
-                disabled={busy !== null || loadingStatus}
-                onClick={() => void testConnection()}
-              >
-                {busy === "test" ? "Testing…" : "Test connection"}
-              </button>
-              <button
-                type="button"
-                className="solar-btn-primary"
-                disabled={busy !== null || loadingStatus || !connected}
-                onClick={() => void syncNow()}
-              >
-                {busy === "sync" ? "Syncing…" : "Sync now"}
-              </button>
-              {connected ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   className="solar-btn-secondary"
                   disabled={busy !== null || loadingStatus}
-                  onClick={() => {
-                    setShowKeyForm(false);
-                    setApiKey("");
-                  }}
+                  onClick={() => void saveSettings()}
                 >
-                  Cancel
+                  {busy === "save" ? "Saving…" : "Save settings"}
                 </button>
+                <button
+                  type="button"
+                  className="solar-btn-secondary"
+                  disabled={busy !== null || loadingStatus}
+                  onClick={() => void testConnection()}
+                >
+                  {busy === "test" ? "Testing…" : "Test connection"}
+                </button>
+                <button
+                  type="button"
+                  className="solar-btn-primary"
+                  disabled={busy !== null || loadingStatus || !connected}
+                  onClick={() => void syncNow()}
+                >
+                  {busy === "sync" ? "Syncing…" : "Sync now"}
+                </button>
+                <button
+                  type="button"
+                  className="solar-btn-secondary"
+                  disabled={
+                    busy !== null
+                    || loadingStatus
+                    || !connected
+                    || Boolean(status?.quota_exhausted_at)
+                  }
+                  onClick={() => void importFullHistory()}
+                >
+                  {busy === "sync_full" ? "Importing…" : "Import full history"}
+                </button>
+                {connected ? (
+                  <button
+                    type="button"
+                    className="solar-btn-secondary"
+                    disabled={busy !== null || loadingStatus}
+                    onClick={() => {
+                      setShowKeyForm(false);
+                      setApiKey("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+              {connected ? (
+                <p className="text-xs text-[var(--muted)]">
+                  Import full history uses the daily 1000-request QuickFile quota and can take a long
+                  time. Existing transactions are not deleted.
+                </p>
               ) : null}
             </div>
           ) : null}

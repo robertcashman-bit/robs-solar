@@ -9,6 +9,11 @@ export const LIVE_REFRESH_TIMEOUT_MS = 15_000;
 /** POST/PUT/PATCH/DELETE — allow slower writes. */
 export const MUTATION_TIMEOUT_MS = 45_000;
 /**
+ * QuickFile force_full (~10-year) import can burn most of the daily 1000-request
+ * quota and run for many minutes. Client must not abort at the normal mutation timeout.
+ */
+export const QUICKFILE_FORCE_FULL_SYNC_TIMEOUT_MS = 15 * 60_000;
+/**
  * Auth bootstrap and health warmup must outlast a Vercel Python cold start
  * (~20–30s). A short abort looks like “logged out” and kicks the user to /login.
  */
@@ -35,6 +40,14 @@ function isLiveRefreshPath(path: string): boolean {
   return bare === "/finance/live-refresh";
 }
 
+function isQuickFileForceFullSyncPath(path: string): boolean {
+  const [bare, query = ""] = path.split("?");
+  return (
+    bare === "/finance/integrations/quickfile/sync"
+    && /(?:^|&)force_full=true(?:&|$)/i.test(query)
+  );
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -57,6 +70,9 @@ export function getCsrfToken() {
 export function resolveTimeoutMs(path: string, method?: string): number {
   if (isLiveRefreshPath(path)) {
     return LIVE_REFRESH_TIMEOUT_MS;
+  }
+  if (isQuickFileForceFullSyncPath(path) && method && method !== "GET") {
+    return QUICKFILE_FORCE_FULL_SYNC_TIMEOUT_MS;
   }
   if (method && method !== "GET") {
     return MUTATION_TIMEOUT_MS;
