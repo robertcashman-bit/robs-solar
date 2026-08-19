@@ -146,12 +146,35 @@ export function useFinanceOverview(
         setFetchMeta({ key: requestedKey, status: "loading", error: null });
       }
       try {
+        // Manual Refresh: never block painting on QuickFile/Lunch Flow.
+        // Race a short live sync, then always GET stored overview (?fresh=1).
+        let liveWarning: string | null = null;
+        if (live) {
+          try {
+            await Promise.race([
+              apiClient.post("/finance/live-refresh", {}),
+              new Promise<never>((_, reject) => {
+                window.setTimeout(() => {
+                  reject(
+                    new Error(
+                      "Live sync is taking too long — showing stored figures.",
+                    ),
+                  );
+                }, 8_000);
+              }),
+            ]);
+          } catch (err) {
+            liveWarning =
+              err instanceof Error
+                ? err.message
+                : "Live refresh did not finish";
+          }
+        }
         const month = currentMonthKey();
         const params = new URLSearchParams({ month });
         params.set("personal_period", requestedPersonal);
         params.set("business_period", requestedBusiness);
-        if (live) params.set("live", "1");
-        if (fresh) params.set("fresh", "1");
+        if (live || fresh) params.set("fresh", "1");
         const data = await apiClient.get<unknown>(
           `/finance/overview?${params.toString()}`,
         );
@@ -164,7 +187,11 @@ export function useFinanceOverview(
         }
         overviewRef.current = parsed;
         setFetched({ key: requestedKey, overview: parsed });
-        setFetchMeta({ key: requestedKey, status: "ready", error: null });
+        setFetchMeta({
+          key: requestedKey,
+          status: liveWarning ? "error" : "ready",
+          error: liveWarning,
+        });
         writeLastOverview(parsed, requestedPersonal, requestedBusiness);
         notifyFinanceOverviewReady();
       } catch (err) {

@@ -4,6 +4,8 @@ import {
   ApiError,
   COLD_START_GET_TIMEOUT_MS,
   DEFAULT_GET_TIMEOUT_MS,
+  LIVE_REFRESH_TIMEOUT_MS,
+  MUTATION_TIMEOUT_MS,
   REPORTS_GET_TIMEOUT_MS,
   apiClient,
   resolveTimeoutMs,
@@ -46,6 +48,11 @@ describe("apiClient timeouts", () => {
   it("gives finance reports a longer GET timeout", () => {
     expect(resolveTimeoutMs("/finance/reports")).toBe(REPORTS_GET_TIMEOUT_MS);
     expect(resolveTimeoutMs("/finance/reports?month=2026-08")).toBe(REPORTS_GET_TIMEOUT_MS);
+  });
+
+  it("bounds live-refresh POSTs so Refresh cannot hang on the default mutation window", () => {
+    expect(resolveTimeoutMs("/finance/live-refresh", "POST")).toBe(LIVE_REFRESH_TIMEOUT_MS);
+    expect(LIVE_REFRESH_TIMEOUT_MS).toBeLessThan(MUTATION_TIMEOUT_MS);
   });
 
   it("surfaces abort as 504, not 401", async () => {
