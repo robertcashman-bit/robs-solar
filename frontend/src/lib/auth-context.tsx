@@ -63,9 +63,19 @@ function isUnauthenticatedError(error: unknown): boolean {
 function readCachedSessionUser(): UserInfo | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.sessionStorage.getItem(FINANCE_LAST_SESSION_USER_KEY);
+    // Prefer localStorage so a returning logged-in user paints on a cold
+    // first tab/entry (sessionStorage is empty after the tab is closed).
+    const raw =
+      window.localStorage.getItem(FINANCE_LAST_SESSION_USER_KEY) ??
+      window.sessionStorage.getItem(FINANCE_LAST_SESSION_USER_KEY);
     if (!raw) return null;
-    return userInfoSchema.parse(JSON.parse(raw));
+    const parsed = userInfoSchema.parse(JSON.parse(raw));
+    // Migrate any leftover sessionStorage entry into localStorage once.
+    if (!window.localStorage.getItem(FINANCE_LAST_SESSION_USER_KEY)) {
+      window.localStorage.setItem(FINANCE_LAST_SESSION_USER_KEY, raw);
+      window.sessionStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -75,9 +85,11 @@ function writeCachedSessionUser(user: UserInfo | null): void {
   if (typeof window === "undefined") return;
   try {
     if (user == null) {
+      window.localStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
       window.sessionStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
     } else {
-      window.sessionStorage.setItem(FINANCE_LAST_SESSION_USER_KEY, JSON.stringify(user));
+      window.localStorage.setItem(FINANCE_LAST_SESSION_USER_KEY, JSON.stringify(user));
+      window.sessionStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
     }
   } catch {
     // ignore private mode
@@ -86,7 +98,8 @@ function writeCachedSessionUser(user: UserInfo | null): void {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(() => readCachedSessionUser());
-  const [loading, setLoading] = useState(true);
+  // Cached session user → do not block first paint on cold /auth/me.
+  const [loading, setLoading] = useState(() => readCachedSessionUser() == null);
   // Cached session user lets pages paint immediately; /auth/me still confirms.
   const [authResolved, setAuthResolved] = useState(false);
   const [magicCodeEnabled, setMagicCodeEnabled] = useState(true);

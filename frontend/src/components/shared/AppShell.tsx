@@ -61,7 +61,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.localStorage.setItem("theme", next);
   };
 
-  if (loading) {
+  // Pages already gate with useRequireAuth. If we have a (cached) user,
+  // paint the shell immediately — do not re-block on cold /auth/me.
+  if (loading && !user) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-3">
