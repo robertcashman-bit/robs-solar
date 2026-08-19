@@ -100,6 +100,7 @@ export default function BusinessFinancePage() {
         });
       }
       setError(null);
+      setHydrated(true);
       try {
         const qfReports = await apiClient.get<unknown>("/finance/integrations/quickfile/reports");
         const parsedReports = quickFileReportsSchema.safeParse(qfReports);
@@ -109,7 +110,6 @@ export default function BusinessFinancePage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load business finance");
-    } finally {
       setHydrated(true);
     }
   }, [periodState.period]);

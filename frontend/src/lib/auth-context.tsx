@@ -12,12 +12,16 @@ import {
 } from "react";
 
 import { ApiError, apiClient, setCsrfToken } from "@/lib/api-client";
-import { clearFinanceLocalCaches } from "@/lib/finance-local-cache";
+import {
+  clearFinanceLocalCaches,
+  FINANCE_LAST_SESSION_USER_KEY,
+} from "@/lib/finance-local-cache";
 import {
   loginResponseSchema,
   magicCodeRequestResponseSchema,
   magicCodeStatusSchema,
   sessionResponseSchema,
+  userInfoSchema,
   type UserInfo,
 } from "@/lib/schemas";
 
@@ -56,9 +60,34 @@ function isUnauthenticatedError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
 
+function readCachedSessionUser(): UserInfo | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(FINANCE_LAST_SESSION_USER_KEY);
+    if (!raw) return null;
+    return userInfoSchema.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedSessionUser(user: UserInfo | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (user == null) {
+      window.sessionStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
+    } else {
+      window.sessionStorage.setItem(FINANCE_LAST_SESSION_USER_KEY, JSON.stringify(user));
+    }
+  } catch {
+    // ignore private mode
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserInfo | null>(null);
+  const [user, setUser] = useState<UserInfo | null>(() => readCachedSessionUser());
   const [loading, setLoading] = useState(true);
+  // Cached session user lets pages paint immediately; /auth/me still confirms.
   const [authResolved, setAuthResolved] = useState(false);
   const [magicCodeEnabled, setMagicCodeEnabled] = useState(true);
   const [magicCodeDevDelivery, setMagicCodeDevDelivery] = useState(false);
@@ -69,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authGenerationRef.current += 1;
     setCsrfToken(csrf);
     setUser(next);
+    writeCachedSessionUser(next);
     setAuthResolved(true);
     setLoading(false);
   }, []);
@@ -87,6 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         if (isUnauthenticatedError(error)) {
           setUser(null);
+          writeCachedSessionUser(null);
           setCsrfToken(null);
           setAuthResolved(true);
           setLoading(false);
@@ -106,12 +137,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = sessionResponseSchema.parse(await apiClient.get("/auth/me"));
       if (generation !== authGenerationRef.current) return;
       setUser(data.user);
+      writeCachedSessionUser(data.user);
       setCsrfToken(data.csrf_token);
       setAuthResolved(true);
     } catch (error) {
       if (generation !== authGenerationRef.current) return;
       if (isUnauthenticatedError(error)) {
         setUser(null);
+        writeCachedSessionUser(null);
         setCsrfToken(null);
         setAuthResolved(true);
       }
@@ -134,6 +167,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, 10000);
     (async () => {
       try {
+        // Warm the serverless function in parallel with session bootstrap.
+        void apiClient.get("/health").catch(() => null);
         const [sessionResult, magicStatus] = await Promise.all([
           apiClient
             .get("/auth/me")
@@ -149,14 +184,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (sessionResult.ok) {
           const data = sessionResponseSchema.parse(sessionResult.body);
           setUser(data.user);
+          writeCachedSessionUser(data.user);
           setCsrfToken(data.csrf_token);
           setAuthResolved(true);
         } else if (isUnauthenticatedError(sessionResult.error)) {
           setUser(null);
+          writeCachedSessionUser(null);
           setCsrfToken(null);
           setAuthResolved(true);
         }
-        // else: timeout / 5xx — leave user unchanged and keep auth unresolved
+        // else: timeout / 5xx — leave cached user alone and keep auth unresolved
         // so useRequireAuth will not hard-redirect to /login.
         if (magicStatus) {
           const status = magicCodeStatusSchema.parse(magicStatus);

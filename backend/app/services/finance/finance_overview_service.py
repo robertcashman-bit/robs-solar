@@ -400,15 +400,11 @@ class FinanceOverviewService:
                 2,
             ),
         )
-        if refresh_live:
-            overview.insights = await finance_insights_service.refresh_for_overview(
-                db, overview
-            )
-        else:
-            existing = await finance_insights_service.generate_and_list(db)
-            overview.insights = existing or await finance_insights_service.refresh_for_overview(
-                db, overview
-            )
+        # Always regenerate from the same totals the tiles use — never attach
+        # yesterday's overdraft/VAT wording to today's figures.
+        overview.insights = await finance_insights_service.refresh_for_overview(
+            db, overview
+        )
         if refresh_live:
             current_month = datetime.now(timezone.utc).strftime("%Y-%m")
             if month == current_month:

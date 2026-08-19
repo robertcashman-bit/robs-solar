@@ -34,7 +34,13 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
   );
   const recommendations = financeInsights.filter((item) => item.severity === "info");
   const upcoming = overview.upcoming_payments ?? [];
-  const cashAvailable = overview.cash_available_gbp ?? overview.available_cash_gbp ?? 0;
+  // Always derive from the same bank figures shown in the hint — never trust a
+  // stale cached cash_available_gbp that still equals positive pots only.
+  const cashAvailable =
+    Math.round(
+      ((overview.personal_bank_balance_gbp ?? 0) + (overview.business_bank_balance_gbp ?? 0)) *
+        100,
+    ) / 100;
   const externalDebt = overview.external_debt_gbp ?? overview.total_personal_debt_gbp + overview.total_business_debt_gbp;
   const noCash =
     overview.personal_bank_balance_gbp === 0 && overview.business_bank_balance_gbp === 0;

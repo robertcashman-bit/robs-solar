@@ -25,6 +25,11 @@ function isReportsPath(path: string): boolean {
   return bare === "/finance/reports" || bare.startsWith("/finance/reports/");
 }
 
+function isActiveBudgetsPath(path: string): boolean {
+  const bare = path.split("?")[0] ?? path;
+  return bare === "/finance/budgets/active";
+}
+
 function isLiveRefreshPath(path: string): boolean {
   const bare = path.split("?")[0] ?? path;
   return bare === "/finance/live-refresh";
@@ -60,7 +65,7 @@ export function resolveTimeoutMs(path: string, method?: string): number {
   if (COLD_START_GET_PATHS.has(bare)) {
     return COLD_START_GET_TIMEOUT_MS;
   }
-  if (isReportsPath(path)) {
+  if (isReportsPath(path) || isActiveBudgetsPath(path)) {
     return REPORTS_GET_TIMEOUT_MS;
   }
   return DEFAULT_GET_TIMEOUT_MS;

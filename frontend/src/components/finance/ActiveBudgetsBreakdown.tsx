@@ -21,6 +21,39 @@ type ScopeSection = {
   surplusGbp: number;
 };
 
+const LAST_ACTIVE_BUDGETS_KEY = "robs-finance-last-active-budgets";
+
+type CachedActiveBudgets = {
+  personal: BudgetPlan | null;
+  business: BudgetPlan | null;
+};
+
+function readCachedActiveBudgets(): CachedActiveBudgets | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(LAST_ACTIVE_BUDGETS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedActiveBudgets;
+    return {
+      personal: parsed.personal == null ? null : budgetPlanSchema.parse(parsed.personal),
+      business: parsed.business == null ? null : budgetPlanSchema.parse(parsed.business),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedActiveBudgets(personal: BudgetPlan | null, business: BudgetPlan | null): void {
+  try {
+    window.sessionStorage.setItem(
+      LAST_ACTIVE_BUDGETS_KEY,
+      JSON.stringify({ personal, business } satisfies CachedActiveBudgets),
+    );
+  } catch {
+    // ignore private mode / quota
+  }
+}
+
 function scopeLines(plan: BudgetPlan | null, scope: ScopeKey): BudgetPlanLine[] {
   if (!plan) return [];
   return plan.lines.filter((line) => line.scope === scope);
@@ -45,7 +78,13 @@ function sectionFor(
   };
 }
 
-function ScopeBudgetSection({ section }: { section: ScopeSection }) {
+function ScopeBudgetSection({
+  section,
+  loadFailed,
+}: {
+  section: ScopeSection;
+  loadFailed: boolean;
+}) {
   const scopeWord = section.scope === "business" ? "Business" : "Personal";
   const surplusLabel =
     section.surplusGbp < 0
@@ -70,6 +109,10 @@ function ScopeBudgetSection({ section }: { section: ScopeSection }) {
           <p className="mt-0.5 text-sm text-[var(--muted)]">
             {section.plan.name} · {section.plan.style.replaceAll("_", " ")}. A plan, not actual
             cashflow.
+          </p>
+        ) : loadFailed ? (
+          <p className="mt-0.5 text-sm text-[var(--muted)]">
+            Could not load the {section.scope} plan just now — try again.
           </p>
         ) : (
           <p className="mt-0.5 text-sm text-[var(--muted)]">No active {section.scope} plan yet.</p>
@@ -142,9 +185,14 @@ export function ActiveBudgetsBreakdown({
   fetchPlans = true,
   showOpenLink = true,
 }: ActiveBudgetsBreakdownProps) {
-  const [fetchedPersonal, setFetchedPersonal] = useState<BudgetPlan | null>(null);
-  const [fetchedBusiness, setFetchedBusiness] = useState<BudgetPlan | null>(null);
-  const [loading, setLoading] = useState(fetchPlans);
+  const cached = fetchPlans ? readCachedActiveBudgets() : null;
+  const [fetchedPersonal, setFetchedPersonal] = useState<BudgetPlan | null>(
+    cached?.personal ?? null,
+  );
+  const [fetchedBusiness, setFetchedBusiness] = useState<BudgetPlan | null>(
+    cached?.business ?? null,
+  );
+  const [loading, setLoading] = useState(fetchPlans && !cached);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -155,10 +203,14 @@ export function ActiveBudgetsBreakdown({
         apiClient.get<unknown>("/finance/budgets/active?scope=personal"),
         apiClient.get<unknown>("/finance/budgets/active?scope=business"),
       ]);
-      setFetchedPersonal(personalRaw == null ? null : budgetPlanSchema.parse(personalRaw));
-      setFetchedBusiness(businessRaw == null ? null : budgetPlanSchema.parse(businessRaw));
+      const personal = personalRaw == null ? null : budgetPlanSchema.parse(personalRaw);
+      const business = businessRaw == null ? null : budgetPlanSchema.parse(businessRaw);
+      setFetchedPersonal(personal);
+      setFetchedBusiness(business);
+      writeCachedActiveBudgets(personal, business);
       setError(null);
     } catch (err) {
+      // Keep last successful plans — never wipe real budgets on a timeout.
       setError(err instanceof Error ? err.message : "Failed to load active budgets");
     } finally {
       setLoading(false);
@@ -180,7 +232,8 @@ export function ActiveBudgetsBreakdown({
 
   const personalPlan = fetchPlans ? fetchedPersonal : (personalProp ?? null);
   const businessPlan = fetchPlans ? fetchedBusiness : (businessProp ?? null);
-  const showLoading = fetchPlans && loading;
+  const showLoading = fetchPlans && loading && !personalPlan && !businessPlan;
+  const loadFailed = Boolean(error) && !personalPlan && !businessPlan;
 
   const samePlan =
     personalPlan != null && businessPlan != null && personalPlan.id === businessPlan.id;
@@ -231,13 +284,21 @@ export function ActiveBudgetsBreakdown({
           </Link>
         ) : null}
       </div>
-      {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
+      {error ? (
+        <p className="text-sm text-amber-800 dark:text-amber-200">
+          {error}
+          {personalPlan || businessPlan ? " Showing the last loaded plans." : ""}{" "}
+          <button type="button" className="underline underline-offset-2" onClick={() => void load()}>
+            Retry
+          </button>
+        </p>
+      ) : null}
       {showLoading ? (
         <p className="text-sm text-[var(--muted)]">Loading active budgets…</p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          <ScopeBudgetSection section={personalSection} />
-          <ScopeBudgetSection section={businessSection} />
+          <ScopeBudgetSection section={personalSection} loadFailed={loadFailed} />
+          <ScopeBudgetSection section={businessSection} loadFailed={loadFailed} />
         </div>
       )}
     </div>

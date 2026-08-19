@@ -86,4 +86,16 @@ describe("session bootstrap gate", () => {
     expect(screen.getByText("dashboard")).toBeInTheDocument();
     expect(replace).not.toHaveBeenCalled();
   });
+
+  it("paints the dashboard from a cached session user while /auth/me is still slow", () => {
+    authState = {
+      user: { username: "rob", role: "admin" },
+      loading: true,
+      authResolved: false,
+    };
+    render(<GateProbe />);
+    expect(screen.getByText("dashboard")).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading session" })).not.toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+  });
 });

@@ -14,7 +14,8 @@ const HARD_REDIRECT_MS = 1500;
  * cannot leave the UI on “Loading session…” forever.
  *
  * Only redirects after auth is *resolved* unauthenticated. A slow /auth/me
- * (cold start) must not look like logout.
+ * (cold start) must not look like logout. A cached session user paints the
+ * app immediately while /auth/me confirms.
  */
 export function useRequireAuth(): {
   user: UserInfo | null;
@@ -26,7 +27,9 @@ export function useRequireAuth(): {
   const router = useRouter();
   const { user, loading, authResolved } = useAuth();
   const redirecting = authResolved && !user;
-  const gated = !user;
+  // Have a user (including optimistic cached session) → paint immediately.
+  // Only full-screen gate when we have no user yet and auth is still settling.
+  const gated = redirecting || (!user && (loading || !authResolved));
 
   useEffect(() => {
     if (!redirecting) {
@@ -44,7 +47,7 @@ export function useRequireAuth(): {
   return {
     user,
     loading,
-    gated: gated || loading || !authResolved,
+    gated,
     redirecting,
   };
 }

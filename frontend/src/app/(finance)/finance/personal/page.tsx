@@ -113,6 +113,10 @@ export default function PersonalFinancePage() {
       );
     }
 
+    // Paint Position from accounts/overview immediately — don't wait on period/budget.
+    setHydrated(true);
+    setError(errors.length ? errors[0] : null);
+
     try {
       const flow = await apiClient.get<unknown>(
         `/finance/period-flow?period=${periodState.period}&scope=personal`,
@@ -155,7 +159,6 @@ export default function PersonalFinancePage() {
     }
 
     setError(errors.length ? errors[0] : null);
-    setHydrated(true);
   }, [periodState.period]);
 
 

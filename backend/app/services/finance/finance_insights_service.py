@@ -15,6 +15,7 @@ from app.schemas.finance import (
     FinanceInsightSeverity,
     FinanceOverviewResponse,
 )
+from app.services.finance.money import format_gbp
 
 CREDIT_CARD_INSIGHT_TITLE = "Credit card balances are high relative to spending"
 _DISMISSED_TITLE_ALIASES = {
@@ -103,7 +104,7 @@ class FinanceInsightsService:
                     FinanceInsightSeverity.CRITICAL.value,
                     "Negative monthly cashflow",
                     f"Recorded spending and debt repayments exceed income by "
-                    f"{abs(overview.monthly_surplus_gbp):.0f} GBP. "
+                    f"{format_gbp(abs(overview.monthly_surplus_gbp))}. "
                     "Adjust the budget or income snapshot.",
                 )
             )
@@ -114,7 +115,7 @@ class FinanceInsightsService:
                     FinanceInsightCategory.CASHFLOW.value,
                     FinanceInsightSeverity.WARNING.value,
                     "Personal current account is overdrawn",
-                    f"Personal overdraft is {overview.personal_overdraft_gbp:.0f} GBP. "
+                    f"Personal overdraft is {format_gbp(overview.personal_overdraft_gbp)}. "
                     "Clear this before increasing discretionary spending.",
                 )
             )
@@ -126,7 +127,7 @@ class FinanceInsightsService:
                     FinanceInsightSeverity.WARNING.value,
                     "Personal cash may be tight after expected bills",
                     f"After household bills and any overdraft, about "
-                    f"{overview.cash_after_bills_gbp:.0f} GBP remains in personal accounts.",
+                    f"{format_gbp(overview.cash_after_bills_gbp)} remains in personal accounts.",
                 )
             )
 
@@ -137,7 +138,7 @@ class FinanceInsightsService:
                     FinanceInsightSeverity.WARNING.value,
                     "Active budget is in deficit",
                     f"{overview.active_budget.name} projects a shortfall of "
-                    f"{abs(overview.active_budget.surplus_gbp):.0f} GBP.",
+                    f"{format_gbp(abs(overview.active_budget.surplus_gbp))}.",
                 )
             )
 
@@ -149,7 +150,7 @@ class FinanceInsightsService:
                     FinanceInsightCategory.DEBT.value,
                     FinanceInsightSeverity.WARNING.value,
                     "Credit utilisation is high",
-                    f"Revolving balances are {used:.0f} GBP of {limit:.0f} GBP limit.",
+                    f"Revolving balances are {format_gbp(used)} of {format_gbp(limit)} limit.",
                 )
             )
 
@@ -159,7 +160,7 @@ class FinanceInsightsService:
                     FinanceInsightCategory.TAX.value,
                     FinanceInsightSeverity.WARNING.value,
                     "Business VAT reserve appears low",
-                    f"VAT reserve is {overview.vat_reserve_gbp:.0f} GBP — "
+                    f"VAT reserve is {format_gbp(overview.vat_reserve_gbp)} — "
                     "consider topping up before the next return.",
                 )
             )
@@ -170,7 +171,7 @@ class FinanceInsightsService:
                     FinanceInsightCategory.TAX.value,
                     FinanceInsightSeverity.INFO.value,
                     "Corporation tax reserve may be low",
-                    f"Corp tax reserve is {overview.corp_tax_reserve_gbp:.0f} GBP "
+                    f"Corp tax reserve is {format_gbp(overview.corp_tax_reserve_gbp)} "
                     "relative to estimated profit.",
                 )
             )
@@ -184,7 +185,7 @@ class FinanceInsightsService:
                     FinanceInsightCategory.CASHFLOW.value,
                     FinanceInsightSeverity.WARNING.value,
                     "Available discretionary spending is limited",
-                    f"Safe to spend this month is about {amount:.0f} GBP after essentials, "
+                    f"Safe to spend this month is about {format_gbp(amount)} after essentials, "
                     "debt minimums and your cash buffer.",
                 )
             )
@@ -197,7 +198,7 @@ class FinanceInsightsService:
                     FinanceInsightCategory.TAX.value,
                     FinanceInsightSeverity.INFO.value,
                     "VAT reserve may need a monthly top-up",
-                    f"Suggested VAT reserve top-up is about {vat_short:.0f} GBP this month "
+                    f"Suggested VAT reserve top-up is about {format_gbp(vat_short)} this month "
                     "(planning estimate only — not tax advice).",
                 )
             )
@@ -229,7 +230,7 @@ class FinanceInsightsService:
                     FinanceInsightCategory.BUSINESS.value,
                     FinanceInsightSeverity.INFO.value,
                     "The company owes you on the director's loan",
-                    f"Director's loan is {directors:.0f} GBP owed to you. "
+                    f"Director's loan is {format_gbp(directors)} owed to you. "
                     "Business cash is lower than that claim — keep enough in "
                     "the company if you plan to draw it.",
                 )

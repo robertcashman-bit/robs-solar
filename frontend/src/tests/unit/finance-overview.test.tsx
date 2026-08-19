@@ -151,6 +151,26 @@ describe("FinanceOverviewView", () => {
     expect(tile).not.toHaveTextContent("£13.23");
   });
 
+  it("ignores a stale cash_available_gbp that still equals positive pots", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          personal_bank_balance_gbp: -2503.91,
+          business_bank_balance_gbp: -1948.6,
+          // Stale cache from before the net-banks fix.
+          cash_available_gbp: 13.23,
+          available_cash_gbp: 13.23,
+          personal_overdraft_gbp: 2517.14,
+          business_overdraft_gbp: 1948.6,
+        }}
+      />,
+    );
+    const tile = screen.getByText("Combined cash available").closest("div");
+    expect(tile).toHaveTextContent("-£4,452.51");
+    expect(tile).not.toHaveTextContent("£13.23");
+  });
+
   it("scope toggle shows only that stack's tiles", async () => {
     const user = userEvent.setup();
     render(<FinanceOverviewView overview={overview} />);
