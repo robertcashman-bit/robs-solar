@@ -114,6 +114,10 @@ describe("FinanceOverviewView", () => {
       screen.getByText(/Excludes director's loan/),
     ).toBeInTheDocument();
     expect(screen.getByText("Business VAT pot")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Cash in VAT pot \(paid reserve — not QuickFile VAT liability\)/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Tax provision (not yet paid)")).toBeInTheDocument();
     expect(screen.getByText("Business debtors")).toBeInTheDocument();
     expect(screen.queryByText("External debt")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Active budgets" })).toBeInTheDocument();
@@ -144,6 +148,26 @@ describe("FinanceOverviewView", () => {
     expect(tile).toHaveTextContent("-£4,452.51");
     expect(tile).toHaveTextContent(/-£2,503\.91 personal/);
     expect(tile).toHaveTextContent(/-£1,948\.60 company/);
+    expect(tile).not.toHaveTextContent("£13.23");
+  });
+
+  it("ignores a stale cash_available_gbp that still equals positive pots", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          personal_bank_balance_gbp: -2503.91,
+          business_bank_balance_gbp: -1948.6,
+          // Stale cache from before the net-banks fix.
+          cash_available_gbp: 13.23,
+          available_cash_gbp: 13.23,
+          personal_overdraft_gbp: 2517.14,
+          business_overdraft_gbp: 1948.6,
+        }}
+      />,
+    );
+    const tile = screen.getByText("Combined cash available").closest("div");
+    expect(tile).toHaveTextContent("-£4,452.51");
     expect(tile).not.toHaveTextContent("£13.23");
   });
 

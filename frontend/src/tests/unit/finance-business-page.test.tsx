@@ -34,6 +34,32 @@ vi.mock("@/lib/api-client", () => ({
             created_at: "2010-01-01T00:00:00Z",
             updated_at: "2010-01-01T00:00:00Z",
           },
+          {
+            id: 2,
+            scope: "business",
+            account_type: "current",
+            name: "Business current",
+            provider: "lunchflow",
+            balance_gbp: -1948.6,
+            notes: "",
+            source: "lunchflow",
+            is_active: true,
+            created_at: "2010-01-01T00:00:00Z",
+            updated_at: "2010-01-01T00:00:00Z",
+          },
+          {
+            id: 3,
+            scope: "business",
+            account_type: "current",
+            name: "Business pot",
+            provider: "lunchflow",
+            balance_gbp: 0.11,
+            notes: "",
+            source: "lunchflow",
+            is_active: true,
+            created_at: "2010-01-01T00:00:00Z",
+            updated_at: "2010-01-01T00:00:00Z",
+          },
         ];
       }
       if (path.startsWith("/finance/liabilities")) {
@@ -104,6 +130,15 @@ describe("BusinessFinancePage", () => {
     expect(await screen.findByText("Vat Account")).toBeInTheDocument();
     // VAT pot account wins over stale snapshot liability (2956.27).
     expect(tile("Business VAT pot").getByText("£0.47")).toBeInTheDocument();
+    expect(
+      tile("Business VAT pot").getByText(/Cash in VAT pot \(paid reserve/),
+    ).toBeInTheDocument();
+    // Net bank = £0.11 − £1,948.60, not positive pots only.
+    expect(tile("Business bank").getByText("-£1,948.49")).toBeInTheDocument();
+    expect(
+      tile("Business bank").getByText(/net of overdraft.*same as Overview/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Of which business overdraft")).toBeInTheDocument();
     expect(tile("Business turnover (month)").getByText("—")).toBeInTheDocument();
     expect(screen.queryByText("£9,999.00")).not.toBeInTheDocument();
     expect(screen.queryByText("£2,956.27")).not.toBeInTheDocument();

@@ -204,6 +204,68 @@ def test_parse_balance_sheet_full_extracts_all_lines() -> None:
     assert capital["subtotal_gbp"] == 20000.0
 
 
+def test_parse_balance_sheet_rehomes_misfiled_liability_nominals() -> None:
+    """Live QuickFile sometimes lists 2100 creditors / 2300 loans under Current assets."""
+    body = {
+        "Totals": {
+            "FixedAssets": 0.0,
+            "CurrentAssets": 30000.0,
+            "CurrentLiabilities": 0.0,
+            "LongTermLiabilities": 0.0,
+            "CapitalAndReserves": 30000.0,
+        },
+        "Breakdown": {
+            "CurrentAssets": {
+                "Balances": {
+                    "Balance": [
+                        {
+                            "NominalCode": 1201,
+                            "NominalAccountName": "Bank current account",
+                            "Amount": 801.73,
+                        },
+                        {
+                            "NominalCode": 2100,
+                            "NominalAccountName": "Creditors Control Account",
+                            "Amount": 2342.43,
+                        },
+                        {
+                            "NominalCode": 2300,
+                            "NominalAccountName": "Loans",
+                            "Amount": 26855.84,
+                        },
+                    ]
+                }
+            },
+            "CurrentLiabilities": {"Balances": {"Balance": []}},
+            "LongTermLiabilities": {"Balances": {"Balance": []}},
+            "CapitalAndReserves": {
+                "Balances": {
+                    "Balance": {
+                        "NominalCode": 3000,
+                        "NominalAccountName": "Share capital",
+                        "Amount": 30000.0,
+                    }
+                }
+            },
+        },
+    }
+    result = parse_balance_sheet_full(body, to_date="2026-08-19")
+    by_key = {section["key"]: section for section in result["sections"]}
+    asset_labels = [line["label"] for line in by_key["CurrentAssets"]["lines"]]
+    assert asset_labels == ["Bank current account"]
+    assert "Creditors Control Account" not in asset_labels
+    assert "Loans" not in asset_labels
+    assert by_key["CurrentAssets"]["subtotal_gbp"] == 801.73
+
+    current_liab_labels = [line["label"] for line in by_key["CurrentLiabilities"]["lines"]]
+    assert "Creditors Control Account" in current_liab_labels
+    assert result["creditors_gbp"] == 2342.43
+
+    long_labels = [line["label"] for line in by_key["LongTermLiabilities"]["lines"]]
+    assert "Loans" in long_labels
+    assert by_key["LongTermLiabilities"]["subtotal_gbp"] == 26855.84
+
+
 def test_parse_profit_and_loss_full_handles_empty_breakdown() -> None:
     result = parse_profit_and_loss_full(
         {

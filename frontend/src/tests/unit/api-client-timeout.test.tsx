@@ -50,6 +50,11 @@ describe("apiClient timeouts", () => {
     expect(resolveTimeoutMs("/finance/reports?month=2026-08")).toBe(REPORTS_GET_TIMEOUT_MS);
   });
 
+  it("gives active budgets the same longer GET timeout as reports", () => {
+    expect(resolveTimeoutMs("/finance/budgets/active")).toBe(REPORTS_GET_TIMEOUT_MS);
+    expect(resolveTimeoutMs("/finance/budgets/active?scope=personal")).toBe(REPORTS_GET_TIMEOUT_MS);
+  });
+
   it("bounds live-refresh POSTs so Refresh cannot hang on the default mutation window", () => {
     expect(resolveTimeoutMs("/finance/live-refresh", "POST")).toBe(LIVE_REFRESH_TIMEOUT_MS);
     expect(LIVE_REFRESH_TIMEOUT_MS).toBeLessThan(MUTATION_TIMEOUT_MS);

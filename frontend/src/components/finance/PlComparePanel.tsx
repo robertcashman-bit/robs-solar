@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { MetricTile } from "@/components/finance/MetricTile";
 import { apiClient } from "@/lib/api-client";
+import { formatUkDate } from "@/lib/finance-labels";
 import { formatGbp } from "@/lib/money";
 import { z } from "zod";
 
@@ -109,9 +110,11 @@ export function PlComparePanel({ scope, title }: PlComparePanelProps) {
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h3 className="font-semibold">{row.label}</h3>
                 <p className="text-xs text-[var(--muted)]">
-                  {row.date_from && row.date_to ? `${row.date_from} → ${row.date_to}` : null}
+                  {row.date_from && row.date_to
+                    ? `${formatUkDate(row.date_from)} → ${formatUkDate(row.date_to)}`
+                    : null}
                   {row.compare_date_from && row.compare_date_to
-                    ? ` · vs ${row.compare_date_from} → ${row.compare_date_to}`
+                    ? ` · vs ${formatUkDate(row.compare_date_from)} → ${formatUkDate(row.compare_date_to)}`
                     : null}
                 </p>
               </div>

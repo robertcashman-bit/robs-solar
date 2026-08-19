@@ -6,12 +6,18 @@ from sqlalchemy import select
 from app.db.models import AppSettingRow, FinanceAccountRow, FinanceLiabilityRow
 from app.db.session import SessionLocal
 from app.services.finance.finance_seed_service import (
+    STATED_HOUSE_JOINT_GBP,
+    STATED_HOUSE_NAME,
+    STATED_HOUSE_NOTES,
+    STATED_HOUSE_SHARE_GBP,
     STATED_MORTGAGE_HALF_GBP,
     STATED_MORTGAGE_NAME,
     STATED_MORTGAGE_NOTES,
     STATED_PENSION_GBP,
+    apply_stated_house_share,
     apply_stated_mortgage_half,
     apply_stated_pension,
+    ensure_stated_house_share,
     ensure_stated_mortgage_half,
     ensure_stated_pension,
     is_live_finance_database,
@@ -118,6 +124,50 @@ async def test_apply_stated_mortgage_half_replaces_placeholder() -> None:
         for row in leftover:
             await db.delete(row)
         flag = await db.get(AppSettingRow, "finance.stated_mortgage_half_gbp")
+        if flag is not None:
+            await db.delete(flag)
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_ensure_stated_house_share_skips_test_database() -> None:
+    assert await ensure_stated_house_share() is None
+
+
+@pytest.mark.asyncio
+async def test_apply_stated_house_share_creates_and_updates() -> None:
+    async with SessionLocal() as db:
+        created = await apply_stated_house_share(db)
+        assert created.scope == "personal"
+        assert created.account_type == "property"
+        assert created.name == STATED_HOUSE_NAME
+        assert created.balance_gbp == STATED_HOUSE_SHARE_GBP
+        assert created.notes == STATED_HOUSE_NOTES
+        assert STATED_HOUSE_SHARE_GBP == round(STATED_HOUSE_JOINT_GBP / 2, 2)
+        account_id = created.id
+
+        created.name = "House placeholder"
+        created.balance_gbp = 1.0
+        created.notes = "Placeholder"
+        db.add(created)
+        await db.commit()
+
+        updated = await apply_stated_house_share(db)
+        assert updated.id == account_id
+        assert updated.balance_gbp == STATED_HOUSE_SHARE_GBP
+        assert updated.name == STATED_HOUSE_NAME
+        assert updated.notes == STATED_HOUSE_NOTES
+
+        leftover = list(
+            (
+                await db.scalars(
+                    select(FinanceAccountRow).where(FinanceAccountRow.account_type == "property")
+                )
+            ).all()
+        )
+        for row in leftover:
+            await db.delete(row)
+        flag = await db.get(AppSettingRow, "finance.stated_house_share_gbp")
         if flag is not None:
             await db.delete(flag)
         await db.commit()

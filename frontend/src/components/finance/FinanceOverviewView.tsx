@@ -8,6 +8,7 @@ import { InsightCard } from "@/components/finance/InsightCard";
 import { MetricTile } from "@/components/finance/MetricTile";
 import { MetricWithOfWhich } from "@/components/finance/OfWhichBreakdown";
 import { COMPANY_NAME, COMPANY_SHORT, PERSONAL_NAME, monthlyFlowHint } from "@/lib/finance-branding";
+import { formatSafeSpendStatus } from "@/lib/finance-labels";
 import type { FinanceOverview } from "@/lib/finance-schemas";
 import { formatGbp } from "@/lib/money";
 
@@ -33,7 +34,13 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
   );
   const recommendations = financeInsights.filter((item) => item.severity === "info");
   const upcoming = overview.upcoming_payments ?? [];
-  const cashAvailable = overview.cash_available_gbp ?? overview.available_cash_gbp ?? 0;
+  // Always derive from the same bank figures shown in the hint — never trust a
+  // stale cached cash_available_gbp that still equals positive pots only.
+  const cashAvailable =
+    Math.round(
+      ((overview.personal_bank_balance_gbp ?? 0) + (overview.business_bank_balance_gbp ?? 0)) *
+        100,
+    ) / 100;
   const externalDebt = overview.external_debt_gbp ?? overview.total_personal_debt_gbp + overview.total_business_debt_gbp;
   const noCash =
     overview.personal_bank_balance_gbp === 0 && overview.business_bank_balance_gbp === 0;
@@ -493,7 +500,11 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                   label="Business VAT pot"
                   value={overview.vat_reserve_gbp}
                   warning={overview.vat_reserve_warning}
-                  hint={overview.vat_reserve_warning ? "VAT reserve appears low" : "Tax provision (not yet paid)"}
+                  hint={
+                    overview.vat_reserve_warning
+                      ? "VAT reserve appears low"
+                      : "Cash in VAT pot (paid reserve — not QuickFile VAT liability)"
+                  }
                 />
                 <MetricTile
                   label="Business corp tax reserve"
@@ -645,7 +656,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               hint={
                 personalSafe.flow_source === "budget"
                   ? monthlyFlowHint("budget")
-                  : personalSafe.flow_note || personalSafe.status
+                  : personalSafe.flow_note || formatSafeSpendStatus(personalSafe.status)
               }
             />
           ) : null}
@@ -655,7 +666,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               value={businessSafe.available_business_cash_gbp}
               positive={businessSafe.available_business_cash_gbp > 0}
               warning={businessSafe.status !== "HEALTHY"}
-              hint={businessSafe.status}
+              hint={formatSafeSpendStatus(businessSafe.status)}
             />
           ) : null}
           {showCombined && combinedSafe ? (
@@ -666,7 +677,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               hint={
                 combinedSafe.flow_source === "budget"
                   ? monthlyFlowHint("budget")
-                  : overview.cash_status ?? combinedSafe.status
+                  : formatSafeSpendStatus(overview.cash_status ?? combinedSafe.status)
               }
             />
           ) : null}

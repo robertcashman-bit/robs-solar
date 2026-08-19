@@ -83,10 +83,14 @@ def _add_months(start: date, months: int) -> date:
     return add_months(start, months)
 
 
-def priority_label(apr: float, monthly_interest: float) -> str:
-    if apr >= 20 or monthly_interest >= 50:
+def priority_label(apr: float, monthly_interest: float, *, apr_known: bool = True) -> str:
+    """APR-band priority. Monthly £ is not used — large low-APR balances were
+    wrongly labelled Highest cost when interest ≥ £50/mo."""
+    if not apr_known or apr <= 0:
+        return "APR unknown"
+    if apr >= 20:
         return "Highest cost"
-    if apr >= 12 or monthly_interest >= 20:
+    if apr >= 12:
         return "High"
     if apr >= 6:
         return "Medium"
@@ -105,7 +109,12 @@ def analyse_debts(liabilities: list[FinanceLiability]) -> list[DebtAnalysisItem]
         interest = monthly_interest_gbp(debt.balance_gbp, debt.interest_rate_pct)
         payment = debt.minimum_payment_gbp + debt.overpayment_gbp
         months = months_to_payoff(debt.balance_gbp, debt.interest_rate_pct, payment)
-        score = round(debt.interest_rate_pct * 10 + interest, 2)
+        apr_known = bool(getattr(debt, "interest_rate_known", True)) and debt.interest_rate_pct > 0
+        score = (
+            round(debt.interest_rate_pct * 10 + interest, 2)
+            if apr_known
+            else round(interest, 2)
+        )
         items.append(
             DebtAnalysisItem(
                 id=debt.id,
@@ -123,8 +132,10 @@ def analyse_debts(liabilities: list[FinanceLiability]) -> list[DebtAnalysisItem]
                 monthly_interest_gbp=interest,
                 months_to_payoff=months,
                 priority_score=score,
-                priority_label=priority_label(debt.interest_rate_pct, interest),
-                apr_known=debt.interest_rate_pct >= 0,
+                priority_label=priority_label(
+                    debt.interest_rate_pct, interest, apr_known=apr_known
+                ),
+                apr_known=apr_known,
             )
         )
     items.sort(key=lambda item: (-item.priority_score, -item.balance_gbp))

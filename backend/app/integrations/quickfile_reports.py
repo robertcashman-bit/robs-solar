@@ -112,6 +112,65 @@ def _sum_lines_from_breakdown(section: dict[str, Any] | None, *name_parts: str) 
     return round(total, 2)
 
 
+def _liability_bucket_for_nominal(code: str | None) -> str | None:
+    """UK-style chart: 2xxx are liabilities. 2100–2299 current; 2300+ long-term."""
+    if not code:
+        return None
+    digits = "".join(ch for ch in str(code) if ch.isdigit())
+    if len(digits) < 4 or not digits.startswith("2"):
+        return None
+    try:
+        number = int(digits[:4])
+    except ValueError:
+        return None
+    if 2100 <= number <= 2299:
+        return "CurrentLiabilities"
+    if 2300 <= number <= 2999:
+        return "LongTermLiabilities"
+    return "CurrentLiabilities"
+
+
+def _rehome_misfiled_liability_lines(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Move 2xxx liability nominals out of Current assets into liability sections."""
+    by_key = {section["key"]: section for section in sections}
+    current_assets = by_key.get("CurrentAssets")
+    if not current_assets:
+        return sections
+    kept: list[dict[str, Any]] = []
+    moved_current: list[dict[str, Any]] = []
+    moved_long: list[dict[str, Any]] = []
+    for line in current_assets.get("lines") or []:
+        bucket = _liability_bucket_for_nominal(line.get("nominal_code"))
+        if bucket == "CurrentLiabilities":
+            moved_current.append({**line, "amount_gbp": abs(float(line.get("amount_gbp") or 0))})
+        elif bucket == "LongTermLiabilities":
+            moved_long.append({**line, "amount_gbp": abs(float(line.get("amount_gbp") or 0))})
+        else:
+            kept.append(line)
+    current_assets["lines"] = kept
+    current_assets["subtotal_gbp"] = round(
+        sum(float(line.get("amount_gbp") or 0) for line in kept), 2
+    )
+
+    if moved_current:
+        target = by_key.get("CurrentLiabilities")
+        if target is not None:
+            target["lines"] = list(target.get("lines") or []) + moved_current
+            target["subtotal_gbp"] = round(
+                sum(float(line.get("amount_gbp") or 0) for line in target["lines"]),
+                2,
+            )
+    if moved_long:
+        target = by_key.get("LongTermLiabilities")
+        if target is not None:
+            target["lines"] = list(target.get("lines") or []) + moved_long
+            target["subtotal_gbp"] = round(
+                sum(float(line.get("amount_gbp") or 0) for line in target["lines"]),
+                2,
+            )
+    return sections
+
+
 def parse_profit_and_loss_full(
     body: dict[str, Any],
     *,
@@ -182,7 +241,10 @@ def parse_balance_sheet_full(body: dict[str, Any], *, to_date: str) -> dict[str,
     current_liabilities = breakdown.get("CurrentLiabilities") or {}
 
     debtors = _line_amount_from_breakdown(current_assets, "debtors control")
-    creditors = _line_amount_from_breakdown(current_assets, "creditors control")
+    # Prefer liability section; some QuickFile charts misfile creditors under assets.
+    creditors = _line_amount_from_breakdown(current_liabilities, "creditors control")
+    if creditors <= 0:
+        creditors = _line_amount_from_breakdown(current_assets, "creditors control")
     # Nominal 1210 "Vat Account" — cash reserved for VAT, not the creditor liability.
     vat_reserve = _line_amount_from_breakdown(current_assets, "vat account")
     vat_liability = _sum_lines_from_breakdown(
@@ -203,13 +265,31 @@ def parse_balance_sheet_full(body: dict[str, Any], *, to_date: str) -> dict[str,
                 "is_total": index == len(_BS_SECTIONS) - 1,
             }
         )
+    sections = _rehome_misfiled_liability_lines(sections)
+    current_assets_section = next((s for s in sections if s["key"] == "CurrentAssets"), None)
+    current_liabilities_section = next(
+        (s for s in sections if s["key"] == "CurrentLiabilities"), None
+    )
+    long_term_section = next((s for s in sections if s["key"] == "LongTermLiabilities"), None)
 
     return {
         "to_date": to_date,
         "fixed_assets_gbp": round(_float(totals.get("FixedAssets")), 2),
-        "current_assets_gbp": round(_float(totals.get("CurrentAssets")), 2),
-        "current_liabilities_gbp": round(abs(_float(totals.get("CurrentLiabilities"))), 2),
-        "long_term_liabilities_gbp": round(abs(_float(totals.get("LongTermLiabilities"))), 2),
+        "current_assets_gbp": (
+            current_assets_section["subtotal_gbp"]
+            if current_assets_section is not None
+            else round(_float(totals.get("CurrentAssets")), 2)
+        ),
+        "current_liabilities_gbp": (
+            current_liabilities_section["subtotal_gbp"]
+            if current_liabilities_section is not None
+            else round(abs(_float(totals.get("CurrentLiabilities"))), 2)
+        ),
+        "long_term_liabilities_gbp": (
+            long_term_section["subtotal_gbp"]
+            if long_term_section is not None
+            else round(abs(_float(totals.get("LongTermLiabilities"))), 2)
+        ),
         "capital_and_reserves_gbp": round(_float(totals.get("CapitalAndReserves")), 2),
         "debtors_gbp": debtors,
         "creditors_gbp": creditors,

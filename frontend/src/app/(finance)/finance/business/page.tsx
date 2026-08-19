@@ -100,6 +100,7 @@ export default function BusinessFinancePage() {
         });
       }
       setError(null);
+      setHydrated(true);
       try {
         const qfReports = await apiClient.get<unknown>("/finance/integrations/quickfile/reports");
         const parsedReports = quickFileReportsSchema.safeParse(qfReports);
@@ -109,7 +110,6 @@ export default function BusinessFinancePage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load business finance");
-    } finally {
       setHydrated(true);
     }
   }, [periodState.period]);
@@ -148,12 +148,14 @@ export default function BusinessFinancePage() {
 
   if (gated) return <AuthLoadingShell redirecting={redirecting} />;
 
-  const bankBalance = accounts
+  const cashFromAccounts = accounts
     .filter((account) => account.account_type === "current")
     .reduce((sum, account) => sum + Math.max(account.balance_gbp, 0), 0);
   const overdraft = accounts
     .filter((account) => account.account_type === "current" && account.balance_gbp < 0)
     .reduce((sum, account) => sum + Math.abs(account.balance_gbp), 0);
+  // Net of overdraft — same definition as Overview business_bank_balance_gbp.
+  const bankBalance = Math.round((cashFromAccounts - overdraft) * 100) / 100;
   const directorsLoan = accounts
     .filter((account) => account.account_type === "directors_loan")
     .reduce((sum, account) => sum + account.balance_gbp, 0);
@@ -293,8 +295,8 @@ export default function BusinessFinancePage() {
             <MetricTile
               label="Business bank"
               value={bankBalance}
-              warning={overdraft > 0}
-              hint="Positive current accounts"
+              warning={bankBalance < 0 || overdraft > 0}
+              hint="Current accounts (net of overdraft) — same as Overview"
             />
           </MetricWithOfWhich>
           <MetricWithOfWhich
@@ -314,7 +316,11 @@ export default function BusinessFinancePage() {
               hint="Company external debts — of which rows are subsets"
             />
           </MetricWithOfWhich>
-          <MetricTile label="Business VAT pot" value={vatReserveGbp} hint="Cash in VAT pot" />
+          <MetricTile
+            label="Business VAT pot"
+            value={vatReserveGbp}
+            hint="Cash in VAT pot (paid reserve — not QuickFile VAT liability)"
+          />
           <MetricTile label="Business corp tax reserve" value={snapshot?.corp_tax_reserve_gbp} />
           <MetricTile label="Business debtors" value={snapshot?.debtors_gbp} />
           <MetricTile

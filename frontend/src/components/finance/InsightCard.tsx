@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import type { FinanceInsight } from "@/lib/finance-schemas";
+import { formatInsightMeta } from "@/lib/finance-labels";
 
 const severityStyles: Record<string, string> = {
   info: "border-sky-400/50 bg-sky-500/20 text-[var(--foreground)]",
@@ -25,7 +26,9 @@ export function InsightCard({ insight, onDismiss }: InsightCardProps) {
       <p className="font-semibold">{insight.title}</p>
       <p className="mt-1 opacity-90">{insight.message}</p>
       <div className="mt-2 flex flex-wrap items-center gap-3">
-        <p className="text-xs uppercase tracking-wide opacity-70">{insight.severity} · {insight.category}</p>
+        <p className="text-xs uppercase tracking-wide opacity-70">
+          {formatInsightMeta(insight.severity, insight.category)}
+        </p>
         {href ? (
           <Link href={href} className="text-xs font-medium underline">
             {label}

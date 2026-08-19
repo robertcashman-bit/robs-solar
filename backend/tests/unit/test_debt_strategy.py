@@ -56,6 +56,43 @@ def test_highest_apr_is_priority() -> None:
     assert analysis[0].name == "MBNA"
     assert analysis[0].priority_label == "Highest cost"
     assert analysis[0].monthly_interest_gbp is not None
+    cheap = next(item for item in analysis if item.name == "Cheap loan")
+    assert cheap.priority_label == "Low"
+
+
+def test_priority_uses_apr_bands_not_monthly_interest_floor() -> None:
+    """Large low-APR balances must not all collapse to Highest cost."""
+    analysis = analyse_debts(
+        [
+            _debt(
+                1,
+                "House mortgage",
+                82210.5,
+                0.0,
+                500,
+                debt_type=DebtType.MORTGAGE,
+                interest_rate_known=False,
+            ),
+            _debt(2, "Personal loan", 10000, 8.0, 200, debt_type=DebtType.LOAN),
+            _debt(
+                3,
+                "Capital on Tap",
+                10749,
+                36.0,
+                0,
+                scope=FinanceScope.BUSINESS,
+                debt_type=DebtType.LOAN,
+            ),
+            _debt(4, "Card", 2000, 19.9, 50),
+        ]
+    )
+    by_name = {item.name: item.priority_label for item in analysis}
+    assert by_name["Capital on Tap"] == "Highest cost"
+    assert by_name["Card"] == "High"
+    assert by_name["Personal loan"] == "Medium"
+    assert by_name["House mortgage"] == "APR unknown"
+    labels = set(by_name.values())
+    assert len(labels) >= 3
 
 
 def test_scenario_saves_interest_with_overpayment() -> None:
