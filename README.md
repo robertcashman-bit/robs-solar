@@ -1,6 +1,6 @@
 # Rob's Finance
 
-<!-- noop: retrigger Vercel production deploy after missed webhook for 13a93483 -->
+<!-- noop: retrigger Vercel production deploy after GitHub repo linked (post a5ba7fc8) -->
 
 The folder name `robs-solar` is historical. This repository is **Rob's Finance**. Do not develop or deploy from `All/robs-solar`. See [ONE_TREE.md](./ONE_TREE.md) and `~/WORKSPACE_MAP.md`.
 
