@@ -281,7 +281,7 @@ export function FinanceIntegrityPanel({
           ) : (
             (recon?.flags || []).map((flag, index) => (
               <li key={`${flag.account_name}-${index}`}>
-                {flag.account_name}: {formatReconFlagLabel(flag.kind, flag.status)}
+                {flag.account_name}: {formatReconFlagLabel(flag.kind ?? "", flag.status ?? "")}
               </li>
             ))
           )}
