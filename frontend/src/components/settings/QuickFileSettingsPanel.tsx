@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { apiClient } from "@/lib/api-client";
+import { apiClient, ApiError } from "@/lib/api-client";
 import { notifyFinanceChanged } from "@/lib/finance-events";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -202,9 +202,18 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
       setMessage(result.data.message);
       notifyFinanceChanged();
       await load();
-    } catch (err) {
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 504) {
+      setError(err.message);
+    } else if (err instanceof Error && /took too long/i.test(err.message)) {
+      setError(
+        "The import took too long and was stopped. Any year chunks already saved "
+        + "are kept — click Import full history again to continue.",
+      );
+    } else {
       setError(err instanceof Error ? err.message : "Full history import failed");
-    } finally {
+    }
+  } finally {
       setBusy(null);
     }
   }
@@ -230,9 +239,10 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
         <div>
           <h2 className="text-lg font-semibold">QuickFile</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Sync business bank balances and unpaid invoice debtors from QuickFile. Credentials are
-            pulled from the server environment when set — you should not need to re-enter keys after
-            a deploy or idle period.
+            Sync business bank balances, unpaid invoice debtors, and statement /
+            invoice history from QuickFile. Credentials are pulled from the server
+            environment when set — you should not need to re-enter keys after a deploy
+            or idle period.
           </p>
         </div>
         <span
@@ -320,8 +330,10 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
                 </button>
               </div>
               <p className="text-xs text-[var(--muted)]">
-                Import full history uses the daily 1000-request QuickFile quota and can take a long
-                time. Existing transactions are not deleted.
+                Import full history pulls ~10 years of QuickFile bank statement lines,
+                invoices, and bills (not Lunch Flow personal bank history). It uses the
+                daily 1000-request quota and can take many minutes. Existing transactions
+                are not deleted; retrying continues from what is already saved.
               </p>
             </>
           ) : null}
@@ -420,8 +432,10 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
               </div>
               {connected ? (
                 <p className="text-xs text-[var(--muted)]">
-                  Import full history uses the daily 1000-request QuickFile quota and can take a long
-                  time. Existing transactions are not deleted.
+                  Import full history pulls ~10 years of QuickFile bank statement lines,
+                  invoices, and bills (not Lunch Flow personal bank history). It uses the
+                  daily 1000-request quota and can take many minutes. Existing transactions
+                  are not deleted; retrying continues from what is already saved.
                 </p>
               ) : null}
             </div>

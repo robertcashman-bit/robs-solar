@@ -233,7 +233,12 @@ class QuickFileProvider(BaseFinanceProvider):
             )
         return normalized
 
-    async def sync_transactions(self, *, since: str | None = None) -> list[dict[str, Any]]:
+    async def sync_transactions(
+        self,
+        *,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Import bank statement lines plus invoice/purchase document headers.
 
         Bank_Search provides cash movements. Invoice_Search / Purchase_Search return
@@ -244,6 +249,7 @@ class QuickFileProvider(BaseFinanceProvider):
 
         Date ranges longer than one year are walked in year-sized chunks so a single
         Bank_Search / Invoice_Search / Purchase_Search call never covers a huge window.
+        Pass ``until`` to bound a single chunk (used by force_full progressive commits).
         """
         self._ensure_configured()
         today = datetime.now(timezone.utc).date()
@@ -251,8 +257,8 @@ class QuickFileProvider(BaseFinanceProvider):
             cutoff = since[:10]
         else:
             cutoff = (today - timedelta(days=QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS)).isoformat()
-        until = today.isoformat()
-        windows = lookback_date_chunks(cutoff, until)
+        end = (until or today.isoformat())[:10]
+        windows = lookback_date_chunks(cutoff, end)
         collected: list[dict[str, Any]] = []
         try:
             accounts = await self._client.fetch_bank_accounts()

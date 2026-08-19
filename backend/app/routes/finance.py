@@ -809,9 +809,10 @@ async def quickfile_sync(
     force_full: bool = Query(
         default=False,
         description=(
-            "Clear QuickFile full-import markers so this sync uses the ~10-year "
-            "lookback window. Existing transactions are not deleted. Daily cron "
-            "and live refresh never use this path."
+            "Run the ~10-year QuickFile history import (bank statement lines plus "
+            "invoice/purchase headers), committing year-by-year. Existing "
+            "transactions are not deleted. Daily cron and live refresh never use "
+            "this path."
         ),
     ),
     session: SessionData = Depends(require_admin_csrf),

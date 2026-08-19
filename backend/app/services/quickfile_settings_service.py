@@ -309,11 +309,11 @@ class QuickFileSettingsService:
         await self._set_value(db, _FULL_IMPORT_LOOKBACK_KEY, str(days))
 
     async def clear_full_history_import(self, db: AsyncSession) -> None:
-        """One-shot: drop full-import markers so the next sync can use deep lookback.
+        """Drop full-import markers (ops / tests). Does not delete transactions.
 
-        Does not delete finance transactions. Call via ``sync(..., force_full=True)``
-        or by clearing ``quickfile_full_import_at`` /
-        ``quickfile_full_import_lookback_days`` in app_settings.
+        ``sync(..., force_full=True)`` no longer calls this up front — it selects
+        the ~10-year window via the force_full flag and only rewrites markers after
+        a successful import, so a platform timeout cannot wipe the prior flag.
         """
         for key in (_FULL_IMPORT_KEY, _FULL_IMPORT_LOOKBACK_KEY):
             row = await self._get_row(db, key)
