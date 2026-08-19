@@ -1,5 +1,7 @@
 # Rob's Finance
 
+<!-- noop: retrigger Vercel production deploy after missed webhook for 13a93483 -->
+
 The folder name `robs-solar` is historical. This repository is **Rob's Finance**. Do not develop or deploy from `All/robs-solar`. See [ONE_TREE.md](./ONE_TREE.md) and `~/WORKSPACE_MAP.md`.
 
 Secure, mobile-friendly browser application for personal and business finance tracking.
