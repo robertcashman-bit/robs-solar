@@ -140,14 +140,24 @@ def test_credit_limit_is_not_an_asset() -> None:
     assert totals.net_worth_gbp == -400
 
 
-def test_overdraft_is_liability_not_cash() -> None:
+def test_available_cash_excludes_overdraft_pots() -> None:
     totals = compute_totals(
-        [AccountView(1, "personal", "current", "Current", -350)],
+        [
+            AccountView(1, "personal", "current", "Saver", 13.23),
+            AccountView(2, "personal", "current", "Current", -2517.14),
+            AccountView(3, "business", "current", "Biz", -1948.60),
+        ],
         [],
     )
-    assert totals.available_cash_gbp == 0
-    assert totals.personal_overdraft_gbp == 350
-    assert totals.net_worth_gbp == -350
+    assert totals.available_cash_gbp == 13.23
+    assert totals.personal_overdraft_gbp == 2517.14
+    assert totals.business_overdraft_gbp == 1948.60
+    personal_bank = round(totals.personal_cash_gbp - totals.personal_overdraft_gbp, 2)
+    business_bank = round(totals.business_cash_gbp - totals.business_overdraft_gbp, 2)
+    assert personal_bank == -2503.91
+    assert business_bank == -1948.60
+    # Overview headline must use net banks (see finance_overview_service), not pots-only.
+    assert round(personal_bank + business_bank, 2) == -4452.51
 
 
 def test_cashflow_surplus_from_snapshot() -> None:

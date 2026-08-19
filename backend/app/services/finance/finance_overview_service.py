@@ -315,7 +315,9 @@ class FinanceOverviewService:
                 totals.personal_debt_gbp + totals.business_debt_gbp + totals.directors_loan_gbp,
                 2,
             ),
-            cash_available_gbp=totals.available_cash_gbp,
+            # Headline must match the personal · company hint (net of overdrafts).
+            # available_cash_gbp stays positive pots only for liquid-asset maths.
+            cash_available_gbp=round(personal_bank + business_bank, 2),
             household_bills_gbp=bills,
             monthly_flow_source=flow_source,
             monthly_interest_gbp=interest_gbp,
