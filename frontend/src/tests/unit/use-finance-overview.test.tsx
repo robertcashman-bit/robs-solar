@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FINANCE_LAST_OVERVIEW_KEY } from "@/lib/finance-local-cache";
@@ -6,11 +6,12 @@ import { financeOverviewSchema } from "@/lib/finance-schemas";
 import { useFinanceOverview } from "@/lib/use-finance-overview";
 
 const get = vi.fn();
+const post = vi.fn();
 
 vi.mock("@/lib/api-client", () => ({
   apiClient: {
     get: (...args: unknown[]) => get(...args),
-    post: vi.fn(),
+    post: (...args: unknown[]) => post(...args),
   },
 }));
 
@@ -43,7 +44,7 @@ const stored = financeOverviewSchema.parse({
 });
 
 function Probe() {
-  const { overview, loading } = useFinanceOverview({
+  const { overview, loading, refresh, error } = useFinanceOverview({
     username: "rob",
     role: "admin",
   });
@@ -51,6 +52,10 @@ function Probe() {
     <div>
       <p>{loading ? "loading" : "ready"}</p>
       <p>{overview ? `cash:${overview.personal_bank_balance_gbp}` : "none"}</p>
+      <p>{error ? `err:${error}` : "no-error"}</p>
+      <button type="button" onClick={() => void refresh()}>
+        Refresh
+      </button>
     </div>
   );
 }
@@ -58,6 +63,7 @@ function Probe() {
 describe("useFinanceOverview", () => {
   beforeEach(() => {
     get.mockReset();
+    post.mockReset();
     window.localStorage.clear();
     window.sessionStorage.clear();
   });
@@ -94,5 +100,40 @@ describe("useFinanceOverview", () => {
     const url = String(get.mock.calls[0][0]);
     expect(url).toContain("personal_period=3m");
     expect(url).toContain("business_period=6m");
+  });
+
+  it("clears the live-refresh race timer so a fast POST does not reject later", async () => {
+    vi.useFakeTimers();
+    const rejections: unknown[] = [];
+    const onUnhandled = (event: PromiseRejectionEvent) => {
+      rejections.push(event.reason);
+    };
+    window.addEventListener("unhandledrejection", onUnhandled);
+
+    get.mockResolvedValue({
+      ...stored,
+      personal_bank_balance_gbp: 2600,
+      personal_period_flow: null,
+      business_period_flow: null,
+    });
+    post.mockResolvedValue({});
+
+    render(<Probe />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      screen.getByRole("button", { name: "Refresh" }).click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    window.removeEventListener("unhandledrejection", onUnhandled);
+    vi.useRealTimers();
+
+    expect(rejections).toEqual([]);
+    expect(post).toHaveBeenCalledWith("/finance/live-refresh", {});
+    expect(get.mock.calls.some((call) => String(call[0]).includes("fresh=1"))).toBe(true);
   });
 });

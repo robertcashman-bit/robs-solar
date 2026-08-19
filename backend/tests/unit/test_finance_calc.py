@@ -140,14 +140,24 @@ def test_credit_limit_is_not_an_asset() -> None:
     assert totals.net_worth_gbp == -400
 
 
-def test_overdraft_is_liability_not_cash() -> None:
+def test_available_cash_excludes_overdraft_pots() -> None:
     totals = compute_totals(
-        [AccountView(1, "personal", "current", "Current", -350)],
+        [
+            AccountView(1, "personal", "current", "Saver", 13.23),
+            AccountView(2, "personal", "current", "Current", -2517.14),
+            AccountView(3, "business", "current", "Biz", -1948.60),
+        ],
         [],
     )
-    assert totals.available_cash_gbp == 0
-    assert totals.personal_overdraft_gbp == 350
-    assert totals.net_worth_gbp == -350
+    assert totals.available_cash_gbp == 13.23
+    assert totals.personal_overdraft_gbp == 2517.14
+    assert totals.business_overdraft_gbp == 1948.60
+    personal_bank = round(totals.personal_cash_gbp - totals.personal_overdraft_gbp, 2)
+    business_bank = round(totals.business_cash_gbp - totals.business_overdraft_gbp, 2)
+    assert personal_bank == -2503.91
+    assert business_bank == -1948.60
+    # Overview headline must use net banks (see finance_overview_service), not pots-only.
+    assert round(personal_bank + business_bank, 2) == -4452.51
 
 
 def test_cashflow_surplus_from_snapshot() -> None:
@@ -510,6 +520,46 @@ def test_null_interest_rate_known_is_treated_as_known() -> None:
     )
     assert views[0].interest_rate_known is True
     total, incomplete = monthly_interest_from_debts(views)
+    assert incomplete is False
+    assert total == 12.0
+
+
+def test_monthly_interest_sums_known_aprs_and_flags_missing() -> None:
+    total, incomplete = monthly_interest_from_debts(
+        [
+            LiabilityView(1, "personal", "Virgin", "credit_card", 1000, 24.0, 25),
+            LiabilityView(
+                2,
+                "personal",
+                "Unknown APR",
+                "loan",
+                500,
+                0.0,
+                20,
+                interest_rate_known=False,
+            ),
+        ]
+    )
+    assert incomplete is True
+    assert total == monthly_interest_gbp(1000, 24.0)
+
+
+def test_monthly_interest_ignores_directors_loan_missing_apr() -> None:
+    total, incomplete = monthly_interest_from_debts(
+        [
+            LiabilityView(1, "personal", "Virgin", "credit_card", 1200, 12.0, 25),
+            LiabilityView(
+                2,
+                "business",
+                "Directors Loan",
+                "directors_loan",
+                10287.1,
+                0.0,
+                0,
+                interest_rate_known=False,
+            ),
+        ]
+    )
     assert incomplete is False
     assert total == 12.0
 

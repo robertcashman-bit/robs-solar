@@ -678,6 +678,8 @@ class FinanceReportsResponse(BaseModel):
     business_snapshot: BusinessFinanceSnapshot | None = None
     net_worth_gbp: float | None = None
     total_debt_gbp: float | None = None
+    external_debt_gbp: float | None = None
+    directors_loan_gbp: float = 0.0
     debt_reduction_gbp: float | None = None
     energy_savings_gbp: float
     energy_savings_vs_forecast: str = ""

@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* App uses data-theme="dark"|"light", not the Tailwind .dark class. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
 /* ============================================================
    Rob's Solar — Design System
    Layered surfaces, elevation, aurora backdrop, motion tokens.

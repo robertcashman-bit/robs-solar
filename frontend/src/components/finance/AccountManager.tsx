@@ -16,6 +16,8 @@ type AccountManagerProps = {
   accounts: FinanceAccount[];
   types: AccountTypeOption[];
   canEdit: boolean;
+  /** When true, suppress the empty-state copy so first paint is not a fake void. */
+  loading?: boolean;
   onChanged: () => Promise<void>;
   onError: (message: string) => void;
   onNotice: (message: string) => void;
@@ -26,6 +28,7 @@ export function AccountManager({
   accounts,
   types,
   canEdit,
+  loading = false,
   onChanged,
   onError,
   onNotice,
@@ -243,7 +246,11 @@ export function AccountManager({
             )}
           </li>
         ))}
-        {accounts.length === 0 ? (
+        {loading ? (
+          <li className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-sm text-[var(--muted)]">
+            Loading accounts…
+          </li>
+        ) : accounts.length === 0 ? (
           <li className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-sm text-[var(--muted)]">
             No {scope === "business" ? "company" : scope} accounts yet. Add a current account so Overview cash totals stay accurate.
           </li>

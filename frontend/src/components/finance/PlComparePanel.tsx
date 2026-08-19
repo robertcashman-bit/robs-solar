@@ -39,6 +39,7 @@ const pnlCompareSchema = z.object({
 });
 
 type PnlCompare = z.infer<typeof pnlCompareSchema>;
+type PnlCompareRow = z.infer<typeof pnlCompareRowSchema>;
 
 type PlComparePanelProps = {
   scope: "personal" | "business";
@@ -51,6 +52,18 @@ function signedGbp(value: number | null | undefined): string {
   if (value > 0) return `+${formatted}`;
   if (value < 0) return `−${formatted}`;
   return formatted;
+}
+
+/** Prior-window empty notes reuse "No stored transactions in 6 months" — too easy
+ * to read as the current window being empty while figures are on screen. */
+function compareEmptyHint(row: PnlCompareRow): string {
+  const label = (row.compare_label || "comparison period").trim();
+  const lowered = label.toLowerCase();
+  // Avoid "No prior prior 6 months…" when compare_label already starts with Prior.
+  if (lowered.startsWith("prior ")) {
+    return `No ${lowered} data to compare yet.`;
+  }
+  return `No prior ${lowered} data to compare yet.`;
 }
 
 export function PlComparePanel({ scope, title }: PlComparePanelProps) {
@@ -115,7 +128,7 @@ export function PlComparePanel({ scope, title }: PlComparePanelProps) {
                     hint={
                       row.income_change_gbp == null
                         ? row.compare_empty
-                          ? row.compare_coverage_note || "No compare period data"
+                          ? compareEmptyHint(row)
                           : undefined
                         : `${signedGbp(row.income_change_gbp)} vs ${row.compare_label}`
                     }
@@ -126,7 +139,7 @@ export function PlComparePanel({ scope, title }: PlComparePanelProps) {
                     hint={
                       row.spending_change_gbp == null
                         ? row.compare_empty
-                          ? row.compare_coverage_note || "No compare period data"
+                          ? compareEmptyHint(row)
                           : undefined
                         : `${signedGbp(row.spending_change_gbp)} vs ${row.compare_label}`
                     }
@@ -139,7 +152,7 @@ export function PlComparePanel({ scope, title }: PlComparePanelProps) {
                     hint={
                       row.surplus_change_gbp == null
                         ? row.compare_empty
-                          ? row.compare_coverage_note || "No compare period data"
+                          ? compareEmptyHint(row)
                           : undefined
                         : `${signedGbp(row.surplus_change_gbp)} vs ${row.compare_label}`
                     }
@@ -150,10 +163,7 @@ export function PlComparePanel({ scope, title }: PlComparePanelProps) {
                 <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">{row.coverage_note}</p>
               ) : null}
               {!row.empty && row.compare_empty ? (
-                <p className="mt-2 text-xs text-[var(--muted)]">
-                  {row.compare_coverage_note
-                    || "Comparison period has no stored transactions yet."}
-                </p>
+                <p className="mt-2 text-xs text-[var(--muted)]">{compareEmptyHint(row)}</p>
               ) : null}
             </div>
           ))}

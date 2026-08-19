@@ -4,6 +4,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend";
 export const DEFAULT_GET_TIMEOUT_MS = 12_000;
 /** Reports aggregates can exceed the default on cold SQLite / large ledgers. */
 export const REPORTS_GET_TIMEOUT_MS = 45_000;
+/** Live balance refresh (QuickFile + Lunch Flow) — client aborts before a long hang. */
+export const LIVE_REFRESH_TIMEOUT_MS = 15_000;
 /** POST/PUT/PATCH/DELETE — allow slower writes. */
 export const MUTATION_TIMEOUT_MS = 45_000;
 /**
@@ -21,6 +23,11 @@ const COLD_START_GET_PATHS = new Set([
 function isReportsPath(path: string): boolean {
   const bare = path.split("?")[0] ?? path;
   return bare === "/finance/reports" || bare.startsWith("/finance/reports/");
+}
+
+function isLiveRefreshPath(path: string): boolean {
+  const bare = path.split("?")[0] ?? path;
+  return bare === "/finance/live-refresh";
 }
 
 export class ApiError extends Error {
@@ -43,6 +50,9 @@ export function getCsrfToken() {
 }
 
 export function resolveTimeoutMs(path: string, method?: string): number {
+  if (isLiveRefreshPath(path)) {
+    return LIVE_REFRESH_TIMEOUT_MS;
+  }
   if (method && method !== "GET") {
     return MUTATION_TIMEOUT_MS;
   }

@@ -38,4 +38,21 @@ describe("AccountManager", () => {
     expect(screen.getByText("Credit limit (£)")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Needed for available credit")).toBeInTheDocument();
   });
+
+  it("shows loading copy instead of a false empty state", () => {
+    render(
+      <AccountManager
+        scope="personal"
+        accounts={[]}
+        types={types}
+        canEdit={false}
+        loading
+        onChanged={async () => undefined}
+        onError={() => undefined}
+        onNotice={() => undefined}
+      />,
+    );
+    expect(screen.getByText("Loading accounts…")).toBeInTheDocument();
+    expect(screen.queryByText(/No personal accounts yet/)).not.toBeInTheDocument();
+  });
 });

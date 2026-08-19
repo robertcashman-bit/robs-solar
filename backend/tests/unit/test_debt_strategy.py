@@ -71,9 +71,28 @@ def test_scenario_saves_interest_with_overpayment() -> None:
     assert extra.interest_saved_gbp > 0
 
 
-def test_scenario_incomplete_without_payment() -> None:
-    result = scenario_for_extra([_debt(1, "Mystery", 900, 19, 0)], 100)
+def test_scenario_zero_min_with_apr_models_interest_only() -> None:
+    result = scenario_for_extra([_debt(1, "Capital on Tap", 10749, 36, 0)], 100)
+    assert result.incomplete is False
+    assert result.months_with_extra is not None
+    assert result.payoff_date is not None
+    assert "interest-only" in result.reason.lower()
+    assert "Payment or APR is missing" not in result.reason
+
+
+def test_scenario_zero_min_without_extra_asks_for_amount() -> None:
+    result = scenario_for_extra([_debt(1, "Capital on Tap", 10749, 36, 0)], 0)
     assert result.incomplete is True
+    assert "£0.00" in result.reason
+    assert "APR is missing" not in result.reason
+
+
+def test_recommend_strategy_uses_pound_sign_not_gbp_word() -> None:
+    result = recommend_debt_strategy(
+        [_debt(1, "Capital on Tap", 10749, 36, 0, debt_type=DebtType.BUSINESS_LOAN)]
+    )
+    assert "GBP" not in result.message
+    assert "£" in result.message
 
 
 def test_scenario_uses_largest_balance_when_apr_unknown() -> None:

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
 import { notifyFinanceChanged } from "@/lib/finance-events";
+import { formatUkDateTime } from "@/lib/finance-labels";
 import { useAuth } from "@/lib/auth-context";
 import {
   lunchFlowConfigStatusSchema,
@@ -106,7 +107,9 @@ export function LunchFlowSettingsPanel({ readOnly = false }: LunchFlowSettingsPa
       {status ? (
         <p className="text-sm text-[var(--muted)]">
           {status.connected ? "Connected" : status.configured ? "Key saved" : "Not configured"}
-          {status.last_sync_at ? ` · last sync ${status.last_sync_at}` : ""}
+          {status.last_sync_at
+            ? ` · last sync ${formatUkDateTime(status.last_sync_at)}`
+            : ""}
         </p>
       ) : null}
       {message ? <p className="text-sm text-emerald-700 dark:text-emerald-400">{message}</p> : null}

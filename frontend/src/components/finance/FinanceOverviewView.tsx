@@ -268,7 +268,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
               label="Combined cash available"
               value={cashAvailable}
               warning={cashAvailable < 0}
-              hint={`${formatGbp(overview.personal_bank_balance_gbp)} personal · ${formatGbp(overview.business_bank_balance_gbp)} company`}
+              hint={`${formatGbp(overview.personal_bank_balance_gbp)} personal · ${formatGbp(overview.business_bank_balance_gbp)} company (net of overdrafts)`}
             />
             <MetricWithOfWhich
               ariaLabel="Combined external debt of which"
@@ -299,7 +299,7 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 label="Combined external debt"
                 value={externalDebt}
                 warning={externalDebt > 0}
-                hint={`${formatGbp(overview.total_personal_debt_gbp)} personal · ${formatGbp(overview.total_business_debt_gbp)} company. Mortgage and cards below are of which, not extra.`}
+                hint={`${formatGbp(overview.total_personal_debt_gbp)} personal · ${formatGbp(overview.total_business_debt_gbp)} company. Excludes director's loan ${formatGbp(overview.directors_loan_gbp)} (Reports “total debt” includes it). Mortgage and cards below are of which, not extra.`}
               />
             </MetricWithOfWhich>
           </div>
@@ -412,8 +412,16 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 />
                 <MetricTile
                   label="Available credit"
-                  value={overview.available_credit_gbp}
-                  hint="Unused revolving credit limits (all scopes)"
+                  value={
+                    (overview.credit_limit_gbp ?? 0) <= 0 && (overview.available_credit_gbp ?? 0) <= 0
+                      ? null
+                      : overview.available_credit_gbp
+                  }
+                  hint={
+                    (overview.credit_limit_gbp ?? 0) <= 0 && (overview.available_credit_gbp ?? 0) <= 0
+                      ? "No credit limits recorded on cards or revolving facilities"
+                      : "Unused revolving credit limits (all scopes)"
+                  }
                 />
                 <MetricTile
                   label="Personal cash after bills"
@@ -527,12 +535,18 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <MetricTile
               label="Combined est. monthly interest"
-              value={overview.monthly_interest_incomplete ? null : overview.monthly_interest_gbp}
+              value={
+                overview.monthly_interest_incomplete && (overview.monthly_interest_gbp ?? 0) === 0
+                  ? null
+                  : overview.monthly_interest_gbp
+              }
               warning={Boolean(overview.monthly_interest_incomplete) || (overview.monthly_interest_gbp ?? 0) >= 50}
               hint={
-                overview.monthly_interest_incomplete
+                overview.monthly_interest_incomplete && (overview.monthly_interest_gbp ?? 0) === 0
                   ? "APR required for interest forecast"
-                  : "From recorded annual APRs"
+                  : overview.monthly_interest_incomplete
+                    ? "From recorded APRs — some debts still need APR"
+                    : "From recorded annual APRs on Debts"
               }
             />
           </div>

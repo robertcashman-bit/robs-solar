@@ -57,6 +57,7 @@ export default function DebtsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("priority");
   const [customExtra, setCustomExtra] = useState("100");
   const [archiveId, setArchiveId] = useState<number | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -71,6 +72,8 @@ export default function DebtsPage() {
       setStrategy(debtStrategySchema.parse(strat));
     } catch {
       setStrategy(null);
+    } finally {
+      setHydrated(true);
     }
   }, []);
 
@@ -234,7 +237,9 @@ export default function DebtsPage() {
         </div>
       ) : null}
 
-      {repayableDebts.length === 0 ? (
+      {!hydrated ? (
+        <p className="mt-6 text-sm text-[var(--muted)]">Loading debts…</p>
+      ) : repayableDebts.length === 0 ? (
         <div className="mt-6 space-y-4">
           <div className="rounded-2xl border border-[var(--border)] px-4 py-3">
             <p className="font-medium">No debts recorded yet</p>
@@ -267,7 +272,13 @@ export default function DebtsPage() {
                 {strategy.scenarios.map((row) => (
                   <tr key={row.extra_gbp} className="border-b border-[var(--border)]">
                     <td className="py-2 pr-3 tabular-nums">{formatGbp(row.extra_gbp)}</td>
-                    <td className="py-2 pr-3">{row.incomplete ? row.reason : `${row.months_saved ?? "—"} mo`}</td>
+                    <td className="py-2 pr-3">
+                      {row.incomplete
+                        ? row.reason
+                        : row.months_saved == null
+                          ? row.reason || "—"
+                          : `${row.months_saved} mo`}
+                    </td>
                     <td className="py-2 pr-3 tabular-nums">{row.interest_saved_gbp == null ? "—" : formatGbp(row.interest_saved_gbp)}</td>
                     <td className="py-2">{row.payoff_date ?? "—"}</td>
                   </tr>

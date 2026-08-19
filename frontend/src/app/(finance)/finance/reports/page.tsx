@@ -211,7 +211,13 @@ export default function ReportsPage() {
               label="Total debt"
               value={reports.total_debt_gbp}
               warning={reports.total_debt_gbp != null}
-              hint={reports.total_debt_gbp == null ? "No recorded position for this month" : undefined}
+              hint={
+                reports.total_debt_gbp == null
+                  ? "No recorded position for this month"
+                  : reports.external_debt_gbp != null && reports.directors_loan_gbp > 0
+                    ? `Includes director's loan ${formatGbp(reports.directors_loan_gbp)}. Overview “combined external debt” is ${formatGbp(reports.external_debt_gbp)} without the loan.`
+                    : undefined
+              }
             />
             <MetricTile
               label="Debt reduction"

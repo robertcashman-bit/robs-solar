@@ -205,7 +205,7 @@ def _revolving_accounts(accounts: Iterable[AccountView]) -> list[AccountView]:
     ]
 
 
-REVOLVING_DEBT_TYPES = frozenset({"credit_card", "business_loan"})
+REVOLVING_DEBT_TYPES = frozenset({"credit_card", "business_loan", "loan"})
 
 
 def _revolving_debts(liabilities: Iterable[LiabilityView]) -> list[LiabilityView]:
@@ -756,14 +756,23 @@ def external_debt_gbp(
 def monthly_interest_from_debts(
     liabilities: Iterable[LiabilityView],
 ) -> tuple[float, bool]:
+    """Sum monthly interest from repayable debts with known APR.
+
+    Director's loan is excluded (internal, not third-party interest).
+    Returns (total, incomplete) where incomplete means at least one repayable
+    debt is missing APR. The total still includes every debt that does have
+    APR so Overview can show a partial forecast instead of blanking the tile.
+    """
     total = 0.0
-    incomplete = False
+    missing = 0
     for item in _active_debts(liabilities):
+        if not is_repayable_debt(item):
+            continue
         if not item.interest_rate_known:
-            incomplete = True
+            missing += 1
             continue
         total += monthly_interest_gbp(item.balance_gbp, item.interest_rate_pct)
-    return round(total, 2), incomplete
+    return round(total, 2), missing > 0
 
 
 def high_interest_debt_gbp(
@@ -773,6 +782,8 @@ def high_interest_debt_gbp(
 ) -> float:
     total = 0.0
     for item in _active_debts(liabilities):
+        if not is_repayable_debt(item):
+            continue
         if not item.interest_rate_known:
             continue
         if item.interest_rate_pct >= threshold_pct:

@@ -21,6 +21,7 @@ from app.schemas.finance import (
 from app.services.finance.finance_calc import is_repayable_debt
 from app.services.finance.finance_liabilities_service import finance_liabilities_service
 from app.services.finance.finance_overview_service import finance_overview_service
+from app.services.finance.money import format_gbp
 
 
 def _to_schema(row: CashflowForecastRow) -> CashflowForecastEntry:
@@ -203,7 +204,8 @@ class FinanceCashflowService:
 
         pressure = projected < buffer
         warning = (
-            f"Projected balance ({projected:.0f} GBP) is below your {buffer:.0f} GBP buffer."
+            f"Projected balance ({format_gbp(projected)}) is below your "
+            f"{format_gbp(buffer)} buffer."
             if pressure
             else ""
         )

@@ -85,7 +85,9 @@ describe("FinanceOverviewView", () => {
     );
     const tile = screen.getByText("Combined external debt").closest("div");
     expect(tile).toHaveTextContent("£0.00");
-    expect(tile).not.toHaveTextContent("£1,200.00");
+    // Headline stays £0; DLA may appear only in the excludes-hint.
+    expect(tile?.querySelector(".text-2xl")).toHaveTextContent("£0.00");
+    expect(tile).toHaveTextContent(/Excludes director's loan £1,200\.00/);
   });
 
   it("renders labelled personal, business, and combined stacks with house hints", () => {
@@ -109,7 +111,7 @@ describe("FinanceOverviewView", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Of which business loans")).toBeInTheDocument();
     expect(
-      screen.getByText(/Mortgage and cards below are of which, not extra/),
+      screen.getByText(/Excludes director's loan/),
     ).toBeInTheDocument();
     expect(screen.getByText("Business VAT pot")).toBeInTheDocument();
     expect(screen.getByText("Business debtors")).toBeInTheDocument();
@@ -122,6 +124,27 @@ describe("FinanceOverviewView", () => {
       "href",
       "/finance/connect",
     );
+  });
+
+  it("shows combined cash available as the sum of personal and company net banks", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          personal_bank_balance_gbp: -2503.91,
+          business_bank_balance_gbp: -1948.6,
+          cash_available_gbp: -4452.51,
+          available_cash_gbp: 13.23,
+          personal_overdraft_gbp: 2517.14,
+          business_overdraft_gbp: 1948.6,
+        }}
+      />,
+    );
+    const tile = screen.getByText("Combined cash available").closest("div");
+    expect(tile).toHaveTextContent("-£4,452.51");
+    expect(tile).toHaveTextContent(/-£2,503\.91 personal/);
+    expect(tile).toHaveTextContent(/-£1,948\.60 company/);
+    expect(tile).not.toHaveTextContent("£13.23");
   });
 
   it("scope toggle shows only that stack's tiles", async () => {
@@ -281,5 +304,36 @@ describe("FinanceOverviewView", () => {
     expect(
       screen.getAllByText(/From live Open Banking sync/i).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("shows partial monthly interest when some APRs are still missing", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          monthly_interest_gbp: 187.42,
+          monthly_interest_incomplete: true,
+        }}
+      />,
+    );
+    const tile = screen.getByText("Combined est. monthly interest").closest("div");
+    expect(tile).toHaveTextContent("£187.42");
+    expect(tile).toHaveTextContent(/some debts still need APR/);
+    expect(tile).not.toHaveTextContent("APR required for interest forecast");
+  });
+
+  it("explains missing available credit when no limits are recorded", () => {
+    render(
+      <FinanceOverviewView
+        overview={{
+          ...overview,
+          available_credit_gbp: 0,
+          credit_limit_gbp: 0,
+        }}
+      />,
+    );
+    const tile = screen.getByText("Available credit").closest("div");
+    expect(tile?.querySelector(".text-2xl")).toHaveTextContent("—");
+    expect(tile).toHaveTextContent(/No credit limits recorded/);
   });
 });

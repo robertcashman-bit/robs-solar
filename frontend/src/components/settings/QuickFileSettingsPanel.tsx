@@ -252,7 +252,7 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
         </p>
       ) : null}
       {message ? (
-        <p className="rounded-lg border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-900 dark:text-emerald-200">
+        <p className="rounded-lg border border-emerald-400/50 bg-emerald-500/15 px-3 py-2 text-sm text-[var(--foreground)]">
           {message}
         </p>
       ) : null}

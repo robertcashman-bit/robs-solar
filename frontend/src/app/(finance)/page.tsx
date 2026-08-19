@@ -20,7 +20,12 @@ import { useFinancePeriod } from "@/lib/use-finance-period";
 
 export default function FinanceOverviewPage() {
   const { user, gated, redirecting } = useRequireAuth();
-  const periodState = useFinancePeriod({ dualPeriod: true, defaultScope: "both" });
+  const periodState = useFinancePeriod({
+    dualPeriod: true,
+    defaultScope: "both",
+    defaultPeriod: "mtd",
+    preferDefaultPeriod: true,
+  });
   const { overview, loading, refreshing, error, refresh, reload } = useFinanceOverview(user, {
     personalPeriod: periodState.personalPeriod,
     businessPeriod: periodState.businessPeriod,
