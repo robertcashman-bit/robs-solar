@@ -311,7 +311,7 @@ async def test_quickfile_first_sync_commits_with_deep_lookback(
 
 
 @pytest.mark.asyncio
-async def test_quickfile_force_full_uses_ten_year_lookback_without_clearing_first(
+async def test_quickfile_force_full_uses_two_year_lookback_without_clearing_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """force_full must not wipe markers before the import finishes.

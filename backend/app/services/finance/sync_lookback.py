@@ -9,10 +9,11 @@ from datetime import date, datetime, timedelta, timezone
 FIRST_SYNC_LOOKBACK_DAYS = 365
 INCREMENTAL_LOOKBACK_DAYS = 90
 
-# QuickFile Bank_Search accepts FromDate/ToDate. A ~10-year pass is reserved for
-# explicit force_full=true only — never for live refresh or daily cron.
-# Automatic first import uses one year; incremental syncs use ~90 days.
-QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS = 3650
+# QuickFile Bank_Search accepts FromDate/ToDate. A ~2-year pass is used for
+# force_full=true (Settings retry or daily cron when lookback is still short).
+# Live dashboard refresh never uses this path. Automatic first import (empty
+# ledger) uses one year; normal incremental syncs use ~90 days.
+QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS = 730
 QUICKFILE_INITIAL_LOOKBACK_DAYS = 365
 QUICKFILE_SATISFIED_LOOKBACK_DAYS = 365
 QUICKFILE_LOOKBACK_CHUNK_DAYS = 365
@@ -40,9 +41,10 @@ def quickfile_lookback_days(
 ) -> int:
     """QuickFile lookback length.
 
-    - ``force_full`` → ~10 years (explicit Sync ?force_full=true only)
+    - ``force_full`` → ~2 years (Settings Import full history, or daily cron
+      when stored lookback is missing / shorter than this window)
     - ``first_sync`` → ~1 year (empty ledger, non-force import)
-    - else → ~90-day incremental (daily cron + normal Sync)
+    - else → ~90-day incremental (daily cron after 2-year import + normal Sync)
     """
     if force_full:
         return QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS

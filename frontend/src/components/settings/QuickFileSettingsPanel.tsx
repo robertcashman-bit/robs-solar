@@ -330,10 +330,11 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
                 </button>
               </div>
               <p className="text-xs text-[var(--muted)]">
-                Import full history pulls ~10 years of QuickFile bank statement lines,
+                Import full history pulls ~2 years of QuickFile bank statement lines,
                 invoices, and bills (not Lunch Flow personal bank history). It uses the
                 daily 1000-request quota and can take many minutes. Existing transactions
-                are not deleted; retrying continues from what is already saved.
+                are not deleted; retrying continues from what is already saved. Daily
+                sync also runs this once automatically when history is still short.
               </p>
             </>
           ) : null}
@@ -432,10 +433,11 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
               </div>
               {connected ? (
                 <p className="text-xs text-[var(--muted)]">
-                  Import full history pulls ~10 years of QuickFile bank statement lines,
+                  Import full history pulls ~2 years of QuickFile bank statement lines,
                   invoices, and bills (not Lunch Flow personal bank history). It uses the
                   daily 1000-request quota and can take many minutes. Existing transactions
-                  are not deleted; retrying continues from what is already saved.
+                  are not deleted; retrying continues from what is already saved. Daily
+                  sync also runs this once automatically when history is still short.
                 </p>
               ) : null}
             </div>

@@ -1,4 +1,4 @@
-"""QuickFile full-import flag — satisfied year history, not auto-3650."""
+"""QuickFile full-import flag — satisfied year history, not auto-deep."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ async def test_needs_full_when_marker_missing_and_no_history(
 async def test_needs_full_false_when_lookback_days_missing_but_history_exists(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Missing lookback marker + substantial Neon txs must not trigger 3650."""
+    """Missing lookback marker + substantial Neon txs must not trigger deep import via needs_full."""
 
     async def fake_get(_db, key: str):
         return None
@@ -91,7 +91,7 @@ async def test_needs_full_false_when_lookback_days_missing_but_history_exists(
 async def test_needs_full_false_when_prior_lookback_is_one_year(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A recorded 365-day import is enough — do not auto-upgrade to 3650."""
+    """A recorded 365-day import is enough for needs_full — deep extension is separate."""
 
     async def fake_get(_db, key: str):
         if key == _FULL_IMPORT_KEY:
@@ -168,6 +168,49 @@ async def test_clear_full_history_import_removes_markers(
     assert _FULL_IMPORT_KEY not in db.rows
     assert _FULL_IMPORT_LOOKBACK_KEY not in db.rows
     assert db.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_needs_deep_history_extension_when_lookback_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(_db, key: str):
+        return None
+
+    monkeypatch.setattr(quickfile_settings_service, "_get_row", fake_get)
+    assert await quickfile_settings_service.needs_deep_history_extension(_FakeDb()) is True
+
+
+@pytest.mark.asyncio
+async def test_needs_deep_history_extension_when_lookback_one_year(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(_db, key: str):
+        if key == _FULL_IMPORT_KEY:
+            return SimpleNamespace(key=key, value="2026-08-18T00:00:00+00:00")
+        if key == _FULL_IMPORT_LOOKBACK_KEY:
+            return SimpleNamespace(key=key, value="365")
+        return None
+
+    monkeypatch.setattr(quickfile_settings_service, "_get_row", fake_get)
+    assert await quickfile_settings_service.needs_deep_history_extension(_FakeDb()) is True
+
+
+@pytest.mark.asyncio
+async def test_needs_deep_history_extension_false_when_lookback_two_years(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(_db, key: str):
+        if key == _FULL_IMPORT_KEY:
+            return SimpleNamespace(key=key, value="2026-08-18T00:00:00+00:00")
+        if key == _FULL_IMPORT_LOOKBACK_KEY:
+            return SimpleNamespace(
+                key=key, value=str(QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS)
+            )
+        return None
+
+    monkeypatch.setattr(quickfile_settings_service, "_get_row", fake_get)
+    assert await quickfile_settings_service.needs_deep_history_extension(_FakeDb()) is False
 
 
 @pytest.mark.asyncio
