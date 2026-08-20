@@ -22,11 +22,26 @@ class FinanceDailySyncService:
             if quickfile_settings_service.env_configured():
                 try:
                     config = await quickfile_settings_service.get_config(db)
-                    # Always ~90-day incremental — never the 10-year force_full window.
-                    synced = await quickfile_sync_service.sync(
-                        db, config, incremental_only=True
-                    )
-                    result.quickfile = synced.message
+                    # Once-only ~2-year walk when stored lookback is missing/short.
+                    # After mark_full_history_imported(730), stay on ~90-day incremental.
+                    # Live dashboard refresh never reaches this service.
+                    if await quickfile_settings_service.needs_deep_history_extension(db):
+                        if await quickfile_settings_service.is_quota_blocked(db):
+                            status = await quickfile_settings_service.get_status(db)
+                            result.quickfile = (
+                                "QuickFile API quota exhausted — retry after midnight UTC. "
+                                f"Last error: {status.last_error or 'API request limit exceeded'}"
+                            )
+                        else:
+                            synced = await quickfile_sync_service.sync(
+                                db, config, force_full=True
+                            )
+                            result.quickfile = synced.message
+                    else:
+                        synced = await quickfile_sync_service.sync(
+                            db, config, incremental_only=True
+                        )
+                        result.quickfile = synced.message
                 except IntegrationNotConfiguredError as exc:
                     result.quickfile = str(exc)
                 except Exception as exc:

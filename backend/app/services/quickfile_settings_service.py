@@ -13,6 +13,7 @@ from app.config import settings
 from app.db.models import AppSettingRow, FinanceTransactionRow
 from app.schemas.finance import QuickFileConfig, QuickFileConfigStatus
 from app.services.finance.sync_lookback import (
+    QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS,
     QUICKFILE_SATISFIED_LOOKBACK_DAYS,
     QUICKFILE_SUBSTANTIAL_SPAN_DAYS,
     QUICKFILE_SUBSTANTIAL_TX_MIN,
@@ -24,9 +25,10 @@ logger = logging.getLogger(__name__)
 _QUICKFILE_KEY = "quickfile"
 _LAST_SYNC_KEY = "quickfile_last_sync_at"
 _FULL_IMPORT_KEY = "quickfile_full_import_at"
-# Days covered by the last successful history import. Automatic syncs are satisfied
-# once this is >= QUICKFILE_SATISFIED_LOOKBACK_DAYS (~1 year). Extending to the
-# ~10-year QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS window requires force_full=True.
+# Days covered by the last successful history import. Automatic first-sync is
+# satisfied once this is >= QUICKFILE_SATISFIED_LOOKBACK_DAYS (~1 year). Extending
+# to the ~2-year QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS window uses force_full=True
+# (daily cron when lookback is short, or Settings Import full history).
 _FULL_IMPORT_LOOKBACK_KEY = "quickfile_full_import_lookback_days"
 _BUDGET_ACCOUNTS_KEY = "quickfile_budget_account_ids"
 _LAST_ERROR_KEY = "quickfile_last_error"
@@ -267,9 +269,10 @@ class QuickFileSettingsService:
     async def needs_full_history_import(self, db: AsyncSession) -> bool:
         """True only when there is no year-class history yet.
 
-        Missing markers no longer mean “run 3650 days now”. If Neon already holds
-        substantial QuickFile transactions, seed satisfied markers (~365 days) and
-        return False. Extending to the 10-year window requires ``force_full=True``.
+        Missing markers no longer mean “run the deep force_full window now”. If
+        Neon already holds substantial QuickFile transactions, seed satisfied
+        markers (~365 days) and return False. Extending to the ~2-year window is
+        handled by daily cron / Settings via ``force_full=True``.
         """
         lookback_days = await self._stored_lookback_days(db)
         if lookback_days is not None and lookback_days >= QUICKFILE_SATISFIED_LOOKBACK_DAYS:
@@ -283,6 +286,19 @@ class QuickFileSettingsService:
 
         # No markers and no substantial history — initial year import still needed.
         return True
+
+    async def stored_full_import_lookback_days(self, db: AsyncSession) -> int | None:
+        """Days covered by the last successful history import, if recorded."""
+        return await self._stored_lookback_days(db)
+
+    async def needs_deep_history_extension(self, db: AsyncSession) -> bool:
+        """True when stored lookback is missing or shorter than the ~2-year window.
+
+        Used by daily cron to run a once-only ``force_full`` import. Live refresh
+        must never call this path.
+        """
+        days = await self._stored_lookback_days(db)
+        return days is None or days < QUICKFILE_FIRST_SYNC_LOOKBACK_DAYS
 
     async def _stored_lookback_days(self, db: AsyncSession) -> int | None:
         row = await self._get_row(db, _FULL_IMPORT_KEY)
@@ -299,7 +315,7 @@ class QuickFileSettingsService:
     async def mark_full_history_imported(
         self, db: AsyncSession, *, lookback_days: int | None = None
     ) -> None:
-        # Default = satisfied year window. force_full callers pass 3650 explicitly.
+        # Default = satisfied year window. force_full callers pass 730 explicitly.
         days = (
             QUICKFILE_SATISFIED_LOOKBACK_DAYS
             if lookback_days is None
@@ -312,7 +328,7 @@ class QuickFileSettingsService:
         """Drop full-import markers (ops / tests). Does not delete transactions.
 
         ``sync(..., force_full=True)`` no longer calls this up front — it selects
-        the ~10-year window via the force_full flag and only rewrites markers after
+        the ~2-year window via the force_full flag and only rewrites markers after
         a successful import, so a platform timeout cannot wipe the prior flag.
         """
         for key in (_FULL_IMPORT_KEY, _FULL_IMPORT_LOOKBACK_KEY):

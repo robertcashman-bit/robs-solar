@@ -119,10 +119,12 @@ class QuickFileSyncService:
         """Import balances and (optionally deep) transaction history.
 
         - Live refresh must call ``sync_balances`` instead.
-        - Daily cron passes ``incremental_only=True`` (~90 days, never 3650).
+        - Daily cron uses ``force_full=True`` once when stored lookback is
+          missing or shorter than ~2 years; otherwise ``incremental_only=True``
+          (~90 days).
         - Explicit Sync may run a one-year first import when history is empty.
-        - ``force_full=True`` is the only path that runs the ~10-year window.
-          It commits year-by-year so a platform timeout keeps earlier years.
+        - ``force_full=True`` runs the ~2-year window in year chunks so a
+          platform timeout keeps earlier years.
         """
         if await quickfile_settings_service.is_quota_blocked(db) and not force_full:
             status = await quickfile_settings_service.get_status(db)
@@ -137,7 +139,7 @@ class QuickFileSyncService:
 
         if force_full:
             # Do not clear full-import markers up front. ``use_force_full`` already
-            # selects the ~10-year lookback; wiping markers first left production
+            # selects the ~2-year lookback; wiping markers first left production
             # with a stale last_sync when Vercel killed the request at the default
             # 300s maxDuration before mark_synced / mark_full_history_imported.
             initial = False
