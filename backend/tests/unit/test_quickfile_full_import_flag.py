@@ -67,7 +67,7 @@ async def test_needs_full_when_marker_missing_and_no_history(
 async def test_needs_full_false_when_lookback_days_missing_but_history_exists(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Missing lookback marker + substantial Neon txs must not trigger deep import via needs_full."""
+    """Missing lookback + substantial Neon txs must not deep-import via needs_full."""
 
     async def fake_get(_db, key: str):
         return None
