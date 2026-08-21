@@ -21,8 +21,24 @@ describe("FinancePeriodScopeControl", () => {
       "aria-pressed",
       "true",
     );
+    expect(screen.getByRole("button", { name: "Last year" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "2 years" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "3 months" }));
     expect(onPeriodChange).toHaveBeenCalledWith("3m");
+  });
+
+  it("notifies when 2 years is selected", async () => {
+    const user = userEvent.setup();
+    const onPeriodChange = vi.fn();
+    render(
+      <FinancePeriodScopeControl
+        period="12m"
+        onPeriodChange={onPeriodChange}
+        showScope={false}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "2 years" }));
+    expect(onPeriodChange).toHaveBeenCalledWith("24m");
   });
 
   it("labels the section This month to date when mtd is selected", () => {

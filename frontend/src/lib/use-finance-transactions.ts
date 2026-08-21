@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
 import {
@@ -75,7 +75,12 @@ function readLastTxns(
       return null;
     }
     if (!Array.isArray(parsed.rows)) return null;
-    return parsed;
+    // A full page without hasMore must not look like the complete ledger.
+    const hasMore =
+      typeof parsed.hasMore === "boolean"
+        ? parsed.hasMore
+        : parsed.rows.length >= FINANCE_TXN_PAGE_SIZE;
+    return { ...parsed, hasMore };
   } catch {
     return null;
   }
@@ -120,6 +125,9 @@ export function useFinanceTransactions(
   const [fetched, setFetched] = useState<FetchedTxns | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { refreshing } = useFinanceBackgroundLiveRefresh(user);
+  // Keep the latest painted list for append offsets without putting `fetched`
+  // in load's deps (that recreated load → useFinanceReload re-fired load(false)).
+  const listRef = useRef<{ key: string; rows: FinanceTxn[] }>({ key: "", rows: [] });
 
   const fromFetch = fetched?.key === cacheKey ? fetched : null;
   const active =
@@ -140,6 +148,12 @@ export function useFinanceTransactions(
   const categoryOptions = active?.categoryOptions ?? [];
   const hasMore = Boolean(active?.hasMore);
   const loading = Boolean(enabled && !active);
+
+  if (active) {
+    listRef.current = { key: cacheKey, rows: active.rows };
+  } else if (listRef.current.key !== cacheKey) {
+    listRef.current = { key: cacheKey, rows: [] };
+  }
 
   const load = useCallback(
     async (append = false) => {
@@ -167,8 +181,9 @@ export function useFinanceTransactions(
         if (from) params.set("date_from", from);
         if (to) params.set("date_to", to);
         params.set("limit", String(FINANCE_TXN_PAGE_SIZE));
+        const current = listRef.current;
         const offset =
-          append && fetched?.key === cacheKey ? fetched.rows.length : 0;
+          append && current.key === cacheKey ? current.rows.length : 0;
         params.set("offset", String(offset));
         const categoriesPath = catParams.toString()
           ? `/finance/categories?${catParams}`
@@ -186,9 +201,10 @@ export function useFinanceTransactions(
         ];
         const nextHasMore = data.length === FINANCE_TXN_PAGE_SIZE;
         const nextRows =
-          append && fetched?.key === cacheKey
-            ? [...fetched.rows, ...data]
+          append && current.key === cacheKey
+            ? [...current.rows, ...data]
             : data;
+        listRef.current = { key: cacheKey, rows: nextRows };
         setFetched({
           key: cacheKey,
           rows: nextRows,
@@ -223,14 +239,14 @@ export function useFinanceTransactions(
         );
       }
     },
-    [enabled, filter, scopeKey, trimmedQ, from, to, cacheKey, fetched, setError, setFetched],
+    [enabled, filter, scopeKey, trimmedQ, from, to, cacheKey],
   );
 
   const patchRow = useCallback(
     (txnId: number, patch: Partial<FinanceTxn>) => {
       setFetched((current) => {
         if (!current || current.key !== cacheKey) return current;
-        return {
+        const next = {
           ...current,
           rows: current.rows.map((row) =>
             row.id === txnId ? { ...row, ...patch } : row,
@@ -255,12 +271,17 @@ export function useFinanceTransactions(
                 ]
               : current.categoryOptions,
         };
+        listRef.current = { key: cacheKey, rows: next.rows };
+        return next;
       });
     },
-    [cacheKey, setFetched],
+    [cacheKey],
   );
 
-  useFinanceReload(() => load(false), enabled);
+  const reload = useCallback(() => load(false), [load]);
+  const loadMore = useCallback(() => load(true), [load]);
+
+  useFinanceReload(reload, enabled);
 
   return {
     rows,
@@ -270,8 +291,8 @@ export function useFinanceTransactions(
     refreshing,
     error,
     hasMore,
-    loadMore: () => load(true),
-    reload: () => load(false),
+    loadMore,
+    reload,
     patchRow,
     setError,
   };
