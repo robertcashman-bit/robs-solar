@@ -18,6 +18,7 @@ describe("finance-period", () => {
   it("parses known period keys and falls back", () => {
     expect(parseFinancePeriod("3m")).toBe("3m");
     expect(parseFinancePeriod("mtd")).toBe("mtd");
+    expect(parseFinancePeriod("24m")).toBe("24m");
     expect(parseFinancePeriod("nope")).toBe("1m");
   });
 
@@ -40,10 +41,38 @@ describe("finance-period", () => {
     expect(range.monthsRequested).toBe(1);
   });
 
+  it("builds last-year as rolling 12 months through today", () => {
+    const range = periodDateRange("12m", new Date(Date.UTC(2026, 7, 21)));
+    expect(range.dateFrom).toBe("2025-08-21");
+    expect(range.dateTo).toBe("2026-08-21");
+    expect(range.monthsRequested).toBe(12);
+  });
+
+  it("builds 2-years as rolling 24 months through today", () => {
+    const range = periodDateRange("24m", new Date(Date.UTC(2026, 7, 21)));
+    expect(range.dateFrom).toBe("2024-08-21");
+    expect(range.dateTo).toBe("2026-08-21");
+    expect(range.monthsRequested).toBe(24);
+  });
+
+  it("preserves day-of-month across rolling year boundary", () => {
+    const range = periodDateRange("12m", new Date(Date.UTC(2026, 2, 10)));
+    expect(range.dateFrom).toBe("2025-03-10");
+    expect(range.dateTo).toBe("2026-03-10");
+  });
+
+  it("clamps rolling start day when the target month is shorter", () => {
+    // Feb 29 2024 → Feb 2023 (non-leap) clamps to 28.
+    const range = periodDateRange("12m", new Date(Date.UTC(2024, 1, 29)));
+    expect(range.dateFrom).toBe("2023-02-28");
+    expect(range.dateTo).toBe("2024-02-29");
+  });
+
   it("labels periods for UI chips", () => {
     expect(periodLabel("mtd")).toBe("This month to date");
     expect(periodLabel("1m")).toBe("Last month");
     expect(periodLabel("12m")).toBe("Last year");
+    expect(periodLabel("24m")).toBe("2 years");
   });
 
   it("persists preferences in localStorage including legacy keys", () => {

@@ -108,3 +108,42 @@ async def test_list_transactions_paginates_ten_thousand(setup_db: None) -> None:
     assert len(page) == 50
     assert len(later) == 50
     assert elapsed < 1.0
+
+
+@pytest.mark.asyncio
+async def test_transactions_csv_export_pages_past_limit_cap(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch, setup_db: None
+) -> None:
+    """Export must not silently truncate at list_transactions' max limit of 200."""
+    from datetime import datetime, timezone
+
+    from app.db.models import FinanceTransactionRow
+    from app.db.session import SessionLocal
+
+    await _admin(client, monkeypatch)
+    now = datetime.now(timezone.utc)
+    rows = [
+        FinanceTransactionRow(
+            scope="personal",
+            account_name="Current",
+            posted_on="2024-08-22",
+            amount_pence=-100,
+            description=f"OLD {index}",
+            source="quickfile",
+            fingerprint=f"export-bulk-{index}",
+            created_at=now,
+            updated_at=now,
+        )
+        for index in range(250)
+    ]
+    async with SessionLocal() as db:
+        db.add_all(rows)
+        await db.commit()
+
+    response = await client.get("/finance/export/transactions.csv")
+    assert response.status_code == 200
+    lines = [line for line in response.text.strip().splitlines() if line]
+    # header + 250 data rows
+    assert len(lines) == 251
+    assert "OLD 0" in response.text
+    assert "OLD 249" in response.text

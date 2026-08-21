@@ -118,9 +118,9 @@ async def get_overview(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     live: bool = Query(default=False),
     fresh: bool = Query(default=False),
-    period: str | None = Query(default=None, pattern=r"^(mtd|1m|3m|6m|12m)$"),
-    personal_period: str | None = Query(default=None, pattern=r"^(mtd|1m|3m|6m|12m)$"),
-    business_period: str | None = Query(default=None, pattern=r"^(mtd|1m|3m|6m|12m)$"),
+    period: str | None = Query(default=None, pattern=r"^(mtd|1m|3m|6m|12m|24m)$"),
+    personal_period: str | None = Query(default=None, pattern=r"^(mtd|1m|3m|6m|12m|24m)$"),
+    business_period: str | None = Query(default=None, pattern=r"^(mtd|1m|3m|6m|12m|24m)$"),
     scope: str | None = Query(default=None, pattern=r"^(personal|business|both)$"),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
@@ -681,7 +681,7 @@ async def dismiss_insight(
 @router.get("/reports", response_model=FinanceReportsResponse)
 async def get_reports(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
-    period: str = Query(default="1m", pattern=r"^(mtd|1m|3m|6m|12m)$"),
+    period: str = Query(default="1m", pattern=r"^(mtd|1m|3m|6m|12m|24m)$"),
     scope: str | None = Query(default=None, pattern=r"^(personal|business|both)$"),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
@@ -1233,7 +1233,7 @@ async def detect_transfers(
 
 @router.get("/period-flow")
 async def period_flow(
-    period: str = Query(default="1m", pattern=r"^(mtd|1m|3m|6m|12m)$"),
+    period: str = Query(default="1m", pattern=r"^(mtd|1m|3m|6m|12m|24m)$"),
     scope: FinanceScope = FinanceScope.PERSONAL,
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
@@ -1406,9 +1406,22 @@ async def export_transactions_csv(
 
     from app.services.finance.finance_ledger_service import finance_ledger_service
 
-    rows = await finance_ledger_service.list_transactions(
-        db, scope=scope.value if scope else None, limit=5000
-    )
+    # list_transactions caps limit at 200 — page until exhausted so exports
+    # include the full ledger (e.g. ~2 years of QuickFile history), not 200 rows.
+    page_size = 200
+    offset = 0
+    rows: list[dict] = []
+    while True:
+        page = await finance_ledger_service.list_transactions(
+            db,
+            scope=scope.value if scope else None,
+            limit=page_size,
+            offset=offset,
+        )
+        rows.extend(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
     buf = io.StringIO()
     writer = csv.DictWriter(
         buf,

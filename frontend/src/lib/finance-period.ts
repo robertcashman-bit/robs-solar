@@ -1,4 +1,4 @@
-export const FINANCE_PERIOD_KEYS = ["mtd", "1m", "3m", "6m", "12m"] as const;
+export const FINANCE_PERIOD_KEYS = ["mtd", "1m", "3m", "6m", "12m", "24m"] as const;
 export type FinancePeriodKey = (typeof FINANCE_PERIOD_KEYS)[number];
 
 export const FINANCE_PERIOD_SCOPES = ["personal", "business", "both"] as const;
@@ -10,6 +10,20 @@ export const FINANCE_PERIOD_LABELS: Record<FinancePeriodKey, string> = {
   "3m": "3 months",
   "6m": "6 months",
   "12m": "Last year",
+  "24m": "2 years",
+};
+
+/** Calendar-month lookbacks ending last month (exclude in-progress month). */
+const CALENDAR_LOOKBACK_MONTHS: Partial<Record<FinancePeriodKey, number>> = {
+  "1m": 1,
+  "3m": 3,
+  "6m": 6,
+};
+
+/** Rolling lookbacks through today (include current month). */
+const ROLLING_LOOKBACK_MONTHS: Partial<Record<FinancePeriodKey, number>> = {
+  "12m": 12,
+  "24m": 24,
 };
 
 export const DEFAULT_FINANCE_PERIOD: FinancePeriodKey = "1m";
@@ -50,21 +64,45 @@ export function periodLabel(period: FinancePeriodKey): string {
   return FINANCE_PERIOD_LABELS[period];
 }
 
-/** Inclusive ISO date window. Historical keys end last month; mtd is month start→today. */
+function utcYmd(year: number, monthIndex: number, day: number): string {
+  return new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10);
+}
+
+function subtractMonthsUtc(asOf: Date, months: number): { year: number; monthIndex: number; day: number } {
+  const year = asOf.getUTCFullYear();
+  const monthIndex = asOf.getUTCMonth();
+  const day = asOf.getUTCDate();
+  const target = new Date(Date.UTC(year, monthIndex - months, 1));
+  const lastDay = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  return {
+    year: target.getUTCFullYear(),
+    monthIndex: target.getUTCMonth(),
+    day: Math.min(day, lastDay),
+  };
+}
+
+/** Inclusive ISO date window. mtd → today; 1m/3m/6m end last month; 12m/24m roll through today. */
 export function periodDateRange(
   period: FinancePeriodKey,
   asOf: Date = new Date(),
 ): { dateFrom: string; dateTo: string; monthsRequested: number } {
   if (period === "mtd") {
-    const dateFrom = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1))
-      .toISOString()
-      .slice(0, 10);
-    const dateTo = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate()))
-      .toISOString()
-      .slice(0, 10);
+    const dateFrom = utcYmd(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1);
+    const dateTo = utcYmd(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate());
     return { dateFrom, dateTo, monthsRequested: 1 };
   }
-  const monthsRequested = { "1m": 1, "3m": 3, "6m": 6, "12m": 12 }[period];
+
+  const rollingMonths = ROLLING_LOOKBACK_MONTHS[period];
+  if (rollingMonths != null) {
+    const start = subtractMonthsUtc(asOf, rollingMonths);
+    const dateFrom = utcYmd(start.year, start.monthIndex, start.day);
+    const dateTo = utcYmd(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate());
+    return { dateFrom, dateTo, monthsRequested: rollingMonths };
+  }
+
+  const monthsRequested = CALENDAR_LOOKBACK_MONTHS[period] ?? 1;
   const end = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - 1, 1));
   const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - (monthsRequested - 1), 1));
   const dateFrom = start.toISOString().slice(0, 10);

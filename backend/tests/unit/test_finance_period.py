@@ -17,6 +17,7 @@ def test_parse_period_accepts_known_keys() -> None:
     assert parse_period("3M") == "3m"
     assert parse_period("mtd") == "mtd"
     assert parse_period("MTD") == "mtd"
+    assert parse_period("24m") == "24m"
     assert parse_period(None) == "1m"
 
 
@@ -61,11 +62,30 @@ def test_period_window_three_months() -> None:
     assert window.months_requested == 3
 
 
+def test_period_window_year_rolls_through_today() -> None:
+    window = period_window("12m", as_of=date(2026, 8, 21))
+    assert window.date_from == "2025-08-21"
+    assert window.date_to == "2026-08-21"
+    assert window.months_requested == 12
+    assert window.month_keys[0] == "2025-08"
+    assert window.month_keys[-1] == "2026-08"
+
+
+def test_period_window_two_years_rolls_through_today() -> None:
+    window = period_window("24m", as_of=date(2026, 8, 21))
+    assert window.date_from == "2024-08-21"
+    assert window.date_to == "2026-08-21"
+    assert window.months_requested == 24
+    assert window.label == "2 years"
+
+
 def test_period_window_year_crosses_year_boundary() -> None:
     window = period_window("12m", as_of=date(2026, 3, 10))
-    assert window.date_from == "2025-03-01"
-    assert window.date_to == "2026-02-28"
-    assert len(window.month_keys) == 12
+    assert window.date_from == "2025-03-10"
+    assert window.date_to == "2026-03-10"
+    assert window.months_requested == 12
+    assert window.month_keys[0] == "2025-03"
+    assert window.month_keys[-1] == "2026-03"
 
 
 def test_coverage_note_marks_partial_history() -> None:
@@ -78,3 +98,17 @@ def test_coverage_note_marks_partial_history() -> None:
     assert partial is True
     assert "3 of 6 months" in note
     assert "2026-05-12" in note
+
+
+def test_coverage_note_rolling_uses_month_keys_span() -> None:
+    """Rolling 12m touches 13 calendar months; missing one must still be partial."""
+    window = period_window("12m", as_of=date(2026, 8, 21))
+    assert window.months_requested == 12
+    assert len(window.month_keys) == 13
+    partial, note = coverage_note(
+        window=window,
+        earliest_posted_on="2025-08-21",
+        months_with_data=12,
+    )
+    assert partial is True
+    assert "12 of 13 months" in note
