@@ -149,12 +149,6 @@ export function useFinanceTransactions(
   const hasMore = Boolean(active?.hasMore);
   const loading = Boolean(enabled && !active);
 
-  if (active) {
-    listRef.current = { key: cacheKey, rows: active.rows };
-  } else if (listRef.current.key !== cacheKey) {
-    listRef.current = { key: cacheKey, rows: [] };
-  }
-
   const load = useCallback(
     async (append = false) => {
       if (!enabled) return;
@@ -239,7 +233,7 @@ export function useFinanceTransactions(
         );
       }
     },
-    [enabled, filter, scopeKey, trimmedQ, from, to, cacheKey],
+    [enabled, filter, scopeKey, trimmedQ, from, to, cacheKey, setError, setFetched],
   );
 
   const patchRow = useCallback(
@@ -275,11 +269,13 @@ export function useFinanceTransactions(
         return next;
       });
     },
-    [cacheKey],
+    [cacheKey, setFetched],
   );
 
   const reload = useCallback(() => load(false), [load]);
-  const loadMore = useCallback(() => load(true), [load]);
+  const loadMore = useCallback(() => {
+    void load(true);
+  }, [load]);
 
   useFinanceReload(reload, enabled);
 
