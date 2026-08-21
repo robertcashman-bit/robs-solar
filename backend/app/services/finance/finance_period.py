@@ -148,18 +148,21 @@ def coverage_note(
     months_with_data: int,
 ) -> tuple[bool, str]:
     """Explain partial history without inventing missing months."""
+    # Rolling windows touch one more calendar month than months_requested
+    # (inclusive mid-month bounds); compare against the actual month_keys span.
+    months_in_window = len(window.month_keys)
     if months_with_data <= 0:
         return True, (
             f"No stored transactions in {window.label.lower()} "
             f"({window.date_from} to {window.date_to})."
         )
-    if months_with_data < window.months_requested:
+    if months_with_data < months_in_window:
         earliest = earliest_posted_on or window.date_from
         return (
             True,
             (
                 f"Showing available history from {earliest} "
-                f"({months_with_data} of {window.months_requested} months). "
+                f"({months_with_data} of {months_in_window} months). "
                 f"Requested window starts {window.date_from}."
             ),
         )
