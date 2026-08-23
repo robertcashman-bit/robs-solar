@@ -178,6 +178,110 @@ def apply_confirmed_rules(description: str, scope: str, rules: list[dict[str, st
     return ""
 
 
+async def apply_rules_to_uncategorised(
+    db: AsyncSession,
+    *,
+    scope: str | None = None,
+    limit: int = 5000,
+    persist: bool = True,
+) -> dict:
+    """Apply confirmed rules (and default categoriser) to uncategorised rows."""
+    from datetime import datetime, timezone
+
+    from app.db.models import FinanceTransactionRow
+    from app.services.finance.finance_categoriser_service import finance_categoriser_service
+
+    rules = await list_confirmed_rules(db)
+    stmt = select(FinanceTransactionRow).where(
+        FinanceTransactionRow.is_deleted.is_(False),
+        FinanceTransactionRow.category == "",
+    )
+    if scope in {"personal", "business"}:
+        stmt = stmt.where(FinanceTransactionRow.scope == scope)
+    rows = list((await db.scalars(stmt.limit(limit))).all())
+    updated = 0
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        category = apply_confirmed_rules(row.description, row.scope, rules)
+        confidence = "HIGH" if category else ""
+        if not category:
+            guessed = finance_categoriser_service.categorise_description(
+                row.description, scope=row.scope, rules=None
+            )
+            category = guessed.get("category") or ""
+            confidence = guessed.get("confidence") or ""
+            # Do not auto-mark Transfers from this job — transfer detection owns that.
+            if category == "Transfers":
+                category = ""
+                confidence = ""
+        if not category:
+            continue
+        row.category = category[:64]
+        row.category_confidence = (confidence or "HIGH")[:16]
+        row.updated_at = now
+        updated += 1
+    if persist:
+        await db.commit()
+    else:
+        await db.flush()
+    return {
+        "examined": len(rows),
+        "updated": updated,
+        "message": f"Applied rules to {updated} of {len(rows)} uncategorised row(s).",
+    }
+
+
+async def suggest_merchant_rules(
+    db: AsyncSession,
+    *,
+    scope: str | None = None,
+    min_count: int = 3,
+    limit: int = 20,
+) -> list[dict]:
+    """Cheap frequency suggestions from uncategorised merchant descriptions."""
+    from collections import Counter
+
+    from app.db.models import FinanceTransactionRow
+
+    stmt = select(FinanceTransactionRow).where(
+        FinanceTransactionRow.is_deleted.is_(False),
+        FinanceTransactionRow.category == "",
+    )
+    if scope in {"personal", "business"}:
+        stmt = stmt.where(FinanceTransactionRow.scope == scope)
+    rows = list((await db.scalars(stmt.limit(5000))).all())
+    counts: Counter[tuple[str, str]] = Counter()
+    for row in rows:
+        text = " ".join((row.description or "").upper().split())
+        if len(text) < 3:
+            continue
+        # Use the first 2–4 tokens as a merchant key.
+        tokens = text.split()[:4]
+        key = " ".join(tokens[:3]) if len(tokens) >= 2 else text[:40]
+        counts[(row.scope, key)] += 1
+    existing = {
+        (str(rule.get("scope") or ""), str(rule.get("pattern") or "").upper())
+        for rule in await list_confirmed_rules(db)
+    }
+    suggestions: list[dict] = []
+    for (row_scope, pattern), count in counts.most_common(limit * 3):
+        if count < min_count:
+            continue
+        if (row_scope, pattern) in existing:
+            continue
+        suggestions.append(
+            {
+                "scope": row_scope,
+                "pattern": pattern,
+                "count": count,
+                "suggested_match_type": "CONTAINS",
+            }
+        )
+        if len(suggestions) >= limit:
+            break
+    return suggestions
+
+
 async def _load_json(db: AsyncSession, key: str, default):
     row = await db.scalar(select(AppSettingRow).where(AppSettingRow.key == key))
     if row is None:

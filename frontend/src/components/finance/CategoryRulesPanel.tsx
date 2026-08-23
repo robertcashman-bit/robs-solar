@@ -29,17 +29,27 @@ export function CategoryRulesPanel({ canEdit = false }: CategoryRulesPanelProps)
     pattern: "",
     category: "Food",
     scope: "personal",
+    apply_to_existing: true,
   });
   const [saving, setSaving] = useState(false);
+  const [suggestions, setSuggestions] = useState<
+    Array<{ scope: string; pattern: string; count: number }>
+  >([]);
 
   const load = useCallback(async () => {
     try {
-      const [ruleData, catData] = await Promise.all([
+      const [ruleData, catData, suggestionData] = await Promise.all([
         apiClient.get<Rule[]>("/finance/category-rules"),
         apiClient.get<CategoryOption[]>("/finance/categories"),
+        apiClient
+          .get<Array<{ scope: string; pattern: string; count: number }>>(
+            "/finance/category-rule-suggestions",
+          )
+          .catch(() => []),
       ]);
       setRules(Array.isArray(ruleData) ? ruleData : []);
       setCategories(Array.isArray(catData) ? catData : []);
+      setSuggestions(Array.isArray(suggestionData) ? suggestionData : []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load category rules");
@@ -70,11 +80,18 @@ export function CategoryRulesPanel({ canEdit = false }: CategoryRulesPanelProps)
     setSaving(true);
     setStatus(null);
     try {
-      await apiClient.post("/finance/category-rules", {
+      const result = await apiClient.post<{
+        applied?: { updated?: number; message?: string } | null;
+      }>("/finance/category-rules", {
         ...form,
         category: selectedCategory,
       });
-      setStatus("Rule saved — future imports will use this category.");
+      const applied = result.applied?.updated;
+      setStatus(
+        applied != null
+          ? `Rule saved and applied to ${applied} existing uncategorised row(s).`
+          : "Rule saved — future imports will use this category.",
+      );
       setForm((prev) => ({ ...prev, pattern: "" }));
       await load();
     } catch (err) {
@@ -137,10 +154,50 @@ export function CategoryRulesPanel({ canEdit = false }: CategoryRulesPanelProps)
               </option>
             ))}
           </select>
+          <label className="flex items-center gap-2 text-sm sm:col-span-4">
+            <input
+              type="checkbox"
+              checked={form.apply_to_existing}
+              onChange={(event) =>
+                setForm({ ...form, apply_to_existing: event.target.checked })
+              }
+            />
+            Apply to existing uncategorised transactions
+          </label>
           <button type="submit" className="solar-btn-primary sm:col-span-4" disabled={saving}>
             {saving ? "Saving…" : "Add contains rule"}
           </button>
         </form>
+      ) : null}
+      {suggestions.length > 0 ? (
+        <div>
+          <h3 className="text-sm font-medium">Suggested from frequency</h3>
+          <ul className="mt-2 space-y-1 text-sm text-[var(--muted)]">
+            {suggestions.slice(0, 8).map((item) => (
+              <li key={`${item.scope}-${item.pattern}`}>
+                {item.pattern} · {item.scope} · {item.count}×
+                {canEdit ? (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          pattern: item.pattern,
+                          scope: item.scope,
+                        })
+                      }
+                    >
+                      Use
+                    </button>
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
       <ul className="space-y-2 text-sm">
         {rules.length === 0 ? (
