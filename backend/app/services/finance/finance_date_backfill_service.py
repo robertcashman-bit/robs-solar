@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import FinanceTransactionRow
 from app.integrations.lunchflow_provider import LunchFlowProvider, _transaction_date
-from app.services.finance.lunchflow_account_ids import LUNCHFLOW_SOURCES
+from app.services.finance.finance_import_service import transaction_fingerprint
+from app.services.finance.lunchflow_account_ids import LUNCHFLOW_SOURCES, is_lunchflow_source
 from app.services.lunchflow_settings_service import lunchflow_settings_service
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -119,12 +120,35 @@ class FinanceDateBackfillService:
         for row in missing:
             external = (row.external_id or "").strip()
             dated = ""
+            payload: dict[str, Any] | None = None
             if external:
                 payload = raw_by_external.get(external) or raw_by_external.get(external.lower())
                 if payload is not None:
                     dated = _transaction_date(payload)
             if dated and _DATE_RE.match(dated):
+                # Keep fingerprint in sync with posted_on so the next Lunch Flow
+                # sync dedupes instead of inserting a second active row.
+                account_key = ""
+                if payload is not None:
+                    account_key = str(
+                        payload.get("account_id")
+                        or payload.get("accountId")
+                        or payload.get("account_external_id")
+                        or ""
+                    )
+                if not account_key:
+                    account_key = (row.account_name or "").strip()
                 row.posted_on = dated
+                # Next Lunch Flow sync fingerprints with source="lunchflow".
+                source_for_fp = "lunchflow" if is_lunchflow_source(row.source) else row.source
+                row.fingerprint = transaction_fingerprint(
+                    source=source_for_fp,
+                    account_key=account_key,
+                    posted_on=dated,
+                    amount_pence=row.amount_pence,
+                    description=row.description or "",
+                    external_id=external,
+                )
                 row.updated_at = now
                 updated += 1
                 if len(samples) < 20:

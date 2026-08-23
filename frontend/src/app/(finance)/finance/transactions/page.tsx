@@ -30,11 +30,29 @@ const FILTERS = [
   "needs_review",
 ] as const;
 
+type FilterKey = (typeof FILTERS)[number];
+
+function readQueryParam(name: string): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get(name) ?? "";
+}
+
+function initialFilter(): FilterKey {
+  const value = readQueryParam("filter");
+  return (FILTERS as readonly string[]).includes(value)
+    ? (value as FilterKey)
+    : "all";
+}
+
+function initialQ(): string {
+  return readQueryParam("q");
+}
+
 export default function TransactionsPage() {
   const { user, gated, redirecting } = useRequireAuth();
   const writable = canWrite(user);
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
-  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<FilterKey>(initialFilter);
+  const [q, setQ] = useState(initialQ);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [category, setCategory] = useState("");
   const [newCategory, setNewCategory] = useState("");

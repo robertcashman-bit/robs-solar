@@ -125,14 +125,17 @@ class FinanceLedgerService:
             stmt = stmt.where(FinanceTransactionRow.subcategory == "needs_review")
 
         if q:
-            needle = f"%{q.strip().lower()}%"
-            stmt = stmt.where(
-                or_(
-                    func.lower(FinanceTransactionRow.description).like(needle),
-                    func.lower(FinanceTransactionRow.category).like(needle),
-                    func.lower(FinanceTransactionRow.account_name).like(needle),
-                )
+            stripped = q.strip()
+            needle = f"%{stripped.lower()}%"
+            q_match = or_(
+                func.lower(FinanceTransactionRow.description).like(needle),
+                func.lower(FinanceTransactionRow.category).like(needle),
+                func.lower(FinanceTransactionRow.account_name).like(needle),
             )
+            # Data-quality deep links use ?q={id}; match numeric search to row id.
+            if stripped.isdigit():
+                q_match = or_(q_match, FinanceTransactionRow.id == int(stripped))
+            stmt = stmt.where(q_match)
         if min_amount_gbp is not None:
             min_p = abs(int(round(min_amount_gbp * 100)))
             stmt = stmt.where(func.abs(FinanceTransactionRow.amount_pence) >= min_p)

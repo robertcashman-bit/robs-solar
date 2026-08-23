@@ -210,10 +210,12 @@ async def apply_rules_to_uncategorised(
             )
             category = guessed.get("category") or ""
             confidence = guessed.get("confidence") or ""
-            # Do not auto-mark Transfers from this job — transfer detection owns that.
-            if category == "Transfers":
-                category = ""
-                confidence = ""
+        # Do not auto-mark Transfers from this job — transfer detection owns that.
+        # Applies to confirmed rules and the default categoriser alike so rows are
+        # not labelled Transfers without is_transfer=True.
+        if category == "Transfers":
+            category = ""
+            confidence = ""
         if not category:
             continue
         row.category = category[:64]
