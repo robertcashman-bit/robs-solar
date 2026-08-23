@@ -207,11 +207,26 @@ class FinanceImportService:
                     )
                     category = guessed.get("category") or ""
                     confidence = guessed.get("confidence") or ""
-                    if category == "Transfers" or finance_categoriser_service.looks_like_transfer(
+                    # Only mark transfers on clear own-account wording — never on
+                    # FPS/BACS/Faster Payment alone (salary credits use those rails).
+                    if (
+                        category == "Transfers"
+                        or finance_categoriser_service.looks_like_transfer(
+                            item["description"]
+                        )
+                    ) and not finance_categoriser_service.looks_like_salary(
                         item["description"]
                     ):
                         is_transfer = True
                         item["txn_type"] = "transfer"
+                        category = category or "Transfers"
+                    elif finance_categoriser_service.looks_like_salary(item["description"]):
+                        is_transfer = False
+                        if item["amount_pence"] > 0:
+                            item["txn_type"] = "income"
+                        if not category:
+                            category = "Salary"
+                            confidence = confidence or "MEDIUM"
                 db.add(
                     FinanceTransactionRow(
                         scope=scope,

@@ -33,6 +33,28 @@ MIN_MONTHS = {36: 12, 12: 6, 6: 3, 3: 2}
 # when the full 36 calendar months are not yet filled.
 COVERAGE_MONTHS = {36: 24, 12: 12, 6: 6, 3: 3}
 
+# Named one-off categories — excluded from typical averaging and surfaced on a
+# separate one-offs line. Statistical outlier fencing still applies elsewhere.
+_ONE_OFF_CATEGORY_HINTS = (
+    "solar",
+    "vat pot",
+    "vat transfer",
+    "vat transfers",
+    "large invoice",
+    "unusual invoice",
+    "one-off",
+    "one off",
+    "capex",
+    "installation",
+)
+
+
+def is_named_one_off_category(category: str) -> bool:
+    text = (category or "").strip().lower()
+    if not text:
+        return False
+    return any(hint in text for hint in _ONE_OFF_CATEGORY_HINTS)
+
 
 def _month_start(value: date) -> date:
     return value.replace(day=1)
@@ -125,13 +147,33 @@ class HistoryBudgetService:
 
         income_rows = [row for row, _ in classified if row.amount_pence > 0]
         expense_groups: dict[str, list[FinanceTransactionRow]] = defaultdict(list)
+        one_off_groups: dict[str, list[FinanceTransactionRow]] = defaultdict(list)
         for row, category in classified:
-            if row.amount_pence < 0:
+            if row.amount_pence >= 0:
+                continue
+            if is_named_one_off_category(category):
+                one_off_groups[category].append(row)
+            else:
                 expense_groups[category].append(row)
 
         lines = []
         for category, group in sorted(expense_groups.items()):
             lines.append(self._recommend_line(category, group, today, scope, "expense"))
+        one_offs = []
+        for category, group in sorted(one_off_groups.items()):
+            total = from_pence(sum(-row.amount_pence for row in group))
+            one_offs.append(
+                {
+                    "scope": scope,
+                    "category": category,
+                    "amount_gbp": total,
+                    "txn_count": len(group),
+                    "kind": "one_off",
+                    "source_note": (
+                        "Named one-off category — excluded from typical monthly average."
+                    ),
+                }
+            )
         income_line = self._recommend_income(income_rows, today)
         return {
             "scope": scope,
@@ -140,13 +182,17 @@ class HistoryBudgetService:
             "uncategorised_count": uncategorised,
             "income": income_line,
             "lines": lines,
+            "one_offs": one_offs,
             "insufficient": not lines and income_line["insufficient_data"],
             "explanation": (
                 "Recommendations use stored transactions only (up to 36 months). "
-                "Exceptionally large one-off txs are excluded before averaging. "
-                "Uncategorised rows are excluded until you assign a category or "
-                "confirm a rule. Missing windows are dropped and remaining weights "
-                "are renormalized."
+                "Named one-off categories (solar, VAT pot / VAT transfer, large "
+                "unusual invoices) are excluded from typical averages and listed "
+                "separately. Exceptionally large one-off txs are also fenced before "
+                "averaging. Uncategorised rows are excluded until you assign a "
+                "category or confirm a rule. Personal and business stay separate, "
+                "line-by-line from the category registry. Missing windows are "
+                "dropped and remaining weights are renormalized."
             ),
         }
 

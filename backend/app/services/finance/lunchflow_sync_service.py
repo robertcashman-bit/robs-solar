@@ -59,8 +59,8 @@ class LunchFlowSyncService:
                 await self._upsert_account(db, item)
             await finance_accounts_service.dedupe_active_lunchflow_accounts(db)
             await db.flush()
-            # First successful full import pulls 365 days (provider default when since
-            # is omitted). Later syncs stay incremental (~90 days); fingerprints dedupe.
+            # First successful full import pulls ~730 days. Later syncs stay
+            # incremental (~90 days); fingerprints dedupe.
             raw_txs = await provider.sync_transactions(since=since)
             imported = await finance_import_service.commit(
                 db,
@@ -81,7 +81,7 @@ class LunchFlowSyncService:
             await lunchflow_settings_service.mark_full_history_imported(db)
         await lunchflow_settings_service.mark_synced(db)
         await _safe_backup(db, trigger="lunchflow_sync")
-        window = "365-day first sync" if first_sync else "90-day incremental"
+        window = "730-day first sync" if first_sync else "90-day incremental"
         return LunchFlowSyncResult(
             accounts_synced=len(records),
             imported=imported.get("imported", 0),

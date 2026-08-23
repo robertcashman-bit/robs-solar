@@ -112,6 +112,19 @@ def test_categoriser_tesla_and_transfer() -> None:
     )
     assert hit["category"] == "Vehicle finance"
     assert finance_categoriser_service.looks_like_transfer("FASTER PAYMENT TO SAVINGS")
+    assert finance_categoriser_service.looks_like_transfer("TRANSFER TO OWN ACCOUNT")
+    # Payment rails alone are not transfers — salary credits use FPS/BACS/FPS.
+    assert not finance_categoriser_service.looks_like_transfer("FPS")
+    assert not finance_categoriser_service.looks_like_transfer("BACS CREDIT")
+    assert not finance_categoriser_service.looks_like_transfer(
+        "FASTER PAYMENT FROM ACME LTD"
+    )
+    assert finance_categoriser_service.looks_like_salary("BACS SALARY ACME LTD")
+    salary = finance_categoriser_service.categorise_description(
+        "FPS SALARY ACME LTD", scope="personal"
+    )
+    assert salary["category"] == "Salary"
+    assert salary["category"] != "Transfers"
 
 
 def test_safe_to_spend_breakdown_transparent() -> None:

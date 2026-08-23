@@ -15,10 +15,11 @@ from app.services.finance.sync_lookback import (
 )
 
 
-def test_first_sync_lookback_is_365_days() -> None:
+def test_first_sync_lookback_is_730_days() -> None:
     now = datetime(2026, 8, 18, 12, 0, tzinfo=timezone.utc)
     assert lookback_days(first_sync=True) == FIRST_SYNC_LOOKBACK_DAYS
-    assert lookback_since(first_sync=True, now=now) == "2025-08-18"
+    assert FIRST_SYNC_LOOKBACK_DAYS == 730
+    assert lookback_since(first_sync=True, now=now) == "2024-08-18"
 
 
 def test_incremental_lookback_is_90_days() -> None:
