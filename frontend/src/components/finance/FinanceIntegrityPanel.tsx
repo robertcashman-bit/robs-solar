@@ -23,6 +23,12 @@ type HistoryPreview = {
     insufficient_data: boolean;
     source_note: string;
   }>;
+  one_offs?: Array<{
+    category: string;
+    amount_gbp: number;
+    txn_count: number;
+    source_note: string;
+  }>;
 };
 
 type RecurringRule = {
@@ -191,6 +197,21 @@ export function FinanceIntegrityPanel({
             </li>
           ))}
         </ul>
+        {(preview?.one_offs || []).length > 0 ? (
+          <div className="space-y-1 text-sm">
+            <p className="font-medium">One-offs (excluded from typical)</p>
+            <ul className="space-y-1">
+              {(preview?.one_offs || []).map((item) => (
+                <li key={item.category}>
+                  {item.category}: {formatGbp(item.amount_gbp)}{" "}
+                  <span className="text-[var(--muted)]">
+                    {item.txn_count} txn(s) — {item.source_note}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {canEdit ? (
           <button type="button" className="solar-btn-primary" onClick={() => void generate()} disabled={busy}>
             {busy ? "Working…" : `Create ${scope} history budget`}
