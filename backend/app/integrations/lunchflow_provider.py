@@ -33,9 +33,40 @@ def _optional_amount(value: Any) -> float | None:
     return round(amount, 2)
 
 
+_DATE_KEYS = (
+    "date",
+    "valueDate",
+    "transactionDate",
+    "bookingDate",
+    "timestamp",
+    "posted_on",
+    "booking_date",
+    "value_date",
+    "transaction_date",
+)
+
+
 def _transaction_date(item: dict[str, Any]) -> str:
-    raw = item.get("date") or item.get("bookingDate") or item.get("timestamp") or ""
-    return str(raw)[:10]
+    """Pick the first usable ISO date from known Lunch Flow / OB keys.
+
+    Empty provider strings are skipped — never invent a date.
+    """
+    for key in _DATE_KEYS:
+        raw = item.get(key)
+        if raw is None or raw == "":
+            continue
+        text = str(raw).strip()
+        if not text:
+            continue
+        # ISO date or datetime: YYYY-MM-DD...
+        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+            candidate = text[:10]
+            try:
+                datetime.fromisoformat(candidate)
+            except ValueError:
+                continue
+            return candidate
+    return ""
 
 
 def _transaction_amount(item: dict[str, Any]) -> float:
@@ -164,7 +195,7 @@ class LunchFlowProvider(BaseFinanceProvider):
             accounts = await self._client.fetch_accounts()
         except LunchFlowError as exc:
             raise IntegrationNotConfiguredError(str(exc)) from exc
-        cutoff = since or (datetime.now(timezone.utc) - timedelta(days=365)).date().isoformat()
+        cutoff = since or (datetime.now(timezone.utc) - timedelta(days=730)).date().isoformat()
         collected: list[dict[str, Any]] = []
         for record in accounts:
             account_id = str(record.get("id") or record.get("accountId") or "")
