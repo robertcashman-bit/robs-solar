@@ -1319,6 +1319,60 @@ async def data_quality_report(
     return await finance_data_quality_service.report(db)
 
 
+@router.post("/data-quality/backfill-dates")
+async def data_quality_backfill_dates(
+    request: Request,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await enforce_write_rate_limit(request)
+    from app.services.finance.finance_date_backfill_service import finance_date_backfill_service
+
+    return await finance_date_backfill_service.backfill_lunchflow_dates(db)
+
+
+@router.post("/data-quality/apply-rules")
+async def data_quality_apply_rules(
+    request: Request,
+    body: dict | None = None,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await enforce_write_rate_limit(request)
+    from app.services.finance.category_registry import apply_rules_to_uncategorised
+
+    payload = body or {}
+    scope = str(payload.get("scope") or "").strip().lower() or None
+    if scope not in {None, "personal", "business"}:
+        raise HTTPException(status_code=400, detail="Scope must be personal or business")
+    return await apply_rules_to_uncategorised(db, scope=scope)
+
+
+@router.post("/data-quality/resolve-review")
+async def data_quality_resolve_review(
+    request: Request,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await enforce_write_rate_limit(request)
+    from app.services.finance.finance_transfer_service import finance_transfer_service
+
+    return await finance_transfer_service.resolve_review(db)
+
+
+@router.get("/category-rule-suggestions")
+async def category_rule_suggestions(
+    scope: FinanceScope | None = None,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    from app.services.finance.category_registry import suggest_merchant_rules
+
+    return await suggest_merchant_rules(
+        db, scope=scope.value if scope else None
+    )
+
+
 @router.get("/upcoming")
 async def upcoming_money(
     days: int = Query(default=30, ge=1, le=365),
@@ -1593,14 +1647,24 @@ async def confirm_category_rule(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     await enforce_write_rate_limit(request)
-    from app.services.finance.category_registry import confirm_rule
+    from app.services.finance.category_registry import (
+        apply_rules_to_uncategorised,
+        confirm_rule,
+    )
 
-    return await confirm_rule(
+    entry = await confirm_rule(
         db,
         pattern=str(body.get("pattern") or ""),
         category=str(body.get("category") or ""),
         scope=str(body.get("scope") or "personal"),
     )
+    applied: dict | None = None
+    if body.get("apply_to_existing") or body.get("apply_to_uncategorised"):
+        applied = await apply_rules_to_uncategorised(
+            db,
+            scope=str(body.get("scope") or "personal"),
+        )
+    return {**entry, "applied": applied}
 
 
 @router.get("/recurring")
