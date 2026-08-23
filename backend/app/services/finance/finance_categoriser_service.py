@@ -11,6 +11,12 @@ from app.services.finance.category_registry import list_confirmed_rules
 
 DEFAULT_RULES: list[dict[str, Any]] = []
 for _scope, _pattern, _category, _priority in [
+    # Income first — payment-rail wording must not steal salary credits.
+    ("personal", "SALARY", "Salary", 5),
+    ("personal", "PAYROLL", "Salary", 5),
+    ("personal", "WAGES", "Salary", 5),
+    ("personal", "DIVIDEND", "Dividends", 10),
+    ("personal", "DIRECTOR LOAN", "Director loan repayment", 15),
     ("business", "TESLA", "Vehicle finance", 10),
     ("business", "FUNDING CIRCLE", "Loan repayments", 10),
     ("business", "CAPITAL ON TAP", "Loan repayments", 10),
@@ -33,9 +39,11 @@ for _scope, _pattern, _category, _priority in [
     ("personal", "BRITISH GAS", "Utilities", 20),
     ("personal", "OCTOPUS", "Utilities", 20),
     ("personal", "MORTGAGE", "Mortgage / household contribution", 10),
-    ("personal", "TRANSFER", "Transfers", 90),
-    ("business", "TRANSFER", "Transfers", 90),
-    ("personal", "FASTER PAYMENT", "Transfers", 90),
+    # Strong own-account wording only — not FPS/BACS/FASTER PAYMENT alone.
+    ("personal", "OWN ACCOUNT", "Transfers", 90),
+    ("personal", "BETWEEN ACCOUNTS", "Transfers", 90),
+    ("business", "OWN ACCOUNT", "Transfers", 90),
+    ("business", "BETWEEN ACCOUNTS", "Transfers", 90),
 ]:
     DEFAULT_RULES.append(
         {
@@ -47,15 +55,33 @@ for _scope, _pattern, _category, _priority in [
         }
     )
 
+# Clear own-account / internal-move language. Payment rails (FPS/BACS/Faster
+# Payment) are *not* transfers by themselves — third-party salary credits use
+# those rails and must stay as income unless an opposite-leg pair exists.
 TRANSFER_HINTS = (
-    "TRANSFER",
-    "TFR",
+    "OWN ACCOUNT",
+    "BETWEEN ACCOUNTS",
+    "INTERNAL TRANSFER",
+    "INTERNAL TFR",
+    "TO MY ACCOUNT",
+    "FROM MY ACCOUNT",
+    "TO SAVINGS",
+    "FROM SAVINGS",
+    "TO CURRENT",
+    "FROM CURRENT",
+)
+
+# Rails alone are ambiguous; used only to detect previously false-marked rows.
+PAYMENT_RAIL_HINTS = (
     "FASTER PAYMENT",
     "FPS",
     "BACS",
-    "INTERNAL",
-    "OWN ACCOUNT",
-    "BETWEEN ACCOUNTS",
+)
+
+SALARY_HINTS = (
+    "SALARY",
+    "PAYROLL",
+    "WAGES",
 )
 
 
@@ -78,8 +104,32 @@ def _matches(match_type: str, pattern: str, text: str) -> bool:
 
 class FinanceCategoriserService:
     def looks_like_transfer(self, description: str) -> bool:
+        """True only for clear own-account / internal-move wording."""
         text = (description or "").upper()
-        return any(hint in text for hint in TRANSFER_HINTS)
+        if self.looks_like_salary(description):
+            return False
+        # Bare "TRANSFER" / "TFR" without own-account context is still a hint,
+        # but payment rails alone are not.
+        if any(hint in text for hint in TRANSFER_HINTS):
+            return True
+        if "TRANSFER" in text or re.search(r"\bTFR\b", text):
+            # Avoid matching "TRANSFER" inside longer third-party narratives that
+            # also look like salary/income.
+            if self.looks_like_salary(description):
+                return False
+            return True
+        return False
+
+    def looks_like_salary(self, description: str) -> bool:
+        text = (description or "").upper()
+        return any(hint in text for hint in SALARY_HINTS)
+
+    def looks_like_payment_rail_only(self, description: str) -> bool:
+        """True when FPS/BACS/Faster Payment appear without own-account hints."""
+        text = (description or "").upper()
+        if not any(hint in text for hint in PAYMENT_RAIL_HINTS):
+            return False
+        return not self.looks_like_transfer(description)
 
     def categorise_description(
         self,
