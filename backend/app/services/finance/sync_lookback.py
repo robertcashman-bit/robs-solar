@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-# Lunch Flow personal history is capped by the provider (~months of txs). Keep the
-# first-sync window at 365 days; widening it does not return older rows.
-FIRST_SYNC_LOOKBACK_DAYS = 365
+# Align Lunch Flow first-sync lookback with QuickFile (~730 days). The provider
+# may still return fewer months; fingerprints dedupe. Daily incremental stays
+# at 90 days — the safe incremental window.
+FIRST_SYNC_LOOKBACK_DAYS = 730
 INCREMENTAL_LOOKBACK_DAYS = 90
 
 # QuickFile Bank_Search accepts FromDate/ToDate. A ~2-year pass is used for

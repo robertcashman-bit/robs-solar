@@ -41,7 +41,7 @@ class _Db:
 
 
 @pytest.mark.asyncio
-async def test_lunchflow_first_sync_uses_365_day_since(
+async def test_lunchflow_first_sync_uses_730_day_since(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, str | None] = {}
@@ -129,9 +129,9 @@ async def test_lunchflow_first_sync_uses_365_day_since(
     result = await LunchFlowSyncService().sync(_Db(), LunchFlowConfig(api_key="k"))
     assert isinstance(result, LunchFlowSyncResult)
     assert captured["marked_full"] == "1"
-    expected = (datetime.now(timezone.utc) - timedelta(days=365)).date().isoformat()
+    expected = (datetime.now(timezone.utc) - timedelta(days=730)).date().isoformat()
     assert captured["since"] == expected
-    assert "365-day" in result.message
+    assert "730-day" in result.message
 
 
 @pytest.mark.asyncio
