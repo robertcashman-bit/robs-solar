@@ -58,6 +58,16 @@ export const periodFlowSummarySchema = z.object({
   coverage_note: z.string().optional().default(""),
 });
 
+export const financeDataGapsSchema = z.object({
+  unknown_apr_count: z.number().optional().default(0),
+  unknown_apr_names: z.array(z.string()).optional().default([]),
+  missing_credit_limit_count: z.number().optional().default(0),
+  missing_credit_limit_names: z.array(z.string()).optional().default([]),
+  monthly_interest_incomplete: z.boolean().optional().default(false),
+  income_looks_thin: z.boolean().optional().default(false),
+  income_thin_note: z.string().optional().default(""),
+});
+
 export const financeOverviewSchema = z.object({
   personal_bank_balance_gbp: z.number(),
   business_bank_balance_gbp: z.number(),
@@ -72,6 +82,7 @@ export const financeOverviewSchema = z.object({
   corp_tax_reserve_warning: z.boolean(),
   credit_card_balances_gbp: z.number(),
   personal_credit_card_balances_gbp: z.number().optional().default(0),
+  business_credit_card_balances_gbp: z.number().optional().default(0),
   loan_balances_gbp: z.number(),
   personal_loan_balances_gbp: z.number().optional().default(0),
   mortgage_balance_gbp: z.number(),
@@ -162,6 +173,7 @@ export const financeOverviewSchema = z.object({
   business_long_term_debt_gbp: z.number().optional().default(0),
   personal_period_flow: periodFlowSummarySchema.nullable().optional(),
   business_period_flow: periodFlowSummarySchema.nullable().optional(),
+  data_gaps: financeDataGapsSchema.optional(),
   active_budget: activeBudgetSummarySchema.nullable().optional(),
   insights: z.array(financeInsightSchema),
 });
@@ -313,10 +325,74 @@ export const debtStrategySchema = z.object({
   strategy: z.string(),
   headline: z.string(),
   message: z.string(),
+  scope: z.string().optional().default("all"),
+  incomplete: z.boolean().optional().default(false),
+  incomplete_reason: z.string().optional().default(""),
+  focus_debt_id: z.number().nullable().optional(),
+  focus_debt_name: z.string().nullable().optional(),
   debts: z.array(z.record(z.string(), z.unknown())),
+  payoff_order: z.array(debtAnalysisItemSchema).optional().default([]),
+  milestones: z
+    .array(
+      z.object({
+        month_index: z.number(),
+        label: z.string(),
+        focus_debt_name: z.string().nullable().optional(),
+        remaining_total_gbp: z.number(),
+        note: z.string().optional().default(""),
+      }),
+    )
+    .optional()
+    .default([]),
   estimated_debt_free_date: z.string().nullable().optional(),
   analysis: z.array(debtAnalysisItemSchema).optional().default([]),
   scenarios: z.array(debtScenarioSchema).optional().default([]),
+});
+
+export const dualDebtStrategiesSchema = z.object({
+  personal: debtStrategySchema,
+  business: debtStrategySchema,
+});
+
+export const cashflowPlanIssueSchema = z.object({
+  severity: z.string(),
+  kind: z.string(),
+  message: z.string(),
+});
+
+export const cashflowPlanMonthSchema = z.object({
+  month: z.string(),
+  label: z.string(),
+  opening_gbp: z.number(),
+  income_gbp: z.number(),
+  spending_gbp: z.number(),
+  debt_payments_gbp: z.number(),
+  closing_gbp: z.number(),
+  overdraft_limit_gbp: z.number(),
+  headroom_gbp: z.number(),
+  breaches_overdraft: z.boolean(),
+  notes: z.array(z.string()).optional().default([]),
+});
+
+export const scopedCashflowPlanSchema = z.object({
+  scope: z.string(),
+  starting_bank_gbp: z.number(),
+  overdraft_limit_gbp: z.number(),
+  overdraft_drawn_gbp: z.number(),
+  headroom_gbp: z.number(),
+  live_breach: z.boolean(),
+  incomplete: z.boolean().optional().default(false),
+  incomplete_reason: z.string().optional().default(""),
+  months: z.array(cashflowPlanMonthSchema).optional().default([]),
+  issues: z.array(cashflowPlanIssueSchema).optional().default([]),
+  card_warnings: z.array(z.string()).optional().default([]),
+});
+
+export const dualCashflowPlansSchema = z.object({
+  personal: scopedCashflowPlanSchema,
+  business: scopedCashflowPlanSchema,
+  personal_overdraft_limit_gbp: z.number(),
+  business_overdraft_limit_gbp: z.number(),
 });
 
 export const budgetPlanLineSchema = z.object({
@@ -724,6 +800,7 @@ export const oidcStatusSchema = z.object({
 
 export type ActiveBudgetSummary = z.infer<typeof activeBudgetSummarySchema>;
 export type PeriodFlowSummary = z.infer<typeof periodFlowSummarySchema>;
+export type FinanceDataGaps = z.infer<typeof financeDataGapsSchema>;
 export type FinanceOverview = z.infer<typeof financeOverviewSchema>;
 export type FinanceAccount = z.infer<typeof financeAccountSchema>;
 export type FinanceLiability = z.infer<typeof financeLiabilitySchema>;
@@ -733,6 +810,9 @@ export type BusinessFinanceSnapshot = z.infer<typeof businessFinanceSnapshotSche
 export type MonthlyBudgetLine = z.infer<typeof monthlyBudgetLineSchema>;
 export type CashflowForecast = z.infer<typeof cashflowForecastSchema>;
 export type DebtStrategy = z.infer<typeof debtStrategySchema>;
+export type DualDebtStrategies = z.infer<typeof dualDebtStrategiesSchema>;
+export type ScopedCashflowPlan = z.infer<typeof scopedCashflowPlanSchema>;
+export type DualCashflowPlans = z.infer<typeof dualCashflowPlansSchema>;
 export type FinanceReports = z.infer<typeof financeReportsSchema>;
 export type PersonalFinanceReport = z.infer<typeof personalFinanceReportSchema>;
 export type BusinessFinanceReport = z.infer<typeof businessFinanceReportSchema>;

@@ -36,7 +36,10 @@ const overview: FinanceOverview = financeOverviewSchema.parse({
   vat_reserve_warning: false,
   corp_tax_reserve_warning: false,
   credit_card_balances_gbp: 800,
+  personal_credit_card_balances_gbp: 800,
+  business_credit_card_balances_gbp: 0,
   loan_balances_gbp: 400,
+  personal_loan_balances_gbp: 0,
   mortgage_balance_gbp: 82210.5,
   pension_value_gbp: 50000,
   directors_loan_gbp: 0,
@@ -85,7 +88,6 @@ describe("FinanceOverviewView", () => {
     );
     const tile = screen.getByText("Combined external debt").closest("div");
     expect(tile).toHaveTextContent("£0.00");
-    // Headline stays £0; DLA may appear only in the excludes-hint.
     expect(tile?.querySelector(".text-2xl")).toHaveTextContent("£0.00");
     expect(tile).toHaveTextContent(/Excludes director's loan £1,200\.00/);
   });
@@ -102,17 +104,16 @@ describe("FinanceOverviewView", () => {
     expect(screen.getAllByText("Business / company position").length).toBeGreaterThan(0);
     expect(screen.getByText("Personal house (your half)")).toBeInTheDocument();
     expect(screen.getByText("Your half of £700,000. Other half ignored.")).toBeInTheDocument();
-    expect(screen.getByText("Of which house mortgage")).toBeInTheDocument();
+    expect(screen.getByText("Personal credit cards")).toBeInTheDocument();
+    expect(screen.getByText("House mortgage")).toBeInTheDocument();
     expect(screen.getByText("Confirmed half-share of £164,421 joint mortgage.")).toBeInTheDocument();
-    expect(screen.getByText("Of which personal credit cards")).toBeInTheDocument();
+    expect(screen.getByText("Business loans")).toBeInTheDocument();
     expect(screen.getByText("High-interest debt")).toBeInTheDocument();
     expect(
       screen.getByText("APR 15% or more across all debts — pay this first"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Of which business loans")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Excludes director's loan/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Excludes director's loan/)).toBeInTheDocument();
+    expect(screen.getByText("Combined summary")).toBeInTheDocument();
     expect(screen.getByText("Business VAT pot")).toBeInTheDocument();
     expect(
       screen.getByText(/Cash in VAT pot \(paid reserve — not QuickFile VAT liability\)/),
@@ -184,7 +185,7 @@ describe("FinanceOverviewView", () => {
     await user.click(screen.getByRole("button", { name: "business" }));
     expect(screen.getByText("Business VAT pot")).toBeInTheDocument();
     expect(screen.queryByText("Personal house (your half)")).not.toBeInTheDocument();
-    expect(screen.queryByText("Of which house mortgage")).not.toBeInTheDocument();
+    expect(screen.queryByText("House mortgage")).not.toBeInTheDocument();
   });
 
   it("wires dismiss on insights when a handler is provided", async () => {

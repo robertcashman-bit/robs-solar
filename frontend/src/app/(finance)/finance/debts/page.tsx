@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 
 import { BankImportCard } from "@/components/finance/BankImportCard";
+import { DebtReductionPlanPanel } from "@/components/finance/DebtReductionPlanPanel";
+import { FinanceDataGapsBanner } from "@/components/finance/FinanceDataGapsBanner";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { AppShell } from "@/components/shared/AppShell";
@@ -14,11 +16,17 @@ import { apiClient } from "@/lib/api-client";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import {
   debtScenarioSchema,
-  debtStrategySchema,
+  dualDebtStrategiesSchema,
   financeLiabilitySchema,
   type DebtStrategy,
+  type DualDebtStrategies,
   type FinanceLiability,
 } from "@/lib/finance-schemas";
+import {
+  debtGapLabels,
+  displayOriginalBalanceGbp,
+  groupDebts,
+} from "@/lib/finance-debt-groups";
 import { notifyFinanceChanged } from "@/lib/finance-events";
 import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
 import { useFinanceReload } from "@/lib/use-finance-reload";
@@ -45,7 +53,8 @@ const emptyForm = {
 export default function DebtsPage() {
   const { user, gated, redirecting } = useRequireAuth();
   const [debts, setDebts] = useState<FinanceLiability[]>([]);
-  const [strategy, setStrategy] = useState<DebtStrategy | null>(null);
+  const [strategies, setStrategies] = useState<DualDebtStrategies | null>(null);
+  const [planTab, setPlanTab] = useState<"personal" | "business">("personal");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -69,9 +78,9 @@ export default function DebtsPage() {
     }
     try {
       const strat = await apiClient.get<unknown>("/finance/debts/strategy");
-      setStrategy(debtStrategySchema.parse(strat));
+      setStrategies(dualDebtStrategiesSchema.parse(strat));
     } catch {
-      setStrategy(null);
+      setStrategies(null);
     } finally {
       setHydrated(true);
     }
@@ -83,9 +92,16 @@ export default function DebtsPage() {
 
   const analysisById = useMemo(() => {
     const map = new Map<number, NonNullable<DebtStrategy["analysis"]>[number]>();
-    for (const item of strategy?.analysis ?? []) map.set(item.id, item);
+    for (const item of strategies?.personal.analysis ?? []) map.set(item.id, item);
+    for (const item of strategies?.business.analysis ?? []) map.set(item.id, item);
     return map;
-  }, [strategy]);
+  }, [strategies]);
+
+  const activePlan: DebtStrategy | null = strategies
+    ? planTab === "personal"
+      ? strategies.personal
+      : strategies.business
+    : null;
 
   const repayableDebts = useMemo(
     () => debts.filter((debt) => debt.debt_type !== "directors_loan"),
@@ -136,7 +152,10 @@ export default function DebtsPage() {
       interest_rate_pct: debt.interest_rate_known === false ? "" : String(debt.interest_rate_pct),
       minimum_payment_gbp: String(debt.minimum_payment_gbp),
       overpayment_gbp: String(debt.overpayment_gbp),
-      original_balance_gbp: debt.original_balance_gbp == null ? "" : String(debt.original_balance_gbp),
+      original_balance_gbp: (() => {
+        const original = displayOriginalBalanceGbp(debt);
+        return original == null ? "" : String(original);
+      })(),
       payment_day: debt.payment_day == null ? "" : String(debt.payment_day),
       credit_limit_gbp: debt.credit_limit_gbp == null ? "" : String(debt.credit_limit_gbp),
       dla_direction: debt.dla_direction ?? "company_owes_director",
@@ -216,26 +235,105 @@ export default function DebtsPage() {
       </div>
       <p className="mt-4 text-sm text-[var(--muted)]">
         Personal {formatGbp(personalTotal)} · Business {formatGbp(businessTotal)}
-        {companyOwesDirector > 0 ? ` · Company owes you ${formatGbp(companyOwesDirector)}` : ""}
-        {directorOwesCompany > 0 ? ` · You owe the company ${formatGbp(directorOwesCompany)}` : ""}
+        {companyOwesDirector > 0 ? ` · Company owes Robert ${formatGbp(companyOwesDirector)}` : ""}
+        {directorOwesCompany > 0 ? ` · Robert owes the company ${formatGbp(directorOwesCompany)}` : ""}
       </p>
       {directorsLoans.length > 0 ? (
         <p className="mt-3 rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-4 py-3 text-sm">
-          Director&apos;s loan is money the company owes you. It is kept out of payoff
-          priority and household net worth so it is not treated as a debt you repay.
+          Director&apos;s loan is money between Robert and the company — never a lender to repay.
+          It stays out of both debt reduction plans and combined external debt.
         </p>
       ) : null}
-      {strategy && strategy.strategy !== "none" ? (
-        <div className="mt-6 rounded-2xl border border-emerald-400/35 bg-emerald-500/10 p-4">
-          <p className="font-semibold">{strategy.headline}</p>
-          <p className="mt-1 text-sm">{strategy.message}</p>
-          {strategy.estimated_debt_free_date ? (
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              Target debt-free: {strategy.estimated_debt_free_date}
-            </p>
+
+      <div className="mt-6">
+        <FinanceDataGapsBanner
+          extraLines={(() => {
+            const lines: string[] = [];
+            const unknown = repayableDebts.filter((d) => d.interest_rate_known === false);
+            const missingLimits = repayableDebts.filter(
+              (d) => debtUsesCreditLimit(d.debt_type) && (d.credit_limit_gbp == null || d.credit_limit_gbp <= 0),
+            );
+            if (unknown.length) {
+              lines.push(
+                `APR unknown: ${unknown.map((d) => d.name).slice(0, 4).join(", ")}${unknown.length > 4 ? "…" : ""}.`,
+              );
+            }
+            if (missingLimits.length) {
+              lines.push(
+                `Credit limit missing: ${missingLimits.map((d) => d.name).slice(0, 4).join(", ")}${missingLimits.length > 4 ? "…" : ""}.`,
+              );
+            }
+            if (strategies?.personal.incomplete) {
+              lines.push(`Personal plan incomplete: ${strategies.personal.incomplete_reason}`);
+            }
+            if (strategies?.business.incomplete) {
+              lines.push(`Business plan incomplete: ${strategies.business.incomplete_reason}`);
+            }
+            return lines;
+          })()}
+        />
+      </div>
+
+      <section className="mt-8" aria-label="Debt reduction plans">
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Debt plan scope">
+          {(["personal", "business"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              aria-selected={planTab === tab}
+              onClick={() => setPlanTab(tab)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                planTab === tab
+                  ? "bg-emerald-600 text-white"
+                  : "border border-[var(--border)] text-[var(--muted)]"
+              }`}
+            >
+              {tab} plan
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+          <DebtReductionPlanPanel plan={activePlan} loading={!hydrated} />
+          {canWrite(user) ? (
+            <form
+              className="mt-4 flex flex-wrap gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const extra = optionalMoney(customExtra);
+                if (extra == null) return;
+                void (async () => {
+                  try {
+                    const data = await apiClient.get<unknown>(
+                      `/finance/debts/scenarios?extra=${extra}&scope=${planTab}`,
+                    );
+                    const parsed = z.array(debtScenarioSchema).parse(data);
+                    setStrategies((current) => {
+                      if (!current) return current;
+                      return {
+                        ...current,
+                        [planTab]: { ...current[planTab], scenarios: parsed },
+                      };
+                    });
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Failed to model scenario");
+                  }
+                })();
+              }}
+            >
+              <input
+                className="solar-input w-32"
+                value={customExtra}
+                onChange={(event) => setCustomExtra(event.target.value)}
+                aria-label="Custom overpayment"
+              />
+              <button type="submit" className="solar-btn-ghost">
+                Model custom extra on {planTab}
+              </button>
+            </form>
           ) : null}
         </div>
-      ) : null}
+      </section>
 
       {!hydrated ? (
         <p className="mt-6 text-sm text-[var(--muted)]">Loading debts…</p>
@@ -250,72 +348,6 @@ export default function DebtsPage() {
           </div>
           <BankImportCard readOnly={!canWrite(user)} showSettingsLink />
         </div>
-      ) : null}
-
-      {strategy?.scenarios?.length ? (
-        <section className="mt-6">
-          <h2 className="solar-section-title">What if I paid extra?</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Forecast only — extra amounts are not written to the debt until you edit it.
-          </p>
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] text-[var(--muted)]">
-                  <th className="py-2 pr-3">Extra / month</th>
-                  <th className="py-2 pr-3">Months saved</th>
-                  <th className="py-2 pr-3">Interest saved</th>
-                  <th className="py-2">Payoff</th>
-                </tr>
-              </thead>
-              <tbody>
-                {strategy.scenarios.map((row) => (
-                  <tr key={row.extra_gbp} className="border-b border-[var(--border)]">
-                    <td className="py-2 pr-3 tabular-nums">{formatGbp(row.extra_gbp)}</td>
-                    <td className="py-2 pr-3">
-                      {row.incomplete
-                        ? row.reason
-                        : row.months_saved == null
-                          ? row.reason || "—"
-                          : `${row.months_saved} mo`}
-                    </td>
-                    <td className="py-2 pr-3 tabular-nums">{row.interest_saved_gbp == null ? "—" : formatGbp(row.interest_saved_gbp)}</td>
-                    <td className="py-2">{row.payoff_date ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {canWrite(user) ? (
-            <form
-              className="mt-3 flex flex-wrap gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const extra = optionalMoney(customExtra);
-                if (extra == null) return;
-                void (async () => {
-                  try {
-                    const data = await apiClient.get<unknown>(`/finance/debts/scenarios?extra=${extra}`);
-                    const parsed = z.array(debtScenarioSchema).parse(data);
-                    setStrategy((current) => (current ? { ...current, scenarios: parsed } : current));
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : "Failed to model scenario");
-                  }
-                })();
-              }}
-            >
-              <input
-                className="solar-input w-32"
-                value={customExtra}
-                onChange={(event) => setCustomExtra(event.target.value)}
-                aria-label="Custom overpayment"
-              />
-              <button type="submit" className="solar-btn-ghost">
-                Model custom extra
-              </button>
-            </form>
-          ) : null}
-        </section>
       ) : null}
 
       {repayableDebts.length > 0 ? (
@@ -350,7 +382,6 @@ export default function DebtsPage() {
           <thead>
             <tr className="border-b border-[var(--border)] text-[var(--muted)]">
               <th className="py-2 pr-3">Name</th>
-              <th className="py-2 pr-3">Scope</th>
               <th className="py-2 pr-3">Balance</th>
               <th className="py-2 pr-3">APR</th>
               <th className="py-2 pr-3">Min payment</th>
@@ -360,43 +391,69 @@ export default function DebtsPage() {
             </tr>
           </thead>
           <tbody>
-            {visible.map((debt) => {
-              const info = analysisById.get(debt.id);
-              return (
-                <tr key={debt.id} className="border-b border-[var(--border)]">
-                  <td className="py-3 pr-3">
-                    {debt.name}
-                    {debtUsesCreditLimit(debt.debt_type) && debt.credit_limit_gbp ? (
-                      <span className="block text-xs text-[var(--muted)]">
-                        Limit {formatGbp(debt.credit_limit_gbp)}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="py-3 pr-3 capitalize">{debt.scope}</td>
-                  <td className="py-3 pr-3 tabular-nums">{formatGbp(debt.balance_gbp)}</td>
-                  <td className="py-3 pr-3">
-                    {debt.interest_rate_known === false ? "Unknown" : formatPercent(debt.interest_rate_pct)}
-                  </td>
-                  <td className="py-3 pr-3 tabular-nums">{formatGbp(debt.minimum_payment_gbp)}</td>
-                  <td className="py-3 pr-3 tabular-nums">
-                    {info?.monthly_interest_gbp == null ? "—" : formatGbp(info.monthly_interest_gbp)}
-                  </td>
-                  <td className="py-3 pr-3">{info?.priority_label ?? "—"}</td>
-                  <td className="py-3">
-                    {canWrite(user) ? (
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" className="solar-btn-ghost text-xs" onClick={() => startEdit(debt)}>
-                          Edit
-                        </button>
-                        <button type="button" className="solar-btn-ghost text-xs" onClick={() => setArchiveId(debt.id)}>
-                          Archive
-                        </button>
-                      </div>
-                    ) : null}
+            {groupDebts(visible).map((group) => (
+              <Fragment key={group.key}>
+                <tr className="bg-[var(--surface)]">
+                  <td colSpan={7} className="py-3 pr-3 pt-5 text-xs font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    {group.title}
                   </td>
                 </tr>
-              );
-            })}
+                {group.debts.map((debt) => {
+                  const info = analysisById.get(debt.id);
+                  const gaps = debtGapLabels(debt);
+                  const interestIncomplete = debt.interest_rate_known === false;
+                  return (
+                    <tr key={debt.id} className="border-b border-[var(--border)] align-top">
+                      <td className="py-3 pr-3">
+                        {debt.name}
+                        {debt.debt_type === "mortgage" ? (
+                          <span className="block text-xs text-[var(--muted)]">
+                            Confirmed half-share of £164,421 joint mortgage
+                          </span>
+                        ) : null}
+                        {debtUsesCreditLimit(debt.debt_type) ? (
+                          <span className="block text-xs text-[var(--muted)]">
+                            {debt.credit_limit_gbp
+                              ? `Limit ${formatGbp(debt.credit_limit_gbp)}`
+                              : "Credit limit missing"}
+                          </span>
+                        ) : null}
+                        {gaps.length > 0 ? (
+                          <span className="mt-1 block text-xs font-medium text-amber-800 dark:text-amber-200">
+                            {gaps.join(" · ")}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="py-3 pr-3 tabular-nums">{formatGbp(debt.balance_gbp)}</td>
+                      <td className="py-3 pr-3">
+                        {debt.interest_rate_known === false ? "APR unknown" : formatPercent(debt.interest_rate_pct)}
+                      </td>
+                      <td className="py-3 pr-3 tabular-nums">{formatGbp(debt.minimum_payment_gbp)}</td>
+                      <td className="py-3 pr-3 tabular-nums">
+                        {interestIncomplete
+                          ? "Incomplete"
+                          : info?.monthly_interest_gbp == null
+                            ? "—"
+                            : formatGbp(info.monthly_interest_gbp)}
+                      </td>
+                      <td className="py-3 pr-3">{info?.priority_label ?? "—"}</td>
+                      <td className="py-3">
+                        {canWrite(user) ? (
+                          <div className="flex flex-wrap gap-2">
+                            <button type="button" className="solar-btn-ghost text-xs" onClick={() => startEdit(debt)}>
+                              Edit
+                            </button>
+                            <button type="button" className="solar-btn-ghost text-xs" onClick={() => setArchiveId(debt.id)}>
+                              Archive
+                            </button>
+                          </div>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </Fragment>
+            ))}
           </tbody>
         </table>
         {visible.length === 0 ? (
@@ -485,7 +542,7 @@ export default function DebtsPage() {
           />
           <input
             className="solar-input"
-            placeholder="Original balance"
+            placeholder="Original balance (not the old £175k placeholder)"
             value={form.original_balance_gbp}
             onChange={(event) => setForm({ ...form, original_balance_gbp: event.target.value })}
           />

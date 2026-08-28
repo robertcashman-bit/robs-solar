@@ -4,9 +4,12 @@ import { useCallback, useState } from "react";
 import { z } from "zod";
 
 import { AccountManager } from "@/components/finance/AccountManager";
+import { CashflowPlanPanel } from "@/components/finance/CashflowPlanPanel";
+import { DebtReductionPlanPanel } from "@/components/finance/DebtReductionPlanPanel";
+import { DebtStackPanel } from "@/components/finance/DebtStackPanel";
+import { FinanceDataGapsBanner } from "@/components/finance/FinanceDataGapsBanner";
 import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { MetricTile } from "@/components/finance/MetricTile";
-import { MetricWithOfWhich } from "@/components/finance/OfWhichBreakdown";
 import { PlComparePanel } from "@/components/finance/PlComparePanel";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
@@ -17,17 +20,21 @@ import { apiClient } from "@/lib/api-client";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import {
   budgetPlanSchema,
+  debtStrategySchema,
+  dualCashflowPlansSchema,
   financeOverviewSchema,
   parseFinanceAccounts,
   parseFinanceLiabilities,
   periodFlowSummarySchema,
   personalFinanceSnapshotSchema,
   type BudgetPlan,
+  type DebtStrategy,
   type FinanceAccount,
   type FinanceLiability,
   type FinanceOverview,
   type PeriodFlowSummary,
   type PersonalFinanceSnapshot,
+  type ScopedCashflowPlan,
 } from "@/lib/finance-schemas";
 import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
 import { useFinancePeriod } from "@/lib/use-finance-period";
@@ -70,6 +77,8 @@ export default function PersonalFinancePage() {
   });
   const [periodFlow, setPeriodFlow] = useState<PeriodFlowSummary | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [debtPlan, setDebtPlan] = useState<DebtStrategy | null>(null);
+  const [cashflowPlan, setCashflowPlan] = useState<ScopedCashflowPlan | null>(null);
 
   const load = useCallback(async () => {
     const errors: string[] = [];
@@ -136,6 +145,22 @@ export default function PersonalFinancePage() {
       setActiveBudget(parsedBudget.success ? parsedBudget.data : null);
     } catch {
       setActiveBudget(null);
+    }
+
+    try {
+      const strat = await apiClient.get<unknown>("/finance/debts/strategy/personal");
+      const parsedStrat = debtStrategySchema.safeParse(strat);
+      setDebtPlan(parsedStrat.success ? parsedStrat.data : null);
+    } catch {
+      setDebtPlan(null);
+    }
+
+    try {
+      const plans = await apiClient.get<unknown>("/finance/cashflow/plans?months=3");
+      const parsedPlans = dualCashflowPlansSchema.safeParse(plans);
+      setCashflowPlan(parsedPlans.success ? parsedPlans.data.personal : null);
+    } catch {
+      setCashflowPlan(null);
     }
 
     try {
@@ -372,63 +397,87 @@ export default function PersonalFinancePage() {
         </div>
       </section>
 
+      <div className="mt-6">
+        <FinanceDataGapsBanner gaps={overview?.data_gaps} />
+      </div>
+
+      {/* Debt stack */}
+      <section className="mt-8" aria-label="Personal debt stack">
+        <h2 className="solar-section-title">Personal debt stack</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Cards, loans, mortgage, and overdraft as one pile. Director&apos;s loan is separate —
+          not a lender to repay.
+        </p>
+        {!hydrated ? (
+          <p className="mt-4 text-sm text-[var(--muted)]">Loading debts…</p>
+        ) : (
+          <div className="mt-4">
+            <DebtStackPanel
+              scope="personal"
+              lines={{
+                creditCardsGbp: creditCards,
+                loansGbp: personalLoans,
+                mortgageGbp: mortgage,
+                overdraftGbp: overdraft,
+                registerDebtGbp: personalDebts,
+                mortgageConfigured: mortgage > 0 || overview?.mortgage_configured,
+              }}
+              dla={{
+                directorOwesCompanyGbp: directorOwes,
+                companyOwesDirectorGbp: companyOwes,
+              }}
+            />
+          </div>
+        )}
+      </section>
+
+      <section className="mt-8" aria-label="Personal debt reduction plan">
+        <h2 className="solar-section-title">Debt reduction plan</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Personal stack only — business debts stay on Business. Director&apos;s loan is not a
+          debt to repay.
+        </p>
+        <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+          <DebtReductionPlanPanel plan={debtPlan} loading={!hydrated} />
+        </div>
+      </section>
+
+      <section className="mt-8" aria-label="Personal cashflow plan">
+        <h2 className="solar-section-title">Cashflow plan</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          This month and the next two. Flags if the personal current account would go past the
+          £3,000 overdraft facility.
+        </p>
+        <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+          <CashflowPlanPanel plan={cashflowPlan} loading={!hydrated} title="Personal cashflow" />
+        </div>
+      </section>
+
       {/* Position */}
       <section className="mt-8" aria-label="Personal position">
         <h2 className="solar-section-title">Position</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Bank, assets, and debts now. Nested of-which rows are subsets — not extra debt.
+          Bank and assets now. Overdraft is listed in the debt stack above; bank stays net.
         </p>
         {!hydrated ? (
           <p className="mt-4 text-sm text-[var(--muted)]">Loading position…</p>
         ) : (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <MetricWithOfWhich
-            ariaLabel="Personal bank of which"
-            items={
+          <MetricTile
+            label="Personal bank"
+            value={bank}
+            warning={bank < 0 || overdraft > 0}
+            hint={
               overdraft > 0
-                ? [{ label: "Of which personal overdraft", value: overdraft, hint: "Shown separately from assets" }]
-                : []
+                ? `Net of overdraft ${formatGbp(overdraft)} (also in personal debt stack)`
+                : "Current accounts (net of overdraft) — same as Overview"
             }
-          >
-            <MetricTile
-              label="Personal bank"
-              value={bank}
-              warning={bank < 0 || overdraft > 0}
-              hint="Current accounts (net of overdraft) — same as Overview"
-            />
-          </MetricWithOfWhich>
+          />
           <MetricTile
             label="Personal assets"
             value={assets}
             hint="Pension + house share + other assets + positive personal cash"
           />
-          <MetricWithOfWhich
-            ariaLabel="Personal debts of which"
-            items={[
-              {
-                label: "Of which house mortgage",
-                value: mortgage > 0 ? mortgage : null,
-                hint: "Confirmed half-share of £164,421. From the personal mortgage liability.",
-              },
-              {
-                label: "Of which personal credit cards",
-                value: creditCards > 0 ? creditCards : null,
-                hint: "Subset of personal debts",
-              },
-              {
-                label: "Of which personal loans",
-                value: personalLoans > 0 ? personalLoans : null,
-                hint: "Subset of personal debts — not mortgage",
-              },
-            ]}
-          >
-            <MetricTile
-              label="Personal debts"
-              value={personalDebts}
-              warning={personalDebts > 0}
-              hint="Includes cards, loans, and mortgage — of which rows below are subsets"
-            />
-          </MetricWithOfWhich>
           <MetricTile
             label="Personal pension"
             value={pension}
@@ -441,22 +490,6 @@ export default function PersonalFinancePage() {
             positive={property > 0}
             hint="Your half of £700,000. Other half ignored."
           />
-          {directorOwes > 0 ? (
-            <MetricTile
-              label="Director's loan payable"
-              value={directorOwes}
-              warning
-              hint={`Robert owes the company ${formatGbp(directorOwes)}. Cancels in combined net worth.`}
-            />
-          ) : null}
-          {companyOwes > 0 ? (
-            <MetricTile
-              label="Director's loan receivable"
-              value={companyOwes}
-              positive
-              hint="Company owes you — cancels in combined net worth"
-            />
-          ) : null}
         </div>
         )}
       </section>

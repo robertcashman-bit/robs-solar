@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { ActiveBudgetsBreakdown } from "@/components/finance/ActiveBudgetsBreakdown";
+import { DebtStackPanel, debtStackTotal } from "@/components/finance/DebtStackPanel";
+import { FinanceDataGapsBanner } from "@/components/finance/FinanceDataGapsBanner";
 import { InsightCard } from "@/components/finance/InsightCard";
 import { MetricTile } from "@/components/finance/MetricTile";
-import { MetricWithOfWhich } from "@/components/finance/OfWhichBreakdown";
 import { COMPANY_NAME, COMPANY_SHORT, PERSONAL_NAME, monthlyFlowHint } from "@/lib/finance-branding";
 import { formatSafeSpendStatus } from "@/lib/finance-labels";
 import type { FinanceOverview } from "@/lib/finance-schemas";
@@ -22,7 +23,6 @@ function flowLabel(prefix: string, periodLabel?: string | null) {
 }
 
 const HOUSE_HINT = "Your half of £700,000. Other half ignored.";
-const MORTGAGE_HINT = "Confirmed half-share of £164,421 joint mortgage.";
 const COMBINED_LABEL = "Combined (personal + company, director's loan counted once)";
 
 export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverviewViewProps) {
@@ -41,7 +41,6 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
       ((overview.personal_bank_balance_gbp ?? 0) + (overview.business_bank_balance_gbp ?? 0)) *
         100,
     ) / 100;
-  const externalDebt = overview.external_debt_gbp ?? overview.total_personal_debt_gbp + overview.total_business_debt_gbp;
   const noCash =
     overview.personal_bank_balance_gbp === 0 && overview.business_bank_balance_gbp === 0;
   const hasPersonalOverdraft = (overview.personal_overdraft_gbp ?? 0) > 0;
@@ -115,12 +114,25 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
   const showBusiness = scopeView === "combined" || scopeView === "business";
   const showCombined = scopeView === "combined";
 
-  const dlaHint =
-    (overview.director_owes_company_gbp ?? 0) > 0
-      ? `Robert owes the company ${formatGbp(overview.director_owes_company_gbp)}. Cancels in combined net worth.`
-      : (overview.company_owes_director_gbp ?? 0) > 0
-        ? `Company owes Robert ${formatGbp(overview.company_owes_director_gbp)}. Cancels in combined net worth.`
-        : "Internal Robert ↔ company. Excluded from combined net worth.";
+  const personalStack = {
+    creditCardsGbp: overview.personal_credit_card_balances_gbp ?? 0,
+    loansGbp: overview.personal_loan_balances_gbp ?? 0,
+    mortgageGbp: overview.mortgage_balance_gbp,
+    overdraftGbp: overview.personal_overdraft_gbp ?? 0,
+    registerDebtGbp: overview.total_personal_debt_gbp,
+    mortgageConfigured: overview.mortgage_configured,
+  };
+  const businessStack = {
+    creditCardsGbp: overview.business_credit_card_balances_gbp ?? 0,
+    loansGbp: overview.loan_balances_gbp ?? 0,
+    overdraftGbp: overview.business_overdraft_gbp ?? 0,
+    registerDebtGbp: overview.total_business_debt_gbp,
+  };
+  const personalStackTotal = debtStackTotal(personalStack);
+  const businessStackTotal = debtStackTotal(businessStack);
+  const combinedFromStacks = Math.round((personalStackTotal + businessStackTotal) * 100) / 100;
+  const combinedExternal =
+    overview.external_debt_gbp != null ? overview.external_debt_gbp : combinedFromStacks;
 
   return (
     <div className="space-y-8">
@@ -261,56 +273,95 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
         ) : null}
       </section>
 
-      {/* 3. Position — bank, debts (of-which nested), house, pension, VAT */}
+      <FinanceDataGapsBanner gaps={overview.data_gaps} />
+
+      {/* 3. Debt stacks — two piles, then a combined summary (not a third pile) */}
+      <section aria-label="Debt stacks">
+        <h2 className="solar-section-title">Debt stacks</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Personal and company debts as two separate piles. Groups inside each pile are
+          subsets. Combined is only a summary — director&apos;s loan cancels once and is
+          never a third pile of debt.
+        </p>
+        <div className={`mt-4 grid gap-6 ${showPersonal && showBusiness ? "lg:grid-cols-2" : ""}`}>
+          {showPersonal ? (
+            <DebtStackPanel
+              scope="personal"
+              lines={personalStack}
+              dla={{
+                directorOwesCompanyGbp: overview.director_owes_company_gbp ?? 0,
+                companyOwesDirectorGbp: overview.company_owes_director_gbp ?? 0,
+              }}
+            />
+          ) : null}
+          {showBusiness ? (
+            <DebtStackPanel
+              scope="business"
+              lines={businessStack}
+              dla={{
+                directorOwesCompanyGbp: overview.director_owes_company_gbp ?? 0,
+                companyOwesDirectorGbp: overview.company_owes_director_gbp ?? 0,
+              }}
+            />
+          ) : null}
+        </div>
+        {showCombined ? (
+          <div className="mt-4 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface)] p-4">
+            <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
+              Combined summary
+            </p>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Adds the two stacks. Director&apos;s loan is cancelled in combined net worth and
+              excluded here — not an extra debt on top.
+            </p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <MetricTile
+                label="Combined cash available"
+                value={cashAvailable}
+                warning={cashAvailable < 0}
+                hint={`${formatGbp(overview.personal_bank_balance_gbp)} personal · ${formatGbp(overview.business_bank_balance_gbp)} company (net of overdrafts)`}
+              />
+              <MetricTile
+                label="Combined external debt"
+                value={combinedExternal}
+                warning={combinedExternal > 0}
+                hint={`${formatGbp(personalStackTotal)} personal stack · ${formatGbp(businessStackTotal)} business stack. Excludes director's loan ${formatGbp(overview.directors_loan_gbp)}.`}
+              />
+            </div>
+            {(overview.monthly_interest_incomplete || (overview.monthly_interest_gbp ?? 0) > 0) ? (
+              <div className="mt-4">
+                <MetricTile
+                  label="Combined est. monthly interest"
+                  value={
+                    overview.monthly_interest_incomplete && (overview.monthly_interest_gbp ?? 0) === 0
+                      ? null
+                      : overview.monthly_interest_gbp
+                  }
+                  warning={
+                    Boolean(overview.monthly_interest_incomplete) ||
+                    (overview.monthly_interest_gbp ?? 0) >= 50
+                  }
+                  hint={
+                    overview.monthly_interest_incomplete && (overview.monthly_interest_gbp ?? 0) === 0
+                      ? "Incomplete — APR required for interest forecast"
+                      : overview.monthly_interest_incomplete
+                        ? "Incomplete — from recorded APRs only; some debts still need APR"
+                        : "From recorded annual APRs on Debts"
+                  }
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+
+      {/* 4. Position — bank, house, pension, VAT (debts live in stacks above) */}
       <section aria-label="Position">
         <h2 className="solar-section-title">Position</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Cash and debts now. Nested &ldquo;of which&rdquo; rows are subsets of the parent — not
-          extra amounts.
+          Cash and assets now. Overdrafts are listed in the debt stacks above; bank tiles stay
+          net of overdraft.
         </p>
-
-        {showCombined ? (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <MetricTile
-              label="Combined cash available"
-              value={cashAvailable}
-              warning={cashAvailable < 0}
-              hint={`${formatGbp(overview.personal_bank_balance_gbp)} personal · ${formatGbp(overview.business_bank_balance_gbp)} company (net of overdrafts)`}
-            />
-            <MetricWithOfWhich
-              ariaLabel="Combined external debt of which"
-              items={[
-                {
-                  label: "Of which house mortgage",
-                  value: overview.mortgage_configured === false ? null : overview.mortgage_balance_gbp,
-                  hint: overview.mortgage_configured === false ? "Add a mortgage to track this" : MORTGAGE_HINT,
-                },
-                {
-                  label: "Of which personal credit cards",
-                  value: overview.personal_credit_card_balances_gbp,
-                  hint: "Subset of personal debts",
-                },
-                {
-                  label: "Of which personal loans",
-                  value: overview.personal_loan_balances_gbp,
-                  hint: "Subset of personal debts — not mortgage",
-                },
-                {
-                  label: "Of which business loans",
-                  value: overview.loan_balances_gbp,
-                  hint: "Business-scope loans only — personal loans are on the personal stack",
-                },
-              ]}
-            >
-              <MetricTile
-                label="Combined external debt"
-                value={externalDebt}
-                warning={externalDebt > 0}
-                hint={`${formatGbp(overview.total_personal_debt_gbp)} personal · ${formatGbp(overview.total_business_debt_gbp)} company. Excludes director's loan ${formatGbp(overview.directors_loan_gbp)} (Reports “total debt” includes it). Mortgage and cards below are of which, not extra.`}
-              />
-            </MetricWithOfWhich>
-          </div>
-        ) : null}
 
         <div className={`mt-6 grid gap-6 ${showPersonal && showBusiness ? "lg:grid-cols-2" : ""}`}>
           {showPersonal ? (
@@ -327,64 +378,16 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 </Link>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <MetricWithOfWhich
-                  ariaLabel="Personal bank of which"
-                  items={
+                <MetricTile
+                  label="Personal bank"
+                  value={overview.personal_bank_balance_gbp}
+                  warning={overview.personal_bank_balance_gbp < 0 || hasPersonalOverdraft}
+                  hint={
                     hasPersonalOverdraft
-                      ? [
-                          {
-                            label: "Of which personal overdraft",
-                            value: overview.personal_overdraft_gbp,
-                          },
-                        ]
-                      : []
+                      ? `Net of overdraft ${formatGbp(overview.personal_overdraft_gbp)} (also in personal debt stack)`
+                      : "Current accounts only"
                   }
-                >
-                  <MetricTile
-                    label="Personal bank"
-                    value={overview.personal_bank_balance_gbp}
-                    warning={overview.personal_bank_balance_gbp < 0 || hasPersonalOverdraft}
-                    hint="Current accounts only"
-                  />
-                </MetricWithOfWhich>
-                <MetricWithOfWhich
-                  ariaLabel="Personal debts of which"
-                  items={
-                    // In combined view, of-which lives under Combined external debt once.
-                    showCombined
-                      ? []
-                      : [
-                          {
-                            label: "Of which house mortgage",
-                            value:
-                              overview.mortgage_configured === false
-                                ? null
-                                : overview.mortgage_balance_gbp,
-                            hint:
-                              overview.mortgage_configured === false
-                                ? "Add a mortgage to track this"
-                                : MORTGAGE_HINT,
-                          },
-                          {
-                            label: "Of which personal credit cards",
-                            value: overview.personal_credit_card_balances_gbp,
-                            hint: "Subset of personal debts",
-                          },
-                          {
-                            label: "Of which personal loans",
-                            value: overview.personal_loan_balances_gbp,
-                            hint: "Subset of personal debts — not mortgage",
-                          },
-                        ]
-                  }
-                >
-                  <MetricTile
-                    label="Personal debts"
-                    value={overview.total_personal_debt_gbp}
-                    warning={overview.total_personal_debt_gbp > 0}
-                    hint="Includes cards, loans, and mortgage — not extra to the of-which rows"
-                  />
-                </MetricWithOfWhich>
+                />
                 <MetricTile
                   label="Personal house (your half)"
                   value={propertyMissing ? null : overview.property_gbp}
@@ -405,11 +408,6 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                       ? "Add a pension account to track this"
                       : undefined
                   }
-                />
-                <MetricTile
-                  label="Personal director's loan receivable"
-                  value={overview.directors_loan_gbp}
-                  hint={dlaHint}
                 />
                 <MetricTile
                   label="High-interest debt"
@@ -454,48 +452,16 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                 </Link>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <MetricWithOfWhich
-                  ariaLabel="Business bank of which"
-                  items={
+                <MetricTile
+                  label="Business bank"
+                  value={overview.business_bank_balance_gbp}
+                  warning={overview.business_bank_balance_gbp < 0 || hasBusinessOverdraft}
+                  hint={
                     hasBusinessOverdraft
-                      ? [
-                          {
-                            label: "Of which business overdraft",
-                            value: overview.business_overdraft_gbp,
-                          },
-                        ]
-                      : []
+                      ? `Net of overdraft ${formatGbp(overview.business_overdraft_gbp)} (also in business debt stack)`
+                      : "Current accounts only — not personal cash"
                   }
-                >
-                  <MetricTile
-                    label="Business bank"
-                    value={overview.business_bank_balance_gbp}
-                    warning={overview.business_bank_balance_gbp < 0 || hasBusinessOverdraft}
-                    hint="Current accounts only — not personal cash"
-                  />
-                </MetricWithOfWhich>
-                <MetricWithOfWhich
-                  ariaLabel="Business debts of which"
-                  items={
-                    showCombined
-                      ? []
-                      : [
-                          {
-                            label: "Of which business loans",
-                            value: overview.loan_balances_gbp,
-                            hint:
-                              "Business-scope loans only — personal loans are on the personal stack",
-                          },
-                        ]
-                  }
-                >
-                  <MetricTile
-                    label="Business debts"
-                    value={overview.total_business_debt_gbp}
-                    warning={overview.total_business_debt_gbp > 0}
-                    hint="Company external debts included in combined external debt"
-                  />
-                </MetricWithOfWhich>
+                />
                 <MetricTile
                   label="Business VAT pot"
                   value={overview.vat_reserve_gbp}
@@ -518,11 +484,6 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
                   positive={(overview.debtors_gbp ?? 0) > 0}
                   hint="Amounts owed to the company"
                 />
-                <MetricTile
-                  label="Business director's loan"
-                  value={overview.directors_loan_gbp}
-                  hint={dlaHint}
-                />
               </div>
             </div>
           ) : null}
@@ -540,27 +501,6 @@ export function FinanceOverviewView({ overview, onDismissInsight }: FinanceOverv
             </Link>
             , or add them on Personal and Company.
           </p>
-        ) : null}
-
-        {showCombined ? (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <MetricTile
-              label="Combined est. monthly interest"
-              value={
-                overview.monthly_interest_incomplete && (overview.monthly_interest_gbp ?? 0) === 0
-                  ? null
-                  : overview.monthly_interest_gbp
-              }
-              warning={Boolean(overview.monthly_interest_incomplete) || (overview.monthly_interest_gbp ?? 0) >= 50}
-              hint={
-                overview.monthly_interest_incomplete && (overview.monthly_interest_gbp ?? 0) === 0
-                  ? "APR required for interest forecast"
-                  : overview.monthly_interest_incomplete
-                    ? "From recorded APRs — some debts still need APR"
-                    : "From recorded annual APRs on Debts"
-              }
-            />
-          </div>
         ) : null}
       </section>
 

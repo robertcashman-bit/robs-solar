@@ -208,16 +208,16 @@ describe("PersonalFinancePage", () => {
     expect(screen.getByPlaceholderText("Income")).toHaveValue("");
     expect(screen.getByText("Personal house (your half)")).toBeInTheDocument();
     expect(screen.getByText("Your half of £700,000. Other half ignored.")).toBeInTheDocument();
-    expect(screen.getByText("Of which house mortgage")).toBeInTheDocument();
-    const mortgageRow = screen.getByText("Of which house mortgage").closest("li");
+    expect(screen.getByText("House mortgage")).toBeInTheDocument();
+    const mortgageRow = screen.getByText("House mortgage").closest("li");
     expect(mortgageRow).toHaveTextContent("£82,210.50");
-    expect(screen.getByText(/From the personal mortgage liability/)).toBeInTheDocument();
+    expect(screen.getByText(/Confirmed half-share of £164,421/)).toBeInTheDocument();
     expect(tile("Personal assets").getByText("£407,740.06")).toBeInTheDocument();
-    expect(tile("Personal debts").getByText("£82,210.50")).toBeInTheDocument();
+    expect(tile("Personal external debt").getByText("£82,210.50")).toBeInTheDocument();
     expect(tile("Personal bank").getByText("£13.12")).toBeInTheDocument();
     expect(tile("Personal pension").getByText("£57,726.94")).toBeInTheDocument();
-    expect(screen.getByText("Director's loan payable")).toBeInTheDocument();
-    expect(screen.queryByText("Director's loan receivable")).not.toBeInTheDocument();
+    expect(screen.getByText("Robert owes the company")).toBeInTheDocument();
+    expect(screen.queryByText("Company owes Robert")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Income, spend & surplus" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "This month to date" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "This month to date" })).toHaveAttribute(
@@ -280,9 +280,9 @@ describe("PersonalFinancePage", () => {
     render(<PersonalFinancePage />);
     expect(await screen.findByText("£350,000.00")).toBeInTheDocument();
     expect(tile("Personal pension").getByText("£57,726.94")).toBeInTheDocument();
-    expect(tile("Personal debts").getByText("£134,645.42")).toBeInTheDocument();
+    expect(tile("Personal external debt").getByText("£137,162.56")).toBeInTheDocument();
     expect(tile("Personal bank").getByText("-£2,503.91")).toBeInTheDocument();
-    expect(screen.getByText("Director's loan receivable")).toBeInTheDocument();
+    expect(screen.getByText("Company owes Robert")).toBeInTheDocument();
   });
 
   it("keeps Position tiles when overview fails", async () => {
@@ -390,6 +390,6 @@ describe("PersonalFinancePage", () => {
     expect(tile("Personal house (your half)").getByText("£350,000.00")).toBeInTheDocument();
     expect(tile("Personal bank").getByText("£100.00")).toBeInTheDocument();
     expect(tile("Personal pension").getByText("£50,000.00")).toBeInTheDocument();
-    expect(tile("Personal debts").getByText("£80,000.00")).toBeInTheDocument();
+    expect(tile("Personal external debt").getByText("£80,000.00")).toBeInTheDocument();
   });
 });

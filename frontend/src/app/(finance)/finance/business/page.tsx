@@ -4,9 +4,11 @@ import { useCallback, useState } from "react";
 import { z } from "zod";
 
 import { AccountManager } from "@/components/finance/AccountManager";
+import { CashflowPlanPanel } from "@/components/finance/CashflowPlanPanel";
+import { DebtReductionPlanPanel } from "@/components/finance/DebtReductionPlanPanel";
+import { DebtStackPanel } from "@/components/finance/DebtStackPanel";
 import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
 import { MetricTile } from "@/components/finance/MetricTile";
-import { MetricWithOfWhich } from "@/components/finance/OfWhichBreakdown";
 import { PlComparePanel } from "@/components/finance/PlComparePanel";
 import { QuickFileStatements } from "@/components/finance/QuickFileStatements";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
@@ -18,15 +20,19 @@ import { apiClient } from "@/lib/api-client";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import {
   businessFinanceSnapshotSchema,
+  debtStrategySchema,
+  dualCashflowPlansSchema,
   financeAccountSchema,
   financeLiabilitySchema,
   periodFlowSummarySchema,
   quickFileReportsSchema,
   type BusinessFinanceSnapshot,
+  type DebtStrategy,
   type FinanceAccount,
   type FinanceLiability,
   type PeriodFlowSummary,
   type QuickFileReports,
+  type ScopedCashflowPlan,
 } from "@/lib/finance-schemas";
 import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-live-refresh";
 import { useFinancePeriod } from "@/lib/use-finance-period";
@@ -71,6 +77,8 @@ export default function BusinessFinancePage() {
   });
   const [periodFlow, setPeriodFlow] = useState<PeriodFlowSummary | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [debtPlan, setDebtPlan] = useState<DebtStrategy | null>(null);
+  const [cashflowPlan, setCashflowPlan] = useState<ScopedCashflowPlan | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -101,6 +109,20 @@ export default function BusinessFinancePage() {
       }
       setError(null);
       setHydrated(true);
+      try {
+        const strat = await apiClient.get<unknown>("/finance/debts/strategy/business");
+        const parsedStrat = debtStrategySchema.safeParse(strat);
+        setDebtPlan(parsedStrat.success ? parsedStrat.data : null);
+      } catch {
+        setDebtPlan(null);
+      }
+      try {
+        const plans = await apiClient.get<unknown>("/finance/cashflow/plans?months=3");
+        const parsedPlans = dualCashflowPlansSchema.safeParse(plans);
+        setCashflowPlan(parsedPlans.success ? parsedPlans.data.business : null);
+      } catch {
+        setCashflowPlan(null);
+      }
       try {
         const qfReports = await apiClient.get<unknown>("/finance/integrations/quickfile/reports");
         const parsedReports = quickFileReportsSchema.safeParse(qfReports);
@@ -175,6 +197,9 @@ export default function BusinessFinancePage() {
   // Prefer liability register; fall back to loan / Capital on Tap accounts.
   const businessLoans =
     businessLoansFromDebts > 0 ? businessLoansFromDebts : loanAccountBalance;
+  const businessCards = activeBusinessDebts
+    .filter((d) => d.debt_type === "credit_card")
+    .reduce((sum, d) => sum + d.balance_gbp, 0);
   const businessDebts =
     activeBusinessDebts.reduce((sum, d) => sum + d.balance_gbp, 0)
     || businessLoans;
@@ -188,12 +213,6 @@ export default function BusinessFinancePage() {
       ? vatReserveAccounts.reduce((sum, account) => sum + account.balance_gbp, 0)
       : snapshot?.vat_reserve_gbp;
   const usePeriod = Boolean(periodFlow && periodFlow.transaction_count > 0);
-  const dlaHint =
-    directorsLoan > 0
-      ? "Company owes Robert — cancels in combined net worth"
-      : directorsLoan < 0
-        ? `Robert owes the company ${formatGbp(Math.abs(directorsLoan))}. Cancels in combined net worth.`
-        : "Internal Robert ↔ company. Excluded from combined net worth.";
 
   return (
     <AppShell>
@@ -274,48 +293,76 @@ export default function BusinessFinancePage() {
         </div>
       </section>
 
+      {/* Debt stack */}
+      <section className="mt-8" aria-label="Business debt stack">
+        <h2 className="solar-section-title">Business debt stack</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Company cards, loans, and overdraft as one pile. Director&apos;s loan is separate —
+          never treated as a lender to repay.
+        </p>
+        {!hydrated ? (
+          <p className="mt-4 text-sm text-[var(--muted)]">Loading debts…</p>
+        ) : (
+          <div className="mt-4">
+            <DebtStackPanel
+              scope="business"
+              lines={{
+                creditCardsGbp: businessCards,
+                loansGbp: businessLoans,
+                overdraftGbp: overdraft,
+                registerDebtGbp: businessDebts,
+              }}
+              dla={{
+                directorOwesCompanyGbp: directorsLoan < 0 ? Math.abs(directorsLoan) : 0,
+                companyOwesDirectorGbp: directorsLoan > 0 ? directorsLoan : 0,
+              }}
+            />
+          </div>
+        )}
+      </section>
+
+      <section className="mt-8" aria-label="Business debt reduction plan">
+        <h2 className="solar-section-title">Debt reduction plan</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Business stack only — personal cards and the house mortgage stay on Personal.
+          Director&apos;s loan is not a lender to repay.
+        </p>
+        <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+          <DebtReductionPlanPanel plan={debtPlan} loading={!hydrated} />
+        </div>
+      </section>
+
+      <section className="mt-8" aria-label="Business cashflow plan">
+        <h2 className="solar-section-title">Cashflow plan</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          This month and the next two. Flags if the business current account would go past the
+          £5,000 overdraft facility.
+        </p>
+        <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+          <CashflowPlanPanel plan={cashflowPlan} loading={!hydrated} title="Business cashflow" />
+        </div>
+      </section>
+
       {/* Position */}
       <section className="mt-8" aria-label="Business position">
         <h2 className="solar-section-title">Position</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Cash, debts, VAT, and debtors. Of-which business loans only — no personal loans here.
+          Cash, VAT, and debtors. Overdraft is listed in the debt stack above; bank stays net.
         </p>
         {!hydrated ? (
           <p className="mt-4 text-sm text-[var(--muted)]">Loading position…</p>
         ) : (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <MetricWithOfWhich
-            ariaLabel="Business bank of which"
-            items={
+          <MetricTile
+            label="Business bank"
+            value={bankBalance}
+            warning={bankBalance < 0 || overdraft > 0}
+            hint={
               overdraft > 0
-                ? [{ label: "Of which business overdraft", value: overdraft }]
-                : []
+                ? `Net of overdraft ${formatGbp(overdraft)} (also in business debt stack)`
+                : "Current accounts (net of overdraft) — same as Overview"
             }
-          >
-            <MetricTile
-              label="Business bank"
-              value={bankBalance}
-              warning={bankBalance < 0 || overdraft > 0}
-              hint="Current accounts (net of overdraft) — same as Overview"
-            />
-          </MetricWithOfWhich>
-          <MetricWithOfWhich
-            ariaLabel="Business debts of which"
-            items={[
-              {
-                label: "Of which business loans",
-                value: businessLoans > 0 ? businessLoans : null,
-                hint: "Business-scope loans only — personal loans stay on Personal",
-              },
-            ]}
-          >
-            <MetricTile
-              label="Business debts"
-              value={businessDebts}
-              warning={businessDebts > 0}
-              hint="Company external debts — of which rows are subsets"
-            />
-          </MetricWithOfWhich>
+          />
           <MetricTile
             label="Business VAT pot"
             value={vatReserveGbp}
@@ -323,13 +370,6 @@ export default function BusinessFinancePage() {
           />
           <MetricTile label="Business corp tax reserve" value={snapshot?.corp_tax_reserve_gbp} />
           <MetricTile label="Business debtors" value={snapshot?.debtors_gbp} />
-          <MetricTile
-            label="Business director's loan"
-            value={directorsLoan}
-            positive={directorsLoan > 0}
-            warning={directorsLoan < 0}
-            hint={dlaHint}
-          />
           <MetricTile label="Business cash to draw" value={snapshot?.cash_available_to_draw_gbp} />
         </div>
         )}
