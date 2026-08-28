@@ -47,7 +47,9 @@ async def _restore_finance_if_empty() -> None:
 
 
 async def _seed_stated_finance() -> None:
+    from app.services.finance.cashflow_plan_service import ensure_overdraft_limits
     from app.services.finance.finance_seed_service import (
+        ensure_clear_stale_mortgage_original,
         ensure_stated_house_share,
         ensure_stated_mortgage_half,
         ensure_stated_pension,
@@ -55,7 +57,9 @@ async def _seed_stated_finance() -> None:
 
     await ensure_stated_pension()
     await ensure_stated_mortgage_half()
+    await ensure_clear_stale_mortgage_original()
     await ensure_stated_house_share()
+    await ensure_overdraft_limits()
 
 
 app = FastAPI(title="Rob's Finance API", version="0.1.0", lifespan=lifespan)

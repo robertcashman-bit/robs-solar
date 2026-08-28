@@ -1,14 +1,21 @@
-"""Debt payoff strategy, priority scoring, and overpayment scenarios."""
+"""Debt payoff strategy, priority scoring, and overpayment scenarios.
+
+Plans are scoped: personal and business are separate avalanches. Director's
+loan is never a repayable debt. Unknown APRs mark a plan incomplete — rates
+are never invented.
+"""
 
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import Any, Iterable
 
 from app.schemas.finance import (
     DebtAnalysisItem,
+    DebtPayoffMilestone,
     DebtScenarioResult,
     DebtStrategyRecommendation,
+    DualDebtStrategiesResponse,
     FinanceLiability,
 )
 from app.services.finance.finance_calc import is_repayable_debt, monthly_interest_gbp
@@ -86,6 +93,7 @@ def _add_months(start: date, months: int) -> date:
 def priority_label(apr: float, monthly_interest: float, *, apr_known: bool = True) -> str:
     """APR-band priority. Monthly £ is not used — large low-APR balances were
     wrongly labelled Highest cost when interest ≥ £50/mo."""
+    del monthly_interest
     if not apr_known or apr <= 0:
         return "APR unknown"
     if apr >= 20:
@@ -97,8 +105,43 @@ def priority_label(apr: float, monthly_interest: float, *, apr_known: bool = Tru
     return "Low"
 
 
-def _repayable(liabilities: list[FinanceLiability]) -> list[FinanceLiability]:
+def _scope_value(raw: object) -> str:
+    return str(getattr(raw, "value", raw) or "")
+
+
+def _debt_type_value(raw: object) -> str:
+    return str(getattr(raw, "value", raw) or "")
+
+
+def _apr_known(debt: FinanceLiability) -> bool:
+    return bool(getattr(debt, "interest_rate_known", True)) and debt.interest_rate_pct > 0
+
+
+def _repayable(liabilities: Iterable[FinanceLiability]) -> list[FinanceLiability]:
     return [item for item in liabilities if item.is_active and is_repayable_debt(item)]
+
+
+def _filter_scope(
+    liabilities: Iterable[FinanceLiability], scope: str | None
+) -> list[FinanceLiability]:
+    active = _repayable(liabilities)
+    if scope in {None, "", "all"}:
+        return active
+    return [item for item in active if _scope_value(item.scope) == scope]
+
+
+def _order_reason(debt: FinanceLiability, *, is_focus: bool) -> str:
+    dtype = _debt_type_value(debt.debt_type)
+    if dtype == "mortgage":
+        return (
+            "House mortgage (confirmed half-share of £164,421 joint) — "
+            "long-term secured debt, not the same queue as a 36% card"
+        )
+    if not _apr_known(debt):
+        return "APR unknown — order uses balance only until APR is recorded"
+    if is_focus:
+        return f"Highest known APR ({debt.interest_rate_pct:.1f}%) — avalanche focus"
+    return f"Avalanche order by APR ({debt.interest_rate_pct:.1f}%)"
 
 
 def analyse_debts(liabilities: list[FinanceLiability]) -> list[DebtAnalysisItem]:
@@ -106,25 +149,29 @@ def analyse_debts(liabilities: list[FinanceLiability]) -> list[DebtAnalysisItem]
     for debt in _repayable(liabilities):
         if not debt.is_active:
             continue
-        interest = monthly_interest_gbp(debt.balance_gbp, debt.interest_rate_pct)
+        interest = (
+            monthly_interest_gbp(debt.balance_gbp, debt.interest_rate_pct)
+            if _apr_known(debt)
+            else None
+        )
         payment = debt.minimum_payment_gbp + debt.overpayment_gbp
-        months = months_to_payoff(debt.balance_gbp, debt.interest_rate_pct, payment)
-        apr_known = bool(getattr(debt, "interest_rate_known", True)) and debt.interest_rate_pct > 0
+        months = (
+            months_to_payoff(debt.balance_gbp, debt.interest_rate_pct, payment)
+            if _apr_known(debt)
+            else None
+        )
+        apr_known = _apr_known(debt)
         score = (
-            round(debt.interest_rate_pct * 10 + interest, 2)
+            round(debt.interest_rate_pct * 10 + (interest or 0), 2)
             if apr_known
-            else round(interest, 2)
+            else round(debt.balance_gbp / 1000.0, 2)
         )
         items.append(
             DebtAnalysisItem(
                 id=debt.id,
                 name=debt.name,
-                scope=debt.scope.value if hasattr(debt.scope, "value") else str(debt.scope),
-                debt_type=(
-                    debt.debt_type.value
-                    if hasattr(debt.debt_type, "value")
-                    else str(debt.debt_type)
-                ),
+                scope=_scope_value(debt.scope),
+                debt_type=_debt_type_value(debt.debt_type),
                 balance_gbp=debt.balance_gbp,
                 interest_rate_pct=debt.interest_rate_pct,
                 minimum_payment_gbp=debt.minimum_payment_gbp,
@@ -133,7 +180,7 @@ def analyse_debts(liabilities: list[FinanceLiability]) -> list[DebtAnalysisItem]
                 months_to_payoff=months,
                 priority_score=score,
                 priority_label=priority_label(
-                    debt.interest_rate_pct, interest, apr_known=apr_known
+                    debt.interest_rate_pct, interest or 0, apr_known=apr_known
                 ),
                 apr_known=apr_known,
             )
@@ -142,48 +189,143 @@ def analyse_debts(liabilities: list[FinanceLiability]) -> list[DebtAnalysisItem]
     return items
 
 
+def _avalanche_order(active: list[FinanceLiability]) -> list[FinanceLiability]:
+    """Highest known APR first; unknown-APR after; mortgage last among unknowns."""
+
+    def sort_key(debt: FinanceLiability) -> tuple:
+        dtype = _debt_type_value(debt.debt_type)
+        is_mortgage = 1 if dtype == "mortgage" else 0
+        if _apr_known(debt):
+            return (0, -debt.interest_rate_pct, is_mortgage, -debt.balance_gbp)
+        return (1, is_mortgage, -debt.balance_gbp, debt.name.lower())
+
+    return sorted(active, key=sort_key)
+
+
+def _focus_debt(ordered: list[FinanceLiability]) -> FinanceLiability | None:
+    """Prefer highest-APR non-mortgage; fall back to first ordered row."""
+    for debt in ordered:
+        if _debt_type_value(debt.debt_type) != "mortgage" and _apr_known(debt):
+            return debt
+    for debt in ordered:
+        if _debt_type_value(debt.debt_type) != "mortgage":
+            return debt
+    return ordered[0] if ordered else None
+
+
+def _incomplete_reason(active: list[FinanceLiability]) -> str:
+    unknown = [d.name for d in active if not _apr_known(d)]
+    if not unknown:
+        return ""
+    if len(unknown) == 1:
+        return f"APR unknown for {unknown[0]} — plan incomplete (no invented rate)."
+    shown = ", ".join(unknown[:4])
+    more = "…" if len(unknown) > 4 else ""
+    return (
+        f"APR unknown for {len(unknown)} debts ({shown}{more}) — "
+        "plan incomplete (no invented rates)."
+    )
+
+
+def _milestones(ordered: list[FinanceLiability]) -> list[DebtPayoffMilestone]:
+    """Simple cumulative payoff milestones when every debt in scope has APR."""
+    if not ordered or any(not _apr_known(d) for d in ordered):
+        return []
+    remaining = [
+        {
+            "name": d.name,
+            "balance": float(d.balance_gbp),
+            "apr": float(d.interest_rate_pct),
+            "payment": float(d.minimum_payment_gbp + d.overpayment_gbp),
+            "type": _debt_type_value(d.debt_type),
+        }
+        for d in ordered
+        if d.balance_gbp > 0
+    ]
+    if not remaining:
+        return []
+    milestones: list[DebtPayoffMilestone] = []
+    month = 0
+    while remaining and month < 120:
+        month += 1
+        focus = next(
+            (row for row in remaining if row["type"] != "mortgage"),
+            remaining[0],
+        )
+        # Pay minimums on all; extra focus capacity is ignored (mins only baseline).
+        still: list[dict[str, Any]] = []
+        for row in remaining:
+            payment = row["payment"]
+            if payment <= 0 and row["apr"] > 0:
+                payment = monthly_interest_gbp(row["balance"], row["apr"])
+            rate = row["apr"] / 100 / 12
+            interest = row["balance"] * rate
+            principal = max(payment - interest, 0.0)
+            new_bal = row["balance"] - principal
+            if new_bal > 0.01:
+                still.append({**row, "balance": new_bal})
+            elif row is focus or row["name"] == focus["name"]:
+                milestones.append(
+                    DebtPayoffMilestone(
+                        month_index=month,
+                        label=f"Month {month}",
+                        focus_debt_name=row["name"],
+                        remaining_total_gbp=round(
+                            sum(item["balance"] for item in still), 2
+                        ),
+                        note=f"{row['name']} paid off (minimum payments only)",
+                    )
+                )
+        remaining = still
+        if len(milestones) >= 6:
+            break
+    if remaining:
+        milestones.append(
+            DebtPayoffMilestone(
+                month_index=month,
+                label=f"After month {month}",
+                focus_debt_name=None,
+                remaining_total_gbp=round(sum(item["balance"] for item in remaining), 2),
+                note="Balances remain — raise payments or add extras to finish sooner",
+            )
+        )
+    return milestones
+
+
 def scenario_for_extra(
     liabilities: list[FinanceLiability],
     extra_gbp: float,
+    *,
+    scope: str | None = None,
 ) -> DebtScenarioResult:
-    active = [
-        item
-        for item in _repayable(liabilities)
-        if item.balance_gbp > 0
-    ]
+    active = [item for item in _filter_scope(liabilities, scope) if item.balance_gbp > 0]
     if not active:
         return DebtScenarioResult(
             extra_gbp=extra_gbp,
             incomplete=True,
-            reason="No active debts to model.",
+            reason="No active debts to model in this scope.",
         )
-    known_apr = [
-        item
-        for item in active
-        if item.interest_rate_known and item.interest_rate_pct > 0
-    ]
-    if known_apr:
-        target = max(known_apr, key=lambda item: item.interest_rate_pct)
-        reason_suffix = "highest APR"
-    else:
-        target = max(active, key=lambda item: item.balance_gbp)
-        reason_suffix = "largest balance (APR unknown)"
-
-    if target.interest_rate_known and target.interest_rate_pct < 0:
+    ordered = _avalanche_order(active)
+    target = _focus_debt(ordered)
+    assert target is not None
+    if not _apr_known(target):
         return DebtScenarioResult(
             extra_gbp=extra_gbp,
             incomplete=True,
-            reason=f"APR is missing for {target.name}.",
+            reason=f"APR is missing for {target.name} — cannot model extras.",
         )
+    reason_suffix = (
+        "highest APR"
+        if _apr_known(target)
+        else "largest balance (APR unknown)"
+    )
 
     recorded_payment = target.minimum_payment_gbp + target.overpayment_gbp
     interest_only = monthly_interest_gbp(target.balance_gbp, target.interest_rate_pct)
     assumed_interest_only = False
     current_payment = recorded_payment
     if current_payment <= 0:
-        # £0 minimum is a real recorded value (e.g. Capital on Tap). Model the
-        # baseline as interest-only so What-if can still run when APR is known.
-        if not target.interest_rate_known or target.interest_rate_pct <= 0:
+        if not _apr_known(target):
             return DebtScenarioResult(
                 extra_gbp=extra_gbp,
                 incomplete=True,
@@ -226,7 +368,6 @@ def scenario_for_extra(
                 f"does not cover interest."
             ),
         )
-    # Interest-only baseline never amortises — that is expected for £0 min.
     if months_current is None and not assumed_interest_only:
         return DebtScenarioResult(
             extra_gbp=extra_gbp,
@@ -266,111 +407,156 @@ def scenario_for_extra(
     )
 
 
-def recommend_debt_strategy(liabilities: list[FinanceLiability]) -> DebtStrategyRecommendation:
-    active = [item for item in _repayable(liabilities) if item.balance_gbp > 0]
-    analysis = analyse_debts(liabilities)
+def recommend_debt_strategy(
+    liabilities: list[FinanceLiability],
+    *,
+    scope: str | None = None,
+) -> DebtStrategyRecommendation:
+    active = [item for item in _filter_scope(liabilities, scope) if item.balance_gbp > 0]
+    analysis = analyse_debts(active if scope not in {None, "", "all"} else liabilities)
+    if scope in {"personal", "business"}:
+        analysis = [row for row in analysis if row.scope == scope]
     extras = [0, 100, 250, 500]
-    scenarios = [scenario_for_extra(liabilities, extra) for extra in extras]
+    scenarios = [
+        scenario_for_extra(liabilities, extra, scope=scope) for extra in extras
+    ]
+    scope_label = {
+        "personal": "Personal",
+        "business": "Business",
+    }.get(scope or "all", "All")
+
     if not active:
         return DebtStrategyRecommendation(
             strategy="none",
-            headline="No active debts",
+            scope=scope or "all",
+            headline=f"{scope_label}: no active debts",
             message=(
-                "No credit cards, loans, or mortgages are recorded yet. "
-                "Log in to your bank to pull them in, or add one below."
+                f"No repayable {scope_label.lower()} debts are recorded yet. "
+                "Director's loan is not a debt to repay."
             ),
+            incomplete=False,
             debts=[],
+            payoff_order=[],
             analysis=analysis,
             scenarios=[],
         )
 
-    snowball = sorted(active, key=lambda debt: debt.balance_gbp)
-    avalanche = sorted(active, key=lambda debt: debt.interest_rate_pct, reverse=True)
-    chosen = avalanche
-    strategy = "avalanche"
+    ordered = _avalanche_order(active)
+    target = _focus_debt(ordered)
+    assert target is not None
+    incomplete_reason = _incomplete_reason(active)
+    incomplete = bool(incomplete_reason)
 
-    if snowball and avalanche and snowball[0].id != avalanche[0].id:
-        sb_months = _months_to_payoff(
-            snowball[0].balance_gbp,
-            snowball[0].interest_rate_pct,
-            snowball[0].minimum_payment_gbp + snowball[0].overpayment_gbp,
-        )
-        av_months = _months_to_payoff(
-            avalanche[0].balance_gbp,
-            avalanche[0].interest_rate_pct,
-            avalanche[0].minimum_payment_gbp + avalanche[0].overpayment_gbp,
-        )
-        if sb_months is not None and av_months is not None and sb_months < av_months:
-            chosen = snowball
-            strategy = "snowball"
-
-    target = chosen[0]
     payment = target.minimum_payment_gbp + target.overpayment_gbp
-    interest_only = monthly_interest_gbp(target.balance_gbp, target.interest_rate_pct)
+    interest_only = (
+        monthly_interest_gbp(target.balance_gbp, target.interest_rate_pct)
+        if _apr_known(target)
+        else 0.0
+    )
     assumed_interest_only = False
-    if payment <= 0 and target.interest_rate_known and target.interest_rate_pct > 0:
+    if payment <= 0 and _apr_known(target):
         payment = interest_only
         assumed_interest_only = True
-    months = _months_to_payoff(target.balance_gbp, target.interest_rate_pct, payment)
-    debt_free = _add_months(date.today(), months).isoformat() if months is not None else None
+    months = (
+        _months_to_payoff(target.balance_gbp, target.interest_rate_pct, payment)
+        if _apr_known(target)
+        else None
+    )
+    debt_free = (
+        _add_months(date.today(), months).isoformat()
+        if months is not None and not incomplete
+        else None
+    )
 
     debts: list[dict[str, Any]] = []
-    for item in active:
+    payoff_order = analyse_debts(ordered)
+    # Preserve avalanche order rather than re-sorting by score alone.
+    by_id = {row.id: row for row in payoff_order}
+    ordered_analysis: list[DebtAnalysisItem] = []
+    for item in ordered:
+        row = by_id.get(item.id)
+        if row is None:
+            continue
+        ordered_analysis.append(row)
         item_payment = item.minimum_payment_gbp + item.overpayment_gbp
-        if (
-            item_payment <= 0
-            and item.interest_rate_known
-            and item.interest_rate_pct > 0
-        ):
+        if item_payment <= 0 and _apr_known(item):
             item_payment = monthly_interest_gbp(item.balance_gbp, item.interest_rate_pct)
-        item_months = _months_to_payoff(
-            item.balance_gbp,
-            item.interest_rate_pct,
-            item_payment,
+        item_months = (
+            _months_to_payoff(item.balance_gbp, item.interest_rate_pct, item_payment)
+            if _apr_known(item)
+            else None
         )
         debts.append(
             {
                 "id": item.id,
                 "name": item.name,
+                "scope": _scope_value(item.scope),
+                "debt_type": _debt_type_value(item.debt_type),
                 "balance_gbp": item.balance_gbp,
                 "interest_rate_pct": item.interest_rate_pct,
+                "interest_rate_known": _apr_known(item),
                 "minimum_payment_gbp": item.minimum_payment_gbp,
                 "overpayment_gbp": item.overpayment_gbp,
                 "months_to_payoff": item_months,
-                "monthly_interest_gbp": monthly_interest_gbp(
-                    item.balance_gbp, item.interest_rate_pct
+                "monthly_interest_gbp": (
+                    monthly_interest_gbp(item.balance_gbp, item.interest_rate_pct)
+                    if _apr_known(item)
+                    else None
                 ),
-                "priority_label": next(
-                    (row.priority_label for row in analysis if row.id == item.id),
-                    "Medium",
-                ),
+                "priority_label": row.priority_label,
+                "order_reason": _order_reason(item, is_focus=item.id == target.id),
+                "is_mortgage": _debt_type_value(item.debt_type) == "mortgage",
+                "is_focus": item.id == target.id,
             }
         )
 
-    if strategy == "avalanche":
-        strategy_label = "Avalanche (highest interest first)"
-    else:
-        strategy_label = "Snowball (smallest balance first)"
+    strategy = "avalanche"
+    strategy_label = "Avalanche (highest interest first)"
     if debt_free:
-        date_clause = f"Estimated debt-free date for this debt: {debt_free}."
+        date_clause = f"Estimated focus payoff: {debt_free}."
+    elif incomplete:
+        date_clause = incomplete_reason
     elif assumed_interest_only:
         date_clause = (
             f"Minimum payment is £0.00 — modelled as interest-only "
             f"({format_gbp(interest_only)}/mo), so balance does not fall without extras."
         )
+    elif not _apr_known(target):
+        date_clause = f"APR unknown for {target.name} — no debt-free date invented."
     else:
         date_clause = "Current payment is too low to cover interest."
+
+    apr_bit = (
+        f"{target.interest_rate_pct:.1f}%"
+        if _apr_known(target)
+        else "APR unknown"
+    )
     return DebtStrategyRecommendation(
         strategy=strategy,
-        headline=f"Recommended: {strategy_label}",
+        scope=scope or "all",
+        headline=f"{scope_label}: {strategy_label}",
         message=(
             f"Focus extra payments on {target.name} "
-            f"({format_gbp(target.balance_gbp, decimals=0)} at "
-            f"{target.interest_rate_pct:.1f}%). "
+            f"({format_gbp(target.balance_gbp, decimals=0)} at {apr_bit}). "
             f"{date_clause}"
         ),
+        incomplete=incomplete,
+        incomplete_reason=incomplete_reason,
+        focus_debt_id=target.id,
+        focus_debt_name=target.name,
         debts=debts,
+        payoff_order=ordered_analysis,
+        milestones=_milestones(ordered),
         estimated_debt_free_date=debt_free,
         analysis=analysis,
         scenarios=scenarios,
+    )
+
+
+def recommend_dual_debt_strategies(
+    liabilities: list[FinanceLiability],
+) -> DualDebtStrategiesResponse:
+    return DualDebtStrategiesResponse(
+        personal=recommend_debt_strategy(liabilities, scope="personal"),
+        business=recommend_debt_strategy(liabilities, scope="business"),
     )

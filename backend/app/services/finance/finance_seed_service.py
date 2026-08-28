@@ -23,6 +23,8 @@ STATED_MORTGAGE_HALF_GBP = 82210.50
 STATED_MORTGAGE_JOINT_GBP = 164421.0
 STATED_MORTGAGE_NAME = "House mortgage"
 STATED_MORTGAGE_NOTES = "Confirmed half-share of £164,421 joint mortgage"
+# Leftover from the old placeholder seed — never treat as a real original.
+STALE_MORTGAGE_ORIGINAL_GBP = 175000.0
 _MORTGAGE_SETTING_KEY = "finance.stated_mortgage_half_gbp"
 
 # Confirmed joint house £700,000; Robert's half-share.
@@ -170,6 +172,12 @@ async def apply_stated_mortgage_half(
             row.name = STATED_MORTGAGE_NAME
         if not row.notes.strip() or "placeholder" in row.notes.lower():
             row.notes = STATED_MORTGAGE_NOTES
+        # Clear the stale £175k original leftover without inventing a new figure.
+        if (
+            row.original_balance_gbp is None
+            or abs(float(row.original_balance_gbp) - STALE_MORTGAGE_ORIGINAL_GBP) < 0.01
+        ):
+            row.original_balance_gbp = amount_gbp
         row.updated_at = now
     flag = await db.get(AppSettingRow, _MORTGAGE_SETTING_KEY)
     if flag is None:
@@ -194,6 +202,40 @@ async def ensure_stated_mortgage_half() -> FinanceLiabilityRow | None:
             "Recorded personal mortgage half %.2f GBP (joint %.0f)",
             row.balance_gbp,
             STATED_MORTGAGE_JOINT_GBP,
+        )
+        return row
+
+
+async def ensure_clear_stale_mortgage_original() -> FinanceLiabilityRow | None:
+    """Replace leftover £175k original_balance on the live mortgage without touching balance."""
+    if not is_live_finance_database():
+        return None
+    async with SessionLocal() as db:
+        rows = list(
+            (
+                await db.scalars(
+                    select(FinanceLiabilityRow).where(
+                        FinanceLiabilityRow.scope == "personal",
+                        FinanceLiabilityRow.debt_type == "mortgage",
+                        FinanceLiabilityRow.is_active.is_(True),
+                    )
+                )
+            ).all()
+        )
+        row = _pick_mortgage_row(rows)
+        if row is None or row.original_balance_gbp is None:
+            return None
+        if abs(float(row.original_balance_gbp) - STALE_MORTGAGE_ORIGINAL_GBP) >= 0.01:
+            return None
+        row.original_balance_gbp = STATED_MORTGAGE_HALF_GBP
+        if not row.notes.strip() or "placeholder" in row.notes.lower():
+            row.notes = STATED_MORTGAGE_NOTES
+        row.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(row)
+        logger.info(
+            "Cleared stale mortgage original_balance; left live balance at %.2f",
+            row.balance_gbp,
         )
         return row
 

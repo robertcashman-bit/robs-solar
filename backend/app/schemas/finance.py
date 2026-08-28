@@ -534,14 +534,34 @@ class DebtScenarioResult(BaseModel):
     reason: str = ""
 
 
+class DebtPayoffMilestone(BaseModel):
+    month_index: int
+    label: str
+    focus_debt_name: str | None = None
+    remaining_total_gbp: float
+    note: str = ""
+
+
 class DebtStrategyRecommendation(BaseModel):
     strategy: str
     headline: str
     message: str
+    scope: str = "all"
+    incomplete: bool = False
+    incomplete_reason: str = ""
+    focus_debt_id: int | None = None
+    focus_debt_name: str | None = None
     debts: list[dict[str, Any]] = Field(default_factory=list)
+    payoff_order: list[DebtAnalysisItem] = Field(default_factory=list)
+    milestones: list[DebtPayoffMilestone] = Field(default_factory=list)
     estimated_debt_free_date: str | None = None
     analysis: list[DebtAnalysisItem] = Field(default_factory=list)
     scenarios: list[DebtScenarioResult] = Field(default_factory=list)
+
+
+class DualDebtStrategiesResponse(BaseModel):
+    personal: DebtStrategyRecommendation
+    business: DebtStrategyRecommendation
 
 
 class CashflowForecastEntryUpdate(BaseModel):
@@ -580,6 +600,16 @@ class PeriodFlowSummary(BaseModel):
     coverage_note: str = ""
 
 
+class FinanceDataGaps(BaseModel):
+    unknown_apr_count: int = 0
+    unknown_apr_names: list[str] = Field(default_factory=list)
+    missing_credit_limit_count: int = 0
+    missing_credit_limit_names: list[str] = Field(default_factory=list)
+    monthly_interest_incomplete: bool = False
+    income_looks_thin: bool = False
+    income_thin_note: str = ""
+
+
 class FinanceOverviewResponse(BaseModel):
 
     personal_bank_balance_gbp: float
@@ -595,6 +625,7 @@ class FinanceOverviewResponse(BaseModel):
     corp_tax_reserve_warning: bool
     credit_card_balances_gbp: float
     personal_credit_card_balances_gbp: float = 0.0
+    business_credit_card_balances_gbp: float = 0.0
     loan_balances_gbp: float
     personal_loan_balances_gbp: float = 0.0
     mortgage_balance_gbp: float
@@ -648,6 +679,7 @@ class FinanceOverviewResponse(BaseModel):
     business_long_term_debt_gbp: float = 0.0
     personal_period_flow: PeriodFlowSummary | None = None
     business_period_flow: PeriodFlowSummary | None = None
+    data_gaps: FinanceDataGaps = Field(default_factory=FinanceDataGaps)
 
 
 class CashflowScopeColumn(BaseModel):
@@ -666,6 +698,57 @@ class CashflowForecastResponse(BaseModel):
     cash_pressure_warning: bool
     warning_message: str = ""
     columns: list[CashflowScopeColumn] = Field(default_factory=list)
+
+
+class CashflowPlanIssue(BaseModel):
+    severity: str
+    kind: str
+    message: str
+
+
+class CashflowPlanMonth(BaseModel):
+    month: str
+    label: str
+    opening_gbp: float
+    income_gbp: float
+    spending_gbp: float
+    debt_payments_gbp: float
+    closing_gbp: float
+    overdraft_limit_gbp: float
+    headroom_gbp: float
+    breaches_overdraft: bool
+    notes: list[str] = Field(default_factory=list)
+
+
+class ScopedCashflowPlan(BaseModel):
+    scope: str
+    starting_bank_gbp: float
+    overdraft_limit_gbp: float
+    overdraft_drawn_gbp: float
+    headroom_gbp: float
+    live_breach: bool
+    incomplete: bool = False
+    incomplete_reason: str = ""
+    months: list[CashflowPlanMonth] = Field(default_factory=list)
+    issues: list[CashflowPlanIssue] = Field(default_factory=list)
+    card_warnings: list[str] = Field(default_factory=list)
+
+
+class DualCashflowPlansResponse(BaseModel):
+    personal: ScopedCashflowPlan
+    business: ScopedCashflowPlan
+    personal_overdraft_limit_gbp: float
+    business_overdraft_limit_gbp: float
+
+
+class OverdraftLimitsResponse(BaseModel):
+    personal_overdraft_limit_gbp: float
+    business_overdraft_limit_gbp: float
+
+
+class OverdraftLimitsUpdate(BaseModel):
+    personal_overdraft_limit_gbp: float | None = Field(default=None, ge=0)
+    business_overdraft_limit_gbp: float | None = Field(default=None, ge=0)
 
 
 class FinanceReportsResponse(BaseModel):

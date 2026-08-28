@@ -21,6 +21,7 @@ from app.services.finance.finance_accounts_service import finance_accounts_servi
 from app.services.finance.finance_calc import (
     MonthlyFlow,
     accounts_from_schema,
+    build_finance_data_gaps,
     business_snapshot_view,
     company_position,
     compute_totals,
@@ -241,7 +242,11 @@ class FinanceOverviewService:
         personal_bank = round(totals.personal_cash_gbp - totals.personal_overdraft_gbp, 2)
         business_bank = round(totals.business_cash_gbp - totals.business_overdraft_gbp, 2)
         external = external_debt_gbp(
-            totals.personal_debt_gbp, totals.business_debt_gbp, totals.directors_loan_gbp
+            totals.personal_debt_gbp,
+            totals.business_debt_gbp,
+            totals.directors_loan_gbp,
+            personal_overdraft=totals.personal_overdraft_gbp,
+            business_overdraft=totals.business_overdraft_gbp,
         )
         interest_gbp, interest_incomplete = monthly_interest_from_debts(liability_views)
 
@@ -258,6 +263,15 @@ class FinanceOverviewService:
             resolved_bills_gbp=bills,
         )
 
+        data_gaps = build_finance_data_gaps(
+            liability_views,
+            monthly_income_gbp=income,
+            monthly_spending_gbp=spending,
+            monthly_flow_source=flow_source,
+            budget_income_gbp=budget_income if budget_income > 0 else None,
+            monthly_interest_incomplete=interest_incomplete,
+        )
+
         overview = FinanceOverviewResponse(
             personal_bank_balance_gbp=personal_bank,
             business_bank_balance_gbp=business_bank,
@@ -272,6 +286,7 @@ class FinanceOverviewService:
             corp_tax_reserve_warning=totals.corp_tax_reserve_warning,
             credit_card_balances_gbp=totals.credit_card_gbp,
             personal_credit_card_balances_gbp=totals.personal_credit_card_gbp,
+            business_credit_card_balances_gbp=totals.business_credit_card_gbp,
             loan_balances_gbp=totals.loan_gbp,
             personal_loan_balances_gbp=totals.personal_loan_gbp,
             mortgage_balance_gbp=totals.mortgage_gbp,
@@ -399,6 +414,7 @@ class FinanceOverviewService:
                 ),
                 2,
             ),
+            data_gaps=data_gaps,
         )
         # Always regenerate from the same totals the tiles use — never attach
         # yesterday's overdraft/VAT wording to today's figures.

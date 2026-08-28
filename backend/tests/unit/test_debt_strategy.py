@@ -132,7 +132,7 @@ def test_recommend_strategy_uses_pound_sign_not_gbp_word() -> None:
     assert "£" in result.message
 
 
-def test_scenario_uses_largest_balance_when_apr_unknown() -> None:
+def test_scenario_incomplete_when_all_apr_unknown() -> None:
     result = scenario_for_extra(
         [
             _debt(1, "Small unknown", 400, 0, 20, interest_rate_known=False),
@@ -140,9 +140,9 @@ def test_scenario_uses_largest_balance_when_apr_unknown() -> None:
         ],
         100,
     )
-    assert result.incomplete is False
+    assert result.incomplete is True
+    assert "APR is missing" in result.reason
     assert "Large unknown" in result.reason
-    assert "largest balance" in result.reason
 
 
 def test_scenario_prefers_known_apr_over_larger_unknown_balance() -> None:
@@ -169,7 +169,7 @@ def test_recommend_strategy_includes_analysis() -> None:
 def test_no_debts_recommendation() -> None:
     result = recommend_debt_strategy([])
     assert result.strategy == "none"
-    assert result.headline == "No active debts"
+    assert "no active debts" in result.headline.lower()
 
 
 def test_only_directors_loan_counts_as_no_repayable_debt() -> None:
@@ -199,3 +199,60 @@ def test_avalanche_picks_high_interest() -> None:
     result = recommend_debt_strategy(debts)
     assert result.strategy == "avalanche"
     assert "High" in result.message
+
+
+def test_personal_and_business_strategies_are_separate() -> None:
+    from app.services.finance.debt_strategy_service import recommend_dual_debt_strategies
+
+    debts = [
+        _debt(1, "MBNA", 1000, 0, 30, interest_rate_known=False),
+        _debt(2, "Virgin", 500, 19.9, 25),
+        _debt(
+            3,
+            "Capital on Tap",
+            9500,
+            36,
+            0,
+            scope=FinanceScope.BUSINESS,
+            debt_type=DebtType.CREDIT_CARD,
+        ),
+        _debt(
+            4,
+            "House mortgage",
+            82210.5,
+            0,
+            500,
+            debt_type=DebtType.MORTGAGE,
+            interest_rate_known=False,
+        ),
+    ]
+    dual = recommend_dual_debt_strategies(debts)
+    assert dual.personal.focus_debt_name == "Virgin"
+    assert dual.personal.incomplete is True
+    assert "MBNA" in dual.personal.incomplete_reason or "mortgage" in dual.personal.incomplete_reason.lower()
+    assert dual.business.focus_debt_name == "Capital on Tap"
+    assert dual.business.incomplete is False
+    assert all(row.scope == "personal" for row in dual.personal.payoff_order)
+    assert all(row.scope == "business" for row in dual.business.payoff_order)
+    mortgage = next(row for row in dual.personal.debts if row["debt_type"] == "mortgage")
+    assert mortgage["is_mortgage"] is True
+    assert "half-share" in mortgage["order_reason"]
+
+
+def test_scoped_scenarios_do_not_cross_stacks() -> None:
+    debts = [
+        _debt(1, "Personal card", 1000, 22, 40),
+        _debt(
+            2,
+            "Capital on Tap",
+            9500,
+            36,
+            0,
+            scope=FinanceScope.BUSINESS,
+            debt_type=DebtType.CREDIT_CARD,
+        ),
+    ]
+    personal = scenario_for_extra(debts, 100, scope="personal")
+    business = scenario_for_extra(debts, 100, scope="business")
+    assert "Personal card" in personal.reason
+    assert "Capital on Tap" in business.reason

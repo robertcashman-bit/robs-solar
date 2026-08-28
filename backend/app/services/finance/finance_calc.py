@@ -134,6 +134,7 @@ class FinanceTotals:
     corp_tax_reserve_warning: bool
     debt_reduction_gbp: float
     personal_credit_card_gbp: float = 0.0
+    business_credit_card_gbp: float = 0.0
     personal_loan_gbp: float = 0.0
     formula: str = (
         "net_worth = (positive current + pension + property + other assets + debtors) "
@@ -402,6 +403,12 @@ def compute_totals(
         {"credit_card"},
         {"credit_card"},
     )
+    business_credit_cards = _typed_debt(
+        [debt for debt in debts if debt.scope == "business"],
+        [account for account in unlinked if account.scope == "business"],
+        {"credit_card"},
+        {"credit_card"},
+    )
     # Personal loans only — never mix into the business loans tile.
     personal_loans = _typed_debt(
         [debt for debt in debts if debt.scope == "personal"],
@@ -481,6 +488,7 @@ def compute_totals(
         business_debt_gbp=business_debt,
         credit_card_gbp=credit_cards,
         personal_credit_card_gbp=personal_credit_cards,
+        business_credit_card_gbp=business_credit_cards,
         loan_gbp=business_loans,
         personal_loan_gbp=personal_loans,
         mortgage_gbp=mortgage,
@@ -534,7 +542,10 @@ def liabilities_from_schema(liabilities: Iterable[object]) -> list[LiabilityView
                 minimum_payment_gbp=float(getattr(item, "minimum_payment_gbp")),
                 overpayment_gbp=float(getattr(item, "overpayment_gbp", 0.0) or 0.0),
                 account_id=_optional_int(getattr(item, "account_id", None)),
-                original_balance_gbp=_optional_float(getattr(item, "original_balance_gbp", None)),
+                original_balance_gbp=sanitize_mortgage_original_balance(
+                    _enum_value(getattr(item, "debt_type")),
+                    _optional_float(getattr(item, "original_balance_gbp", None)),
+                ),
                 payment_day=_optional_int(getattr(item, "payment_day", None)),
                 dla_direction=_optional_str(getattr(item, "dla_direction", None)),
                 interest_rate_known=(
@@ -747,10 +758,100 @@ def external_debt_gbp(
     personal_debt: float,
     business_debt: float,
     directors_loan: float = 0.0,
+    *,
+    personal_overdraft: float = 0.0,
+    business_overdraft: float = 0.0,
 ) -> float:
-    """Third-party debt. Personal/business totals already exclude director's loan."""
+    """Third-party debt owed (register + overdrafts). Excludes director's loan.
+
+    Overdrafts are included so the combined figure matches the personal and
+    business debt stacks a reader sees on Overview (bank tiles stay net).
+    """
     del directors_loan
-    return round(max(personal_debt + business_debt, 0.0), 2)
+    return round(
+        max(
+            personal_debt + business_debt + personal_overdraft + business_overdraft,
+            0.0,
+        ),
+        2,
+    )
+
+
+def sanitize_mortgage_original_balance(
+    debt_type: str,
+    original_balance_gbp: float | None,
+) -> float | None:
+    """Never present the stale £175k mortgage placeholder as a real original."""
+    # Confirmed half-share of £164,421 joint — keep in sync with finance_seed_service.
+    stale_original = 175000.0
+    confirmed_half = 82210.50
+    if debt_type != "mortgage" or original_balance_gbp is None:
+        return original_balance_gbp
+    if abs(float(original_balance_gbp) - stale_original) < 0.01:
+        return confirmed_half
+    return original_balance_gbp
+
+
+def build_finance_data_gaps(
+    liabilities: Iterable[LiabilityView],
+    *,
+    monthly_income_gbp: float,
+    monthly_spending_gbp: float,
+    monthly_flow_source: str,
+    budget_income_gbp: float | None,
+    monthly_interest_incomplete: bool,
+) -> dict[str, object]:
+    """Call out missing APR / limits / incomplete interest / thin income."""
+    unknown_apr_names: list[str] = []
+    missing_limit_names: list[str] = []
+    for debt in _active_debts(liabilities):
+        if not is_repayable_debt(debt):
+            continue
+        if not debt.interest_rate_known:
+            unknown_apr_names.append(debt.name)
+        if debt.debt_type in {"credit_card", "business_loan"} and (
+            debt.credit_limit_gbp is None or debt.credit_limit_gbp <= 0
+        ):
+            missing_limit_names.append(debt.name)
+
+    income_looks_thin = False
+    income_thin_note = ""
+    income = float(monthly_income_gbp or 0.0)
+    spending = float(monthly_spending_gbp or 0.0)
+    budget_income = float(budget_income_gbp or 0.0)
+    if income > 0:
+        if budget_income >= 1500 and income < budget_income * 0.4:
+            income_looks_thin = True
+            income_thin_note = (
+                f"Recorded month income {income:.0f} looks low vs typical budget "
+                f"income {budget_income:.0f} — check transfers / period coverage."
+            )
+        elif (
+            monthly_flow_source == "open_banking"
+            and spending > 0
+            and income < spending * 0.35
+        ):
+            income_looks_thin = True
+            income_thin_note = (
+                "Open Banking month income looks thin vs spending — salary may "
+                "not have posted in this window yet."
+            )
+        elif income < 500 and spending >= 1500:
+            income_looks_thin = True
+            income_thin_note = (
+                "Month income looks implausibly low against spending — verify "
+                "the income source before trusting surplus."
+            )
+
+    return {
+        "unknown_apr_count": len(unknown_apr_names),
+        "unknown_apr_names": unknown_apr_names,
+        "missing_credit_limit_count": len(missing_limit_names),
+        "missing_credit_limit_names": missing_limit_names,
+        "monthly_interest_incomplete": bool(monthly_interest_incomplete),
+        "income_looks_thin": income_looks_thin,
+        "income_thin_note": income_thin_note,
+    }
 
 
 def monthly_interest_from_debts(

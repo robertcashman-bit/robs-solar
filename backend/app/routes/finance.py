@@ -48,6 +48,9 @@ from app.schemas.finance import (
     CashflowForecastEntryUpdate,
     CashflowForecastResponse,
     DebtScenarioResult,
+    DualCashflowPlansResponse,
+    DualDebtStrategiesResponse,
+    DebtStrategyRecommendation,
     FinanceAccount,
     FinanceAccountCreate,
     FinanceAccountUpdate,
@@ -68,6 +71,8 @@ from app.schemas.finance import (
     MonthlyBudgetLine,
     MonthlyBudgetLineCreate,
     MonthlyBudgetLineUpdate,
+    OverdraftLimitsResponse,
+    OverdraftLimitsUpdate,
     PersonalFinanceSnapshot,
     PersonalFinanceSnapshotCreate,
     QuickFileBudgetAccountsUpdate,
@@ -82,7 +87,16 @@ from app.schemas.finance import (
     TrueLayerConfigStatus,
     TrueLayerSyncResult,
 )
-from app.services.finance.debt_strategy_service import recommend_debt_strategy, scenario_for_extra
+from app.services.finance.cashflow_plan_service import (
+    cashflow_plan_service,
+    get_overdraft_limits,
+    set_overdraft_limits,
+)
+from app.services.finance.debt_strategy_service import (
+    recommend_debt_strategy,
+    recommend_dual_debt_strategies,
+    scenario_for_extra,
+)
 from app.services.finance.finance_accounts_service import finance_accounts_service
 from app.services.finance.finance_budget_plan_service import finance_budget_plan_service
 from app.services.finance.finance_budget_service import finance_budget_service
@@ -264,21 +278,43 @@ async def delete_liability(
         raise HTTPException(status_code=404, detail="Liability not found")
 
 
-@router.get("/debts/strategy")
+@router.get("/debts/strategy", response_model=DualDebtStrategiesResponse)
 async def get_debt_strategy(
+    scope: str | None = Query(default=None, pattern="^(personal|business)$"),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ):
     liabilities = await finance_liabilities_service.list_liabilities(
         db, sync_accounts=False
     )
-    return recommend_debt_strategy(liabilities)
+    dual = recommend_dual_debt_strategies(liabilities)
+    if scope == "personal":
+        # Keep response shape stable for scoped callers via dual envelope.
+        return DualDebtStrategiesResponse(personal=dual.personal, business=dual.business)
+    if scope == "business":
+        return DualDebtStrategiesResponse(personal=dual.personal, business=dual.business)
+    return dual
+
+
+@router.get("/debts/strategy/{scope}", response_model=DebtStrategyRecommendation)
+async def get_scoped_debt_strategy(
+    scope: str,
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> DebtStrategyRecommendation:
+    if scope not in {"personal", "business"}:
+        raise HTTPException(status_code=404, detail="Unknown strategy scope")
+    liabilities = await finance_liabilities_service.list_liabilities(
+        db, sync_accounts=False
+    )
+    return recommend_debt_strategy(liabilities, scope=scope)
 
 
 @router.get("/debts/scenarios", response_model=list[DebtScenarioResult])
 async def get_debt_scenarios(
     extra: float = Query(default=0, ge=0),
     extras: str | None = Query(default=None),
+    scope: str | None = Query(default=None, pattern="^(personal|business)$"),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> list[DebtScenarioResult]:
@@ -297,7 +333,9 @@ async def get_debt_scenarios(
             amounts = parsed
     if extra and extra not in amounts:
         amounts.append(extra)
-    return [scenario_for_extra(liabilities, amount) for amount in amounts]
+    return [
+        scenario_for_extra(liabilities, amount, scope=scope) for amount in amounts
+    ]
 
 
 @router.get("/snapshots/personal", response_model=list[PersonalFinanceSnapshot])
@@ -617,6 +655,39 @@ async def get_cashflow(
 ) -> CashflowForecastResponse:
     return await finance_cashflow_service.build_forecast(
         db, horizon_days=horizon, scope=scope
+    )
+
+
+@router.get("/cashflow/plans", response_model=DualCashflowPlansResponse)
+async def get_cashflow_plans(
+    months: int = Query(default=3, ge=2, le=6),
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> DualCashflowPlansResponse:
+    return await cashflow_plan_service.build_plans(db, months=months)
+
+
+@router.get("/cashflow/overdraft-limits", response_model=OverdraftLimitsResponse)
+async def read_overdraft_limits(
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> OverdraftLimitsResponse:
+    return await get_overdraft_limits(db)
+
+
+@router.put("/cashflow/overdraft-limits", response_model=OverdraftLimitsResponse)
+async def update_overdraft_limits(
+    request: Request,
+    body: OverdraftLimitsUpdate,
+    session: SessionData = Depends(require_admin_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> OverdraftLimitsResponse:
+    del session
+    await enforce_write_rate_limit(request)
+    return await set_overdraft_limits(
+        db,
+        personal_overdraft_limit_gbp=body.personal_overdraft_limit_gbp,
+        business_overdraft_limit_gbp=body.business_overdraft_limit_gbp,
     )
 
 

@@ -28,6 +28,8 @@ ACCOUNT_DEBT_TYPES = {
 
 
 def _to_schema(row: FinanceLiabilityRow) -> FinanceLiability:
+    from app.services.finance.finance_calc import sanitize_mortgage_original_balance
+
     return FinanceLiability(
         id=row.id,
         scope=FinanceScope(row.scope),
@@ -37,7 +39,9 @@ def _to_schema(row: FinanceLiabilityRow) -> FinanceLiability:
         interest_rate_pct=row.interest_rate_pct,
         minimum_payment_gbp=row.minimum_payment_gbp,
         overpayment_gbp=row.overpayment_gbp,
-        original_balance_gbp=row.original_balance_gbp,
+        original_balance_gbp=sanitize_mortgage_original_balance(
+            row.debt_type, row.original_balance_gbp
+        ),
         payment_day=row.payment_day,
         account_id=row.account_id,
         notes=row.notes,
