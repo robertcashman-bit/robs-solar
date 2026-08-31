@@ -229,7 +229,8 @@ def test_personal_and_business_strategies_are_separate() -> None:
     dual = recommend_dual_debt_strategies(debts)
     assert dual.personal.focus_debt_name == "Virgin"
     assert dual.personal.incomplete is True
-    assert "MBNA" in dual.personal.incomplete_reason or "mortgage" in dual.personal.incomplete_reason.lower()
+    reason = dual.personal.incomplete_reason or ""
+    assert "MBNA" in reason or "mortgage" in reason.lower()
     assert dual.business.focus_debt_name == "Capital on Tap"
     assert dual.business.incomplete is False
     assert all(row.scope == "personal" for row in dual.personal.payoff_order)

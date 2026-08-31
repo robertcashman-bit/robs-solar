@@ -129,7 +129,13 @@ async def test_credit_card_account_appears_on_debts(
     assert match["account_id"] == card.json()["id"]
     strategy = await client.get("/finance/debts/strategy")
     assert strategy.status_code == 200
-    assert strategy.json()["strategy"] != "none"
+    body = strategy.json()
+    assert "personal" in body and "business" in body
+    assert body["personal"]["strategy"] != "none"
+    names = [d["name"] for d in body["personal"].get("debts", [])] + [
+        d["name"] for d in body["personal"].get("payoff_order", [])
+    ]
+    assert "MBNA card" in names
     await client.delete(f"/finance/accounts/{card.json()['id']}", headers={"X-CSRF-Token": csrf})
     leftover = await client.get("/finance/liabilities")
     assert not any(item["name"] == "MBNA card" for item in leftover.json())

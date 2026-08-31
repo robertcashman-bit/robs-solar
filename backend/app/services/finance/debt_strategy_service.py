@@ -7,8 +7,9 @@ are never invented.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date
-from typing import Any, Iterable
+from typing import Any
 
 from app.schemas.finance import (
     DebtAnalysisItem,

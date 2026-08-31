@@ -13,7 +13,6 @@ from app.schemas.finance import (
     CashflowPlanIssue,
     CashflowPlanMonth,
     DualCashflowPlansResponse,
-    FinanceScope,
     OverdraftLimitsResponse,
     ScopedCashflowPlan,
 )

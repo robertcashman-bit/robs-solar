@@ -136,18 +136,21 @@ describe("BusinessFinancePage", () => {
     // Net bank = £0.11 − £1,948.60, not positive pots only.
     expect(tile("Business bank").getByText("-£1,948.49")).toBeInTheDocument();
     expect(
-      tile("Business bank").getByText(/net of overdraft.*same as Overview/i),
+      tile("Business bank").getByText(/net of overdraft.*also in business debt stack/i),
     ).toBeInTheDocument();
-    expect(screen.getByText("Of which business overdraft")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Business debt stack" })).toBeInTheDocument();
+    expect(screen.getByText("Business overdraft")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Debt reduction plan" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cashflow plan" })).toBeInTheDocument();
     expect(tile("Business turnover (month)").getByText("—")).toBeInTheDocument();
     expect(screen.queryByText("£9,999.00")).not.toBeInTheDocument();
     expect(screen.queryByText("£2,956.27")).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("Turnover")).toHaveValue("");
-    expect(screen.queryByText(/house/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/mortgage/i)).not.toBeInTheDocument();
+    // Business page must not list personal house/mortgage as company debt rows.
+    expect(screen.queryByText("House mortgage")).not.toBeInTheDocument();
+    expect(screen.queryByText("Of which house mortgage")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Turnover, spend & profit" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Position" })).toBeInTheDocument();
-    expect(screen.getByText("Business debts")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "This month to date" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "This month to date" })).toHaveAttribute(
       "aria-pressed",
