@@ -713,12 +713,18 @@ class FinanceOverviewService:
             return None
         bs = reports.balance_sheet
         liability_lines: list[dict[str, float | str]] = []
+        asset_lines: list[dict[str, float | str]] = []
         for section in bs.sections or []:
             key = str(getattr(section, "key", "") or "")
-            if key not in {"CurrentLiabilities", "LongTermLiabilities"}:
+            target: list[dict[str, float | str]] | None = None
+            if key in {"CurrentLiabilities", "LongTermLiabilities"}:
+                target = liability_lines
+            elif key in {"CurrentAssets", "FixedAssets"}:
+                target = asset_lines
+            if target is None:
                 continue
             for line in getattr(section, "lines", None) or []:
-                liability_lines.append(
+                target.append(
                     {
                         "nominal_code": str(getattr(line, "nominal_code", None) or ""),
                         "label": str(getattr(line, "label", None) or ""),
@@ -732,6 +738,7 @@ class FinanceOverviewService:
             "long_term_liabilities_gbp": float(bs.long_term_liabilities_gbp or 0.0),
             "capital_and_reserves_gbp": float(bs.capital_and_reserves_gbp),
             "liability_lines": liability_lines,
+            "asset_lines": asset_lines,
         }
 
     async def _sync_stamp(self, db: AsyncSession, source: str) -> str | None:

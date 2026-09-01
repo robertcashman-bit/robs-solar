@@ -789,14 +789,15 @@ _VEHICLE_DEBT_TOKENS = (
     "7090442480",
 )
 _VEHICLE_ASSET_TOKENS = ("tesla", "vehicle", "car", "model 3", "model y")
-# QuickFile nominals / labels that are the same HP as the Tesla register line.
-_QF_HP_NOMINALS = frozenset({"50", "2300"})
+# QuickFile HP Finance only (0050 / 50) — remaining capital for Tesla.
+# 2300 Loans is a current-asset debit on Defence Legal, NOT the HP tail.
+_QF_HP_NOMINALS = frozenset({"50"})
 _QF_HP_LABEL_TOKENS = (
     "hp finance",
     "hire purchase",
     "hire-purchase",
-    "tesla",
 )
+_QF_LOANS_ASSET_NOMINALS = frozenset({"2300"})
 # Leftovers small enough to hide behind More (not real debts).
 _MORE_LEFTOVER_GBP = 3000.0
 
@@ -811,32 +812,50 @@ def _normalize_nominal(code: str | None) -> str:
     return digits.lstrip("0") or (digits if digits else "")
 
 
-def _is_qf_hp_or_vehicle_loan_line(line: dict) -> bool:
-    """True for QuickFile HP Finance / Loans lines that map onto named Tesla HP."""
+def _is_qf_hp_finance_line(line: dict) -> bool:
+    """True for QuickFile HP Finance (50) — Tesla remaining capital."""
     code = _normalize_nominal(str(line.get("nominal_code") or ""))
     if code in _QF_HP_NOMINALS:
         return True
     label = str(line.get("label") or "").strip().lower()
-    if not label:
-        return False
-    if _text_has_token(label, _QF_HP_LABEL_TOKENS):
+    return bool(label) and _text_has_token(label, _QF_HP_LABEL_TOKENS)
+
+
+def _is_qf_loans_asset_line(line: dict) -> bool:
+    """True for QuickFile 2300 Loans when it is a current-asset debit."""
+    code = _normalize_nominal(str(line.get("nominal_code") or ""))
+    if code in _QF_LOANS_ASSET_NOMINALS:
         return True
-    # Bare "Loans" / "Bank loan" on 2300-style long-term chart — same HP tail.
-    if label in {"loans", "loan", "bank loan", "bank loans"}:
-        return True
-    return False
+    label = str(line.get("label") or "").strip().lower()
+    return label in {"loans", "loan", "bank loan", "bank loans"}
+
+
+def _qf_hp_finance_gbp(liability_lines: list[dict]) -> float:
+    total = 0.0
+    for line in liability_lines:
+        if _is_qf_hp_finance_line(line):
+            total += abs(float(line.get("amount_gbp") or 0))
+    return round(total, 2)
+
+
+def _qf_loans_asset_gbp(asset_lines: list[dict]) -> float:
+    total = 0.0
+    for line in asset_lines:
+        if _is_qf_loans_asset_line(line):
+            total += abs(float(line.get("amount_gbp") or 0))
+    return round(total, 2)
+
+
+def _is_qf_hp_or_vehicle_loan_line(line: dict) -> bool:
+    """Back-compat alias: HP Finance only (never 2300)."""
+    return _is_qf_hp_finance_line(line)
 
 
 def _qf_hp_absorbed_gbp(liability_lines: list[dict], *, vehicle_hp_total: float) -> float:
-    """QF HP/loan nominals already represented by the named Tesla register line."""
-    if vehicle_hp_total <= 0:
+    """QF HP Finance already represented by the named Tesla line."""
+    if vehicle_hp_total <= 0 and _qf_hp_finance_gbp(liability_lines) <= 0:
         return 0.0
-    absorbed = 0.0
-    for line in liability_lines:
-        if not _is_qf_hp_or_vehicle_loan_line(line):
-            continue
-        absorbed += abs(float(line.get("amount_gbp") or 0))
-    return round(absorbed, 2)
+    return _qf_hp_finance_gbp(liability_lines)
 
 
 def _is_vehicle_hp_debt(debt: LiabilityView) -> bool:
@@ -1060,9 +1079,24 @@ def build_overview_side_breakdowns(
     long_liab = float(bs.get("long_term_liabilities_gbp") or 0.0)
     capital = bs.get("capital_and_reserves_gbp")
     bs_present = capital is not None
+    liability_lines = [
+        line
+        for line in list(bs.get("liability_lines") or [])
+        if abs(float(line.get("amount_gbp") or 0)) > 0.005
+    ]
+    asset_lines = [
+        line
+        for line in list(bs.get("asset_lines") or [])
+        if abs(float(line.get("amount_gbp") or 0)) > 0.005
+    ]
 
     vehicle_debts = [d for d in debt_list if _is_vehicle_hp_debt(d) and d.balance_gbp > 0]
-    vehicle_hp_total = round(sum(d.balance_gbp for d in vehicle_debts), 2)
+    register_vehicle_hp = round(sum(d.balance_gbp for d in vehicle_debts), 2)
+    # Prefer live QuickFile HP Finance (50) remaining capital over a stale register.
+    qf_hp_finance = _qf_hp_finance_gbp(liability_lines)
+    tesla_hp_gbp = qf_hp_finance if qf_hp_finance > 0 else register_vehicle_hp
+    vehicle_hp_total = tesla_hp_gbp
+    qf_loans_asset = _qf_loans_asset_gbp(asset_lines)
 
     business_owned: list[OverviewLine] = [
         OverviewLine("business_bank", "Bank", business_cash, "asset", "primary"),
@@ -1088,7 +1122,7 @@ def build_overview_side_breakdowns(
                 "From the Defence Legal balance sheet",
             )
         )
-    elif vehicle_debts:
+    elif vehicle_debts or tesla_hp_gbp > 0:
         business_owned.append(
             OverviewLine(
                 "car_gap",
@@ -1116,6 +1150,17 @@ def build_overview_side_breakdowns(
                     "primary",
                 )
             )
+    if qf_loans_asset > 0:
+        business_owned.append(
+            OverviewLine(
+                "qf_loans_asset",
+                "Loans outstanding",
+                qf_loans_asset,
+                "asset",
+                "primary",
+                "QuickFile 2300 — money outstanding, not car finance",
+            )
+        )
     if totals.vat_reserve_gbp != 0:
         business_owned.append(
             OverviewLine(
@@ -1155,6 +1200,7 @@ def build_overview_side_breakdowns(
         listed_current = round(
             business_cash
             + totals.debtors_gbp
+            + qf_loans_asset
             + (
                 totals.vat_reserve_gbp
                 if any(line.key == "vat_pot" for line in business_owned)
@@ -1202,17 +1248,24 @@ def build_overview_side_breakdowns(
                 "primary",
             )
         )
-    for debt in vehicle_debts:
+    if tesla_hp_gbp > 0:
         business_owed.append(
             OverviewLine(
-                f"vehicle_hp_{debt.id}",
-                _plain_debt_label(debt),
-                debt.balance_gbp,
+                "vehicle_hp_qf" if qf_hp_finance > 0 else f"vehicle_hp_{vehicle_debts[0].id}",
+                "Tesla still to pay",
+                tesla_hp_gbp,
                 "debt",
                 "primary",
+                "QuickFile HP Finance remaining capital"
+                if qf_hp_finance > 0
+                else "",
             )
         )
-    other_business_loans = round(max(totals.loan_gbp - vehicle_hp_total, 0.0), 2)
+    # Non-Tesla loans from the register only (never invent instalment totals).
+    other_business_loans = round(
+        max(totals.loan_gbp - register_vehicle_hp, 0.0),
+        2,
+    )
     if other_business_loans > 0:
         business_owed.append(
             OverviewLine(
@@ -1269,20 +1322,21 @@ def build_overview_side_breakdowns(
         )
 
     if bs_present:
-        # Prefer BS liability totals so own − owe tracks Capital and reserves.
-        liability_lines = [
-            line
-            for line in list(bs.get("liability_lines") or [])
-            if abs(float(line.get("amount_gbp") or 0)) > 0.005
-        ]
-        if liability_lines and vehicle_hp_total > 0:
-            # Name Tesla once from the register (remaining capital). QF HP Finance
-            # (50) and Loans (2300) are the same car — do not dump them into a plug.
+        if liability_lines:
+            # Name Tesla from QF HP Finance (50). Leave VAT/PAYE/etc. as one plug.
+            # Never put 2300 here — that is an asset (Loans outstanding).
             unnamed_qf = round(
                 sum(
                     abs(float(line.get("amount_gbp") or 0))
                     for line in liability_lines
-                    if not _is_qf_hp_or_vehicle_loan_line(line)
+                    if not _is_qf_hp_finance_line(line)
+                )
+                - (
+                    totals.business_overdraft_gbp
+                    + totals.business_credit_card_gbp
+                    + other_business_loans
+                    + (totals.creditors_gbp if totals.creditors_gbp > 0 else 0.0)
+                    + (company_owes_director if company_owes_director > 0 else 0.0)
                 ),
                 2,
             )

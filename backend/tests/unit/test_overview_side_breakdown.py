@@ -127,8 +127,11 @@ def test_business_tesla_hp_is_primary_and_whats_left_uses_capital() -> None:
 
 
 def test_business_qf_hp_loans_map_to_tesla_one_plug_only() -> None:
-    """HP Finance (50) + Loans (2300) must not double the Tesla remaining capital."""
-    accounts = [AccountView(1, "business", "current", "Lloyds business", -6290.0)]
+    """Live 01/09/2026 shape: Tesla from 0050; 2300 is an OWN-side asset, not HP."""
+    accounts = [
+        AccountView(1, "business", "current", "Lloyds business", -3448.22),
+    ]
+    # Stale register remaining capital — must lose to live QF HP Finance.
     debts = [
         LiabilityView(
             1,
@@ -139,46 +142,101 @@ def test_business_qf_hp_loans_map_to_tesla_one_plug_only() -> None:
             0.0,
             766.0,
         ),
+        LiabilityView(
+            2,
+            "business",
+            "Capital on Tap",
+            "loan",
+            11494.13,
+            0.0,
+            0.0,
+        ),
+        LiabilityView(
+            3,
+            "business",
+            "Lloyds card",
+            "credit_card",
+            3310.63,
+            0.0,
+            0.0,
+        ),
     ]
     totals = compute_totals(accounts, debts)
     _personal, business = build_overview_side_breakdowns(
         totals=totals,
         accounts=accounts,
-        liabilities=debts,
+        liabilities=[
+            *debts,
+            LiabilityView(
+                4,
+                "business",
+                "Directors loan",
+                "directors_loan",
+                7739.60,
+                0.0,
+                0.0,
+                dla_direction="company_owes_director",
+            ),
+        ],
         director_owes_company=0.0,
-        company_owes_director=0.0,
+        company_owes_director=7739.60,
         personal_whats_left=0.0,
         mortgage_configured=False,
         pension_configured=False,
         balance_sheet={
-            "fixed_assets_gbp": 0.0,
-            "current_assets_gbp": 4500.0,
-            # HP Finance 50 + VAT
-            "current_liabilities_gbp": 16423.74 + 3432.0,
-            # Loans 2300 — same HP tail, not a second car
-            "long_term_liabilities_gbp": 27720.15,
-            "capital_and_reserves_gbp": -12000.0,
-            "liability_lines": [
-                {"nominal_code": "50", "label": "HP Finance", "amount_gbp": 16423.74},
-                {"nominal_code": "2200", "label": "VAT Liability", "amount_gbp": 3432.0},
+            "fixed_assets_gbp": 37183.24,
+            "current_assets_gbp": 38190.14,
+            "current_liabilities_gbp": 45335.82,
+            "long_term_liabilities_gbp": 0.0,
+            "capital_and_reserves_gbp": 30037.56,
+            "asset_lines": [
+                {"nominal_code": "1200", "label": "Current", "amount_gbp": 0.11},
+                {
+                    "nominal_code": "2100",
+                    "label": "Creditors Control Account",
+                    "amount_gbp": 2391.83,
+                },
                 {"nominal_code": "2300", "label": "Loans", "amount_gbp": 27720.15},
+            ],
+            "liability_lines": [
+                {"nominal_code": "50", "label": "HP Finance", "amount_gbp": 15642.94},
+                {
+                    "nominal_code": "1201",
+                    "label": "Director's Loan",
+                    "amount_gbp": 7739.60,
+                },
+                {"nominal_code": "1207", "label": "Overdraft", "amount_gbp": 3448.22},
+                {"nominal_code": "1258", "label": "Lloyds card", "amount_gbp": 3310.63},
+                {
+                    "nominal_code": "1259",
+                    "label": "Capital on Tap",
+                    "amount_gbp": 11494.13,
+                },
+                {"nominal_code": "2200", "label": "VAT Liability", "amount_gbp": 3070.93},
+                {"nominal_code": "2202", "label": "VAT", "amount_gbp": 623.37},
             ],
         },
     )
     owed_labels = [line.label for line in business.owed]
+    owned_labels = [line.label for line in business.owned]
     assert owed_labels.count("Other amounts owed") == 0
-    assert owed_labels.count("Unnamed QuickFile creditors") == 1
+    assert "Loans outstanding" in owned_labels
+    loans_asset = next(line for line in business.owned if line.key == "qf_loans_asset")
+    assert loans_asset.amount_gbp == 27720.15
     tesla_lines = [line for line in business.owed if "Tesla" in line.label]
     assert len(tesla_lines) == 1
-    assert tesla_lines[0].amount_gbp == 18018.09
-    plug = next(line for line in business.owed if line.key == "bs_other_owed")
-    # Only VAT (and similar) left after absorbing 50 + 2300 into the Tesla line.
-    assert plug.amount_gbp == 3432.0
-    assert plug.label == "Unnamed QuickFile creditors"
-    # Never invent a second Tesla-sized plug from remaining instalments.
-    assert plug.amount_gbp < 10000
-    assert business.whats_left_gbp == -12000.0
-
+    # Live QF HP Finance remaining capital — not stale register £18k, not 60×£766.
+    assert tesla_lines[0].amount_gbp == 15642.94
+    assert owed_labels.count("Unnamed QuickFile creditors") <= 1
+    assert business.whats_left_gbp == 30037.56
+    assert business.whats_left_available is True
+    # 2300 must never appear as a second car-sized owed plug.
+    assert not any(
+        line.kind == "debt"
+        and line.amount_gbp is not None
+        and abs(float(line.amount_gbp) - 27720.15) < 0.01
+        for line in business.owed
+    )
 
 def test_business_without_balance_sheet_shows_gap_not_working_capital() -> None:
     accounts = [AccountView(1, "business", "current", "Lloyds", -6290.0)]

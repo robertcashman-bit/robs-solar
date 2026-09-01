@@ -113,7 +113,12 @@ def _sum_lines_from_breakdown(section: dict[str, Any] | None, *name_parts: str) 
 
 
 def _liability_bucket_for_nominal(code: str | None) -> str | None:
-    """UK-style chart: 2xxx are liabilities. 2100–2299 current; 2300+ long-term."""
+    """Classify 2xxx liability nominals for rare misfile repair.
+
+    Defence Legal keeps **2300 Loans** (and similar) as a current-asset *debit*
+    when QuickFile lists it under Current assets — never auto-move it to
+    long-term liabilities. Only classic creditor-control codes are candidates.
+    """
     if not code:
         return None
     digits = "".join(ch for ch in str(code) if ch.isdigit())
@@ -127,11 +132,15 @@ def _liability_bucket_for_nominal(code: str | None) -> str | None:
         number = int(trimmed[:4])
     except ValueError:
         return None
+    # 2300+ Loans can be a debit asset (money outstanding) — never rehome.
+    if 2300 <= number <= 2999:
+        return None
+    # 2100 Creditors Control may be a debit asset too; do not auto-rehome.
+    if number == 2100:
+        return None
     if 2100 <= number <= 2299:
         return "CurrentLiabilities"
-    if 2300 <= number <= 2999:
-        return "LongTermLiabilities"
-    return "CurrentLiabilities"
+    return None
 
 
 def _liability_bucket_for_line(line: dict[str, Any]) -> str | None:
@@ -142,11 +151,8 @@ def _liability_bucket_for_line(line: dict[str, Any]) -> str | None:
     label = str(line.get("label") or "").strip().lower()
     if not label:
         return None
-    if "creditors control" in label:
-        return "CurrentLiabilities"
-    # Default QuickFile chart: 2300 "Loans" / "Bank loan" are long-term.
-    if label in {"loans", "loan", "bank loan", "bank loans"}:
-        return "LongTermLiabilities"
+    # Do not treat bare "Loans" / creditors control as liabilities when QuickFile
+    # already placed them under Current assets (debit balances).
     return None
 
 
@@ -206,35 +212,27 @@ def _creditors_control_from_sections(sections: list[dict[str, Any]]) -> float:
 
 
 def normalize_parsed_balance_sheet(bs: dict[str, Any]) -> dict[str, Any]:
-    """Rehome misfiled 2xxx lines on an already-parsed balance sheet.
+    """Keep QuickFile section placement and official totals.
 
-    Reports are stored as parsed JSON. Live refresh does not re-sync reports, so
-    the read path must re-apply classification or stale Current assets keep 2100/2300.
+    Older builds rehomed 2100/2300 out of Current assets into liabilities. On
+    Defence Legal those nominals are often *debit* current assets (Loans
+    outstanding, creditors control debit). Moving them broke capital and
+    dumped 2300 into Overview "Other amounts owed". Official Totals win.
     """
     sections = list(bs.get("sections") or [])
     if not sections:
         return bs
+    # Still run the mover for any future narrow rules; today it is a no-op for
+    # 2100/2300 so stored live sheets stay intact.
     current_assets = next((s for s in sections if s.get("key") == "CurrentAssets"), None)
-    if not current_assets:
-        return bs
-    if not any(_liability_bucket_for_line(line) for line in (current_assets.get("lines") or [])):
-        return bs
-
-    sections = _rehome_misfiled_liability_lines(sections)
-    by_key = {section["key"]: section for section in sections}
-    current_assets = by_key.get("CurrentAssets")
-    current_liabilities = by_key.get("CurrentLiabilities")
-    long_term = by_key.get("LongTermLiabilities")
-    if current_assets is not None and current_assets.get("subtotal_gbp") is not None:
-        bs["current_assets_gbp"] = float(current_assets["subtotal_gbp"])
-    if current_liabilities is not None and current_liabilities.get("subtotal_gbp") is not None:
-        bs["current_liabilities_gbp"] = float(current_liabilities["subtotal_gbp"])
-    if long_term is not None and long_term.get("subtotal_gbp") is not None:
-        bs["long_term_liabilities_gbp"] = float(long_term["subtotal_gbp"])
-    creditors = _creditors_control_from_sections(sections)
-    if creditors > 0:
-        bs["creditors_gbp"] = creditors
-    bs["sections"] = sections
+    if current_assets and any(
+        _liability_bucket_for_line(line) for line in (current_assets.get("lines") or [])
+    ):
+        sections = _rehome_misfiled_liability_lines(sections)
+        bs["sections"] = sections
+        creditors = _creditors_control_from_sections(sections)
+        if creditors > 0:
+            bs["creditors_gbp"] = creditors
     return bs
 
 

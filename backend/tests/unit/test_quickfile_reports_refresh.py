@@ -116,24 +116,24 @@ async def test_get_or_refresh_replaces_stale_stored(
 
 
 @pytest.mark.asyncio
-async def test_get_stored_reports_rehoms_live_misfiled_2100_2300() -> None:
-    """Reports page reads stored JSON; normalize must fix 2100/2300 without a re-sync."""
+async def test_get_stored_reports_keeps_live_2100_2300_as_assets() -> None:
+    """Reports page keeps debit 2100/2300 in Current assets; official totals stay."""
     service = QuickFileReportsService()
     payload = {
-        "synced_at": "2026-08-19T12:00:00+00:00",
+        "synced_at": "2026-09-01T12:00:00+00:00",
         "profit_and_loss_month": None,
         "profit_and_loss_ytd": None,
         "balance_sheet": {
-            "to_date": "2026-08-19",
-            "fixed_assets_gbp": 0.0,
-            "current_assets_gbp": 37770.47,
-            "current_liabilities_gbp": 45662.43,
+            "to_date": "2026-09-01",
+            "fixed_assets_gbp": 37183.24,
+            "current_assets_gbp": 38190.14,
+            "current_liabilities_gbp": 45335.82,
             "long_term_liabilities_gbp": 0.0,
-            "capital_and_reserves_gbp": 0.0,
-            "debtors_gbp": 0.0,
+            "capital_and_reserves_gbp": 30037.56,
+            "debtors_gbp": 7597.31,
             "creditors_gbp": 0.0,
-            "vat_reserve_gbp": 0.0,
-            "vat_liability_gbp": 0.0,
+            "vat_reserve_gbp": 0.47,
+            "vat_liability_gbp": 3070.93,
             "sections": [
                 {
                     "key": "CurrentAssets",
@@ -142,28 +142,29 @@ async def test_get_stored_reports_rehoms_live_misfiled_2100_2300() -> None:
                         {
                             "nominal_code": "1200",
                             "label": "Debtors Control Account",
-                            "amount_gbp": 8572.2,
+                            "amount_gbp": 7597.31,
                         },
                         {
                             "nominal_code": "2100",
                             "label": "Creditors Control Account",
-                            "amount_gbp": 2342.43,
+                            "amount_gbp": 2391.83,
                         },
                         {
                             "nominal_code": "2300",
                             "label": "Loans",
-                            "amount_gbp": 26855.84,
+                            "amount_gbp": 27720.15,
                         },
                     ],
-                    "subtotal_gbp": 37770.47,
+                    "subtotal_gbp": 38190.14,
                 },
                 {
                     "key": "CurrentLiabilities",
                     "label": "Creditors: amounts falling due within one year",
                     "lines": [
-                        {"nominal_code": "2200", "label": "VAT", "amount_gbp": 45662.43}
+                        {"nominal_code": "50", "label": "HP Finance", "amount_gbp": 15642.94},
+                        {"nominal_code": "2200", "label": "VAT", "amount_gbp": 3070.93},
                     ],
-                    "subtotal_gbp": 45662.43,
+                    "subtotal_gbp": 45335.82,
                 },
                 {
                     "key": "LongTermLiabilities",
@@ -188,11 +189,11 @@ async def test_get_stored_reports_rehoms_live_misfiled_2100_2300() -> None:
     bs = reports.balance_sheet
     by_key = {section.key: section for section in bs.sections}
     asset_codes = [line.nominal_code for line in by_key["CurrentAssets"].lines]
-    assert asset_codes == ["1200"]
-    assert "2100" not in asset_codes
-    assert "2300" not in asset_codes
-    assert bs.current_assets_gbp == pytest.approx(8572.2)
-    assert any(line.nominal_code == "2100" for line in by_key["CurrentLiabilities"].lines)
-    assert any(line.nominal_code == "2300" for line in by_key["LongTermLiabilities"].lines)
-    assert bs.long_term_liabilities_gbp == 26855.84
-    assert bs.creditors_gbp == 2342.43
+    assert "2100" in asset_codes
+    assert "2300" in asset_codes
+    assert bs.current_assets_gbp == 38190.14
+    assert bs.long_term_liabilities_gbp == 0.0
+    assert bs.capital_and_reserves_gbp == 30037.56
+    assert not any(
+        line.nominal_code == "2300" for line in by_key["LongTermLiabilities"].lines
+    )
