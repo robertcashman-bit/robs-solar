@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "@/lib/api-client";
 import { FINANCE_LAST_OVERVIEW_KEY } from "@/lib/finance-local-cache";
 import { financeOverviewSchema } from "@/lib/finance-schemas";
 import { useFinanceOverview } from "@/lib/use-finance-overview";
@@ -8,12 +9,16 @@ import { useFinanceOverview } from "@/lib/use-finance-overview";
 const get = vi.fn();
 const post = vi.fn();
 
-vi.mock("@/lib/api-client", () => ({
-  apiClient: {
-    get: (...args: unknown[]) => get(...args),
-    post: (...args: unknown[]) => post(...args),
-  },
-}));
+vi.mock("@/lib/api-client", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api-client")>("@/lib/api-client");
+  return {
+    ...actual,
+    apiClient: {
+      get: (...args: unknown[]) => get(...args),
+      post: (...args: unknown[]) => post(...args),
+    },
+  };
+});
 
 vi.mock("@/lib/use-finance-background-live-refresh", () => ({
   useFinanceBackgroundLiveRefresh: () => ({ refreshing: false }),
@@ -135,5 +140,15 @@ describe("useFinanceOverview", () => {
     expect(rejections).toEqual([]);
     expect(post).toHaveBeenCalledWith("/finance/live-refresh", {});
     expect(get.mock.calls.some((call) => String(call[0]).includes("fresh=1"))).toBe(true);
+  });
+
+  it("keeps cached overview figures when the network GET times out", async () => {
+    window.localStorage.setItem(FINANCE_LAST_OVERVIEW_KEY, JSON.stringify(stored));
+    get.mockRejectedValue(new ApiError("The server took too long to respond.", 504));
+    render(<Probe />);
+    expect(screen.getByText("cash:2500")).toBeInTheDocument();
+    await waitFor(() => expect(get).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("no-error")).toBeInTheDocument());
+    expect(screen.getByText("cash:2500")).toBeInTheDocument();
   });
 });

@@ -5,11 +5,15 @@ import { useFinanceBackgroundLiveRefresh } from "@/lib/use-finance-background-li
 
 const post = vi.fn();
 const notify = vi.fn();
+const getCsrfToken = vi.fn(() => "csrf-ready" as string | null);
+const bootstrapCsrfToken = vi.fn(async () => "csrf-ready" as string | null);
 
 vi.mock("@/lib/api-client", () => ({
   apiClient: {
     post: (...args: unknown[]) => post(...args),
   },
+  getCsrfToken: () => getCsrfToken(),
+  bootstrapCsrfToken: () => bootstrapCsrfToken(),
 }));
 
 vi.mock("@/lib/finance-events", () => ({
@@ -29,7 +33,11 @@ describe("useFinanceBackgroundLiveRefresh", () => {
   beforeEach(() => {
     post.mockReset();
     notify.mockReset();
+    getCsrfToken.mockReset();
+    bootstrapCsrfToken.mockReset();
     post.mockResolvedValue({ ok: true });
+    getCsrfToken.mockReturnValue("csrf-ready");
+    bootstrapCsrfToken.mockResolvedValue("csrf-ready");
     window.sessionStorage.clear();
   });
 
@@ -58,5 +66,17 @@ describe("useFinanceBackgroundLiveRefresh", () => {
     render(<Probe role="viewer" />);
     await waitFor(() => expect(screen.getByText("idle")).toBeInTheDocument());
     expect(post).not.toHaveBeenCalled();
+  });
+
+  it("bootstraps CSRF before posting live-refresh when memory token is empty", async () => {
+    getCsrfToken.mockReturnValueOnce(null).mockReturnValue("boot-csrf");
+    bootstrapCsrfToken.mockImplementation(async () => {
+      getCsrfToken.mockReturnValue("boot-csrf");
+      return "boot-csrf";
+    });
+    render(<Probe role="admin" />);
+    window.dispatchEvent(new Event("robs-finance-overview-ready"));
+    await waitFor(() => expect(bootstrapCsrfToken).toHaveBeenCalled());
+    await waitFor(() => expect(post).toHaveBeenCalledWith("/finance/live-refresh", {}));
   });
 });

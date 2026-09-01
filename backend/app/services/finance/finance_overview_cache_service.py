@@ -26,8 +26,9 @@ from app.schemas.finance import FinanceOverviewResponse
 logger = logging.getLogger(__name__)
 
 CACHE_TTL = timedelta(minutes=15)
-# Bump when overview calculation rules change so stale payloads are discarded.
-CACHE_VERSION = "6"
+# Bump when overview calculation rules or first-paint cache semantics change
+# so stale payloads are discarded.
+CACHE_VERSION = "7"
 
 
 def _now() -> datetime:

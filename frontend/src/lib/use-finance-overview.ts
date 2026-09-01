@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { apiClient } from "@/lib/api-client";
+import { ApiError, apiClient } from "@/lib/api-client";
 import {
   FINANCE_LAST_OVERVIEW_KEY,
   financeCacheWriteEpoch,
@@ -194,6 +194,20 @@ export function useFinanceOverview(
         notifyFinanceOverviewReady();
       } catch (err) {
         if (requestId !== requestIdRef.current) {
+          return;
+        }
+        // Keep last-known figures on timeout / network blips — do not strand
+        // the Overview on a dead error banner when local/server cache exists.
+        const keepCached =
+          Boolean(overviewRef.current)
+          && err instanceof ApiError
+          && (err.status === 504 || err.status === 503);
+        if (keepCached && !live) {
+          setFetchMeta({
+            key: requestedKey,
+            status: "ready",
+            error: null,
+          });
           return;
         }
         setFetchMeta({

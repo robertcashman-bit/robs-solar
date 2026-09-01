@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient
@@ -168,3 +170,218 @@ async def test_overview_includes_side_breakdowns_without_live_providers(
     assert cached["personal_breakdown"]["whats_left_gbp"] == body["personal_breakdown"][
         "whats_left_gbp"
     ]
+
+
+@pytest.mark.asyncio
+async def test_cached_overview_returns_fast_when_live_providers_hang(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """First-paint cache path must never wait on QuickFile / Lunch Flow."""
+    import asyncio
+    import time
+
+    await login(client, "viewer", "viewer-pass")
+    primed = await client.get("/finance/overview")
+    assert primed.status_code == 200
+    assert primed.json().get("cached") is False
+
+    async def hang(*_args, **_kwargs):
+        await asyncio.sleep(60)
+        raise AssertionError("live provider must not be awaited on cache GET")
+
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_reports_service.QuickFileReportsService.fetch_live_reports",
+        hang,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_reports_service.QuickFileReportsService.get_or_refresh_reports",
+        hang,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_sync_service.QuickFileSyncService.sync_balances",
+        hang,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.lunchflow_sync_service.LunchFlowSyncService.sync_balances",
+        hang,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.finance_live_refresh_service.ensure_fresh",
+        hang,
+    )
+
+    started = time.perf_counter()
+    second = await client.get("/finance/overview")
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    assert second.status_code == 200
+    body = second.json()
+    assert body.get("cached") is True
+    assert elapsed_ms < 12_000
+    # Cache hits should be well under the client abort budget.
+    assert elapsed_ms < 3_000
+
+
+@pytest.mark.asyncio
+async def test_get_overview_refresh_live_false_never_calls_live_qf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Service-level: refresh_live=False must not touch live QuickFile/Lunch Flow."""
+    from app.services.finance.finance_overview_service import FinanceOverviewService
+
+    called = {"qf_live": 0, "qf_refresh": 0, "lf_sync": 0, "ensure": 0}
+
+    async def boom_qf_live(*_a, **_k):
+        called["qf_live"] += 1
+        raise AssertionError("fetch_live_reports must not run")
+
+    async def boom_qf_refresh(*_a, **_k):
+        called["qf_refresh"] += 1
+        raise AssertionError("get_or_refresh_reports must not run")
+
+    async def boom_lf(*_a, **_k):
+        called["lf_sync"] += 1
+        raise AssertionError("lunchflow sync must not run")
+
+    async def boom_ensure(*_a, **_k):
+        called["ensure"] += 1
+        raise AssertionError("ensure_fresh must not run")
+
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_reports_service.QuickFileReportsService.fetch_live_reports",
+        boom_qf_live,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.quickfile_reports_service.QuickFileReportsService.get_or_refresh_reports",
+        boom_qf_refresh,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.lunchflow_sync_service.LunchFlowSyncService.sync_balances",
+        boom_lf,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.finance_live_refresh_service.ensure_fresh",
+        boom_ensure,
+    )
+
+    class _EmptyResult:
+        def all(self):
+            return []
+
+        def one(self):
+            return (0, 0.0, None)
+
+        def first(self):
+            return None
+
+    class _Db:
+        async def scalars(self, _stmt):
+            return _EmptyResult()
+
+        async def scalar(self, _stmt):
+            return None
+
+        async def execute(self, _stmt):
+            return _EmptyResult()
+
+        async def get(self, *_a, **_k):
+            return None
+
+        async def commit(self):
+            return None
+
+        async def rollback(self):
+            return None
+
+        def add(self, *_a, **_k):
+            return None
+
+    async def empty_accounts(_db, **_kwargs):
+        return []
+
+    async def empty_liabilities(_db, **_kwargs):
+        return []
+
+    async def no_snap(_self, _db, _month):
+        return None
+
+    async def no_flow(_self, _db):
+        return SimpleNamespace(income_gbp=0.0, spending_gbp=0.0)
+
+    async def no_insights(_db, overview):
+        return []
+
+    async def no_period(_db, **_kwargs):
+        return {
+            "period": "1m",
+            "scope": "personal",
+            "label": "1 month",
+            "date_from": "2026-08-01",
+            "date_to": "2026-08-31",
+            "months_requested": 1,
+            "months_with_data": 0,
+            "month_keys": ["2026-08"],
+            "transaction_count": 0,
+            "income_gbp": 0.0,
+            "spending_gbp": 0.0,
+            "surplus_gbp": 0.0,
+            "history_partial": False,
+            "coverage_note": "",
+        }
+
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_service.finance_accounts_service.list_accounts",
+        empty_accounts,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_service.finance_liabilities_service.list_liabilities",
+        empty_liabilities,
+    )
+    monkeypatch.setattr(FinanceOverviewService, "personal_snapshot_for_month", no_snap)
+    monkeypatch.setattr(FinanceOverviewService, "business_snapshot_for_month", no_snap)
+    monkeypatch.setattr(FinanceOverviewService, "_open_banking_flow", no_flow)
+    monkeypatch.setattr(
+        "app.services.finance.finance_insights_service.finance_insights_service.refresh_for_overview",
+        no_insights,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_ledger_service.finance_ledger_service.period_flow_totals",
+        no_period,
+    )
+    monkeypatch.setattr(
+        FinanceOverviewService,
+        "_quickfile_period_totals",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        FinanceOverviewService,
+        "_quickfile_balance_sheet",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        FinanceOverviewService,
+        "_sync_stamp",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_cache_service.finance_overview_cache_service.read",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_cache_service.finance_overview_cache_service.write",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_cache_service.finance_overview_cache_service.fingerprint",
+        AsyncMock(return_value="fp"),
+    )
+
+    overview = await FinanceOverviewService().get_overview(
+        _Db(),  # type: ignore[arg-type]
+        month="2026-08",
+        refresh_live=False,
+    )
+    assert overview is not None
+    assert called["qf_live"] == 0
+    assert called["qf_refresh"] == 0
+    assert called["lf_sync"] == 0
+    assert called["ensure"] == 0

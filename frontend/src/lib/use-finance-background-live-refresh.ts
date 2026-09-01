@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { FINANCE_LIVE_REFRESH_AT_KEY } from "@/lib/finance-local-cache";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, bootstrapCsrfToken, getCsrfToken } from "@/lib/api-client";
 import { FINANCE_OVERVIEW_READY_EVENT, notifyFinanceChanged } from "@/lib/finance-events";
 import { canWrite } from "@/lib/permissions";
 import type { UserInfo } from "@/lib/schemas";
@@ -61,11 +61,21 @@ export function useFinanceBackgroundLiveRefresh(user: UserInfo | null | undefine
       void (async () => {
         setRefreshing(true);
         try {
+          // Cached-session first paint can race ahead of /auth/me — never POST
+          // live-refresh without a CSRF token (that surfaces as Invalid CSRF).
+          if (!getCsrfToken()) {
+            await bootstrapCsrfToken();
+          }
+          if (!getCsrfToken()) {
+            // Leave cooldown unmarked so a later ready event can retry once CSRF lands.
+            started.current = false;
+            return;
+          }
           await apiClient.post("/finance/live-refresh", {});
           markRefreshed();
           notifyFinanceChanged();
         } catch {
-          // Stored figures already shown.
+          // Stored figures already shown. CSRF recovery lives in api-client.
         } finally {
           if (!cancelled) {
             setRefreshing(false);
