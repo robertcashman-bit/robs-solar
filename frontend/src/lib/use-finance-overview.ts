@@ -44,8 +44,8 @@ function periodKey(personalPeriod: string, businessPeriod: string): string {
 }
 
 function readLastOverview(
-  personalPeriod: string,
-  businessPeriod: string,
+  _personalPeriod: string,
+  _businessPeriod: string,
 ): FinanceOverview | null {
   if (typeof window === "undefined") {
     return null;
@@ -61,19 +61,11 @@ function readLastOverview(
       "personalPeriod" in parsed &&
       "businessPeriod" in parsed
     ) {
-      if (
-        parsed.personalPeriod !== personalPeriod ||
-        parsed.businessPeriod !== businessPeriod
-      ) {
-        return null;
-      }
+      // Always paint last saved hero + columns. Period money-in/out refreshes
+      // from the network; snapshot cash/debts stay valid across lookbacks.
       return financeOverviewSchema.parse(parsed.data);
     }
-    // Legacy unkeyed payload: only reuse for the default 1m/1m lookback.
-    if (personalPeriod === "1m" && businessPeriod === "1m") {
-      return financeOverviewSchema.parse(parsed);
-    }
-    return null;
+    return financeOverviewSchema.parse(parsed);
   } catch {
     return null;
   }

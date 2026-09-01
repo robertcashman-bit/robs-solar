@@ -598,6 +598,28 @@ class PeriodFlowSummary(BaseModel):
     surplus_gbp: float = 0.0
     history_partial: bool = False
     coverage_note: str = ""
+    # quickfile_pnl | transactions | none — drives "Invoiced" vs "Banked" copy.
+    source: str = "transactions"
+    money_in_label: str = "Money in"
+    money_out_label: str = "Money out"
+
+
+class OverviewLineItem(BaseModel):
+    key: str
+    label: str
+    amount_gbp: float | None = None
+    kind: str = "asset"  # asset | debt | gap
+    tier: str = "primary"  # primary | more
+    hint: str = ""
+
+
+class OverviewSideBreakdown(BaseModel):
+    side: str
+    owned_total_gbp: float = 0.0
+    owed_total_gbp: float = 0.0
+    whats_left_gbp: float = 0.0
+    owned: list[OverviewLineItem] = Field(default_factory=list)
+    owed: list[OverviewLineItem] = Field(default_factory=list)
 
 
 class FinanceDataGaps(BaseModel):
@@ -679,6 +701,8 @@ class FinanceOverviewResponse(BaseModel):
     business_long_term_debt_gbp: float = 0.0
     personal_period_flow: PeriodFlowSummary | None = None
     business_period_flow: PeriodFlowSummary | None = None
+    personal_breakdown: OverviewSideBreakdown | None = None
+    business_breakdown: OverviewSideBreakdown | None = None
     data_gaps: FinanceDataGaps = Field(default_factory=FinanceDataGaps)
 
 

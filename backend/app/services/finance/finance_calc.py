@@ -754,6 +754,438 @@ def company_position(
     )
 
 
+@dataclass(frozen=True)
+class OverviewLine:
+    """Plain-English line for the Overview You / Defence Legal columns."""
+
+    key: str
+    label: str
+    amount_gbp: float | None = None
+    kind: str = "asset"  # asset | debt | gap
+    tier: str = "primary"  # primary | more
+    hint: str = ""
+
+
+@dataclass(frozen=True)
+class OverviewSideBreakdown:
+    side: str  # personal | business
+    owned_total_gbp: float
+    owed_total_gbp: float
+    whats_left_gbp: float
+    owned: tuple[OverviewLine, ...]
+    owed: tuple[OverviewLine, ...]
+
+
+_VEHICLE_DEBT_TOKENS = (
+    "tesla",
+    "vehicle",
+    "hire purchase",
+    "hire-purchase",
+    "motor finance",
+    "car finance",
+    "af-63591",
+    "7090442480",
+)
+_VEHICLE_ASSET_TOKENS = ("tesla", "vehicle", "car", "model 3", "model y")
+
+
+def _text_has_token(text: str, tokens: tuple[str, ...]) -> bool:
+    lowered = text.lower()
+    return any(token in lowered for token in tokens)
+
+
+def _is_vehicle_hp_debt(debt: LiabilityView) -> bool:
+    if debt.scope != "business" or not debt.is_active:
+        return False
+    if debt.debt_type in DLA_TYPES:
+        return False
+    return _text_has_token(debt.name, _VEHICLE_DEBT_TOKENS)
+
+
+def _is_vehicle_asset(account: AccountView) -> bool:
+    if account.scope != "business" or not account.is_active:
+        return False
+    if account.account_type != "other_asset":
+        return False
+    return _text_has_token(account.name, _VEHICLE_ASSET_TOKENS)
+
+
+def _plain_debt_label(debt: LiabilityView) -> str:
+    name = debt.name.strip()
+    if _text_has_token(name, ("tesla",)):
+        return "Tesla still to pay"
+    if debt.debt_type == "mortgage":
+        return "House mortgage"
+    if debt.debt_type == "credit_card":
+        return name if name else "Credit card"
+    if debt.debt_type in {"loan", "business_loan"}:
+        return name if name else "Loan"
+    return name or "Debt"
+
+
+def build_overview_side_breakdowns(
+    *,
+    totals: FinanceTotals,
+    accounts: Iterable[AccountView],
+    liabilities: Iterable[LiabilityView],
+    director_owes_company: float,
+    company_owes_director: float,
+    personal_whats_left: float,
+    business_whats_left: float,
+    mortgage_configured: bool,
+    pension_configured: bool,
+) -> tuple[OverviewSideBreakdown, OverviewSideBreakdown]:
+    """Assets and debts for Overview columns — formula totals unchanged.
+
+    Bank lines use positive cash pots; overdrafts sit under what you owe so
+    HP + OD + creditors − cash/customers explains company what's-left.
+    Vehicle HP without a matching company vehicle asset surfaces as
+    "Car value not on this list" rather than inventing a car value.
+    """
+    account_list = [a for a in accounts if a.is_active]
+    debt_list = [d for d in liabilities if d.is_active]
+
+    personal_cash = totals.personal_cash_gbp
+    business_cash = totals.business_cash_gbp
+
+    personal_other = round(
+        sum(
+            a.balance_gbp
+            for a in account_list
+            if a.scope == "personal" and a.account_type == "other_asset"
+        ),
+        2,
+    )
+
+    # Personal owned (primary): bank, house, pension. DLA receivable → more.
+    personal_owned: list[OverviewLine] = [
+        OverviewLine("personal_bank", "Bank", personal_cash, "asset", "primary"),
+    ]
+    if totals.property_gbp > 0 or mortgage_configured:
+        personal_owned.append(
+            OverviewLine(
+                "house_share",
+                "House share",
+                totals.property_gbp if totals.property_gbp > 0 else None,
+                "asset",
+                "primary",
+                "Your half only" if totals.property_gbp > 0 else "House value not set yet",
+            )
+        )
+    if pension_configured or totals.pension_gbp > 0:
+        personal_owned.append(
+            OverviewLine(
+                "pension",
+                "Pension",
+                totals.pension_gbp if pension_configured else None,
+                "asset",
+                "primary",
+                "" if pension_configured else "Add a pension to track this",
+            )
+        )
+    if personal_other > 0:
+        personal_owned.append(
+            OverviewLine("personal_other", "Other", personal_other, "asset", "more")
+        )
+    if company_owes_director > 0:
+        personal_owned.append(
+            OverviewLine(
+                "company_owes_robert",
+                "Company still owes Robert",
+                company_owes_director,
+                "asset",
+                "more",
+            )
+        )
+
+    personal_owed: list[OverviewLine] = []
+    if mortgage_configured or totals.mortgage_gbp > 0:
+        personal_owed.append(
+            OverviewLine(
+                "mortgage",
+                "House mortgage",
+                totals.mortgage_gbp if totals.mortgage_gbp > 0 else None,
+                "debt",
+                "primary",
+                "Your half of the joint mortgage" if totals.mortgage_gbp > 0 else "",
+            )
+        )
+    if totals.personal_credit_card_gbp > 0:
+        personal_owed.append(
+            OverviewLine(
+                "personal_cards",
+                "Credit cards",
+                totals.personal_credit_card_gbp,
+                "debt",
+                "primary",
+            )
+        )
+    if totals.personal_loan_gbp > 0:
+        personal_owed.append(
+            OverviewLine(
+                "personal_loans",
+                "Loans",
+                totals.personal_loan_gbp,
+                "debt",
+                "primary",
+            )
+        )
+    if totals.personal_overdraft_gbp > 0:
+        personal_owed.append(
+            OverviewLine(
+                "personal_od",
+                "Overdraft",
+                totals.personal_overdraft_gbp,
+                "debt",
+                "primary",
+            )
+        )
+    if director_owes_company > 0:
+        personal_owed.append(
+            OverviewLine(
+                "robert_owes_company",
+                "Robert still owes the company",
+                director_owes_company,
+                "debt",
+                "more",
+            )
+        )
+
+    # Matches personal_net_worth when bank is cash−OD: cash+… − debt − OD − DLA.
+    personal_owned_total = round(
+        personal_cash
+        + totals.property_gbp
+        + (totals.pension_gbp if pension_configured else 0.0)
+        + personal_other
+        + company_owes_director,
+        2,
+    )
+    personal_owed_total = round(
+        totals.personal_debt_gbp + totals.personal_overdraft_gbp + director_owes_company,
+        2,
+    )
+
+    # Business owned: cash + customers on first paint. Tax pots / DLA → more.
+    business_owned: list[OverviewLine] = [
+        OverviewLine("business_bank", "Bank", business_cash, "asset", "primary"),
+    ]
+    if totals.debtors_gbp > 0:
+        business_owned.append(
+            OverviewLine(
+                "customers_owe",
+                "Customers still to pay",
+                totals.debtors_gbp,
+                "asset",
+                "primary",
+            )
+        )
+    vehicle_debts = [d for d in debt_list if _is_vehicle_hp_debt(d) and d.balance_gbp > 0]
+    vehicle_assets = [a for a in account_list if _is_vehicle_asset(a) and a.balance_gbp > 0]
+    if vehicle_debts and not vehicle_assets:
+        business_owned.append(
+            OverviewLine(
+                "car_gap",
+                "Car value not on this list",
+                None,
+                "gap",
+                "primary",
+                "Finance is listed under what you owe, but the car itself is not counted here",
+            )
+        )
+    for account in account_list:
+        if (
+            account.scope == "business"
+            and account.account_type == "other_asset"
+            and account.balance_gbp > 0
+        ):
+            business_owned.append(
+                OverviewLine(
+                    f"biz_asset_{account.id}",
+                    account.name,
+                    account.balance_gbp,
+                    "asset",
+                    "more",
+                )
+            )
+    if totals.vat_reserve_gbp != 0:
+        business_owned.append(
+            OverviewLine(
+                "vat_pot",
+                "VAT pot",
+                totals.vat_reserve_gbp,
+                "asset",
+                "more",
+            )
+        )
+    if totals.corp_tax_reserve_gbp != 0:
+        business_owned.append(
+            OverviewLine(
+                "corp_tax_pot",
+                "Corporation tax set aside",
+                totals.corp_tax_reserve_gbp,
+                "asset",
+                "more",
+            )
+        )
+    if director_owes_company > 0:
+        business_owned.append(
+            OverviewLine(
+                "robert_owes_company_biz",
+                "Robert still owes the company",
+                director_owes_company,
+                "asset",
+                "more",
+            )
+        )
+
+    # Overdraft + non-vehicle loans on primary; Tesla HP / DLA / suppliers → more.
+    business_owed: list[OverviewLine] = []
+    if totals.business_overdraft_gbp > 0:
+        business_owed.append(
+            OverviewLine(
+                "business_od",
+                "Overdraft",
+                totals.business_overdraft_gbp,
+                "debt",
+                "primary",
+            )
+        )
+    if totals.business_credit_card_gbp > 0:
+        business_owed.append(
+            OverviewLine(
+                "business_cards",
+                "Credit cards",
+                totals.business_credit_card_gbp,
+                "debt",
+                "primary",
+            )
+        )
+    vehicle_hp_total = round(sum(d.balance_gbp for d in vehicle_debts), 2)
+    other_business_loans = round(max(totals.loan_gbp - vehicle_hp_total, 0.0), 2)
+    non_loan_business = round(
+        max(
+            totals.business_debt_gbp
+            - totals.loan_gbp
+            - totals.business_credit_card_gbp,
+            0.0,
+        ),
+        2,
+    )
+    if other_business_loans > 0:
+        business_owed.append(
+            OverviewLine(
+                "business_loans",
+                "Loans",
+                other_business_loans,
+                "debt",
+                "primary",
+            )
+        )
+    if non_loan_business > 0 and totals.creditors_gbp <= 0:
+        business_owed.append(
+            OverviewLine(
+                "business_other_debt",
+                "Other amounts owed",
+                non_loan_business,
+                "debt",
+                "primary",
+            )
+        )
+    for debt in vehicle_debts:
+        business_owed.append(
+            OverviewLine(
+                f"vehicle_hp_{debt.id}",
+                _plain_debt_label(debt),
+                debt.balance_gbp,
+                "debt",
+                "more",
+            )
+        )
+    if totals.creditors_gbp > 0:
+        business_owed.append(
+            OverviewLine(
+                "suppliers",
+                "Suppliers still to pay",
+                totals.creditors_gbp,
+                "debt",
+                "more",
+            )
+        )
+    if company_owes_director > 0:
+        business_owed.append(
+            OverviewLine(
+                "company_owes_robert_biz",
+                "Company still owes Robert",
+                company_owes_director,
+                "debt",
+                "more",
+            )
+        )
+
+    # Same sides as company_position (cash pots + OD listed under owe, no car invention).
+    business_owned_total = round(
+        business_cash
+        + totals.debtors_gbp
+        + totals.vat_reserve_gbp
+        + totals.corp_tax_reserve_gbp
+        + director_owes_company,
+        2,
+    )
+    business_owed_total = round(
+        totals.business_debt_gbp + totals.business_overdraft_gbp + company_owes_director,
+        2,
+    )
+
+    personal = OverviewSideBreakdown(
+        side="personal",
+        owned_total_gbp=personal_owned_total,
+        owed_total_gbp=personal_owed_total,
+        whats_left_gbp=personal_whats_left,
+        owned=tuple(personal_owned),
+        owed=tuple(personal_owed),
+    )
+    business = OverviewSideBreakdown(
+        side="business",
+        owned_total_gbp=business_owned_total,
+        owed_total_gbp=business_owed_total,
+        whats_left_gbp=business_whats_left,
+        owned=tuple(business_owned),
+        owed=tuple(business_owed),
+    )
+    return personal, business
+
+
+def overview_side_to_dict(side: OverviewSideBreakdown) -> dict:
+    return {
+        "side": side.side,
+        "owned_total_gbp": side.owned_total_gbp,
+        "owed_total_gbp": side.owed_total_gbp,
+        "whats_left_gbp": side.whats_left_gbp,
+        "owned": [
+            {
+                "key": line.key,
+                "label": line.label,
+                "amount_gbp": line.amount_gbp,
+                "kind": line.kind,
+                "tier": line.tier,
+                "hint": line.hint,
+            }
+            for line in side.owned
+        ],
+        "owed": [
+            {
+                "key": line.key,
+                "label": line.label,
+                "amount_gbp": line.amount_gbp,
+                "kind": line.kind,
+                "tier": line.tier,
+                "hint": line.hint,
+            }
+            for line in side.owed
+        ],
+    }
+
+
 def external_debt_gbp(
     personal_debt: float,
     business_debt: float,

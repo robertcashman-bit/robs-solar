@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_TTL = timedelta(minutes=15)
 # Bump when overview calculation rules change so stale payloads are discarded.
-CACHE_VERSION = "4"
+CACHE_VERSION = "5"
 
 
 def _now() -> datetime:
@@ -134,6 +134,8 @@ class FinanceOverviewCacheService:
         try:
             payload = json.loads(row.payload_json)
             if "liquid_assets_gbp" not in payload:
+                return None
+            if "personal_breakdown" not in payload or "business_breakdown" not in payload:
                 return None
             overview = FinanceOverviewResponse.model_validate(payload)
         except Exception:

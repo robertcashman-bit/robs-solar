@@ -22,6 +22,7 @@ from app.services.finance.finance_calc import (
     MonthlyFlow,
     accounts_from_schema,
     build_finance_data_gaps,
+    build_overview_side_breakdowns,
     business_snapshot_view,
     company_position,
     compute_totals,
@@ -31,6 +32,7 @@ from app.services.finance.finance_calc import (
     instrument_configured,
     liabilities_from_schema,
     monthly_interest_from_debts,
+    overview_side_to_dict,
     personal_net_worth,
     personal_snapshot_view,
     pick_open_banking_flow,
@@ -272,6 +274,53 @@ class FinanceOverviewService:
             monthly_interest_incomplete=interest_incomplete,
         )
 
+        pension_configured = instrument_configured(
+            account_views, liability_views, account_type="pension"
+        )
+        mortgage_configured = instrument_configured(
+            account_views,
+            liability_views,
+            account_type="mortgage",
+            debt_type="mortgage",
+        )
+        personal_nw = personal_net_worth(
+            personal_bank=personal_bank,
+            pension=totals.pension_gbp,
+            personal_external_debt=totals.personal_debt_gbp,
+            property_gbp=totals.property_gbp,
+            other_assets_gbp=totals.other_assets_gbp,
+            director_owes_company=director_owes,
+            company_owes_director=company_owes,
+        )
+        company_pos = company_position(
+            business_bank=business_bank,
+            debtors=totals.debtors_gbp,
+            vat_reserve=totals.vat_reserve_gbp,
+            corp_tax_reserve=totals.corp_tax_reserve_gbp,
+            business_external_debt=totals.business_debt_gbp,
+            director_owes_company=director_owes,
+            company_owes_director=company_owes,
+        )
+        personal_bd, business_bd = build_overview_side_breakdowns(
+            totals=totals,
+            accounts=account_views,
+            liabilities=liability_views,
+            director_owes_company=director_owes,
+            company_owes_director=company_owes,
+            personal_whats_left=personal_nw,
+            business_whats_left=company_pos,
+            mortgage_configured=mortgage_configured,
+            pension_configured=pension_configured,
+        )
+        from app.schemas.finance import OverviewSideBreakdown
+
+        personal_breakdown = OverviewSideBreakdown.model_validate(
+            overview_side_to_dict(personal_bd)
+        )
+        business_breakdown = OverviewSideBreakdown.model_validate(
+            overview_side_to_dict(business_bd)
+        )
+
         overview = FinanceOverviewResponse(
             personal_bank_balance_gbp=personal_bank,
             business_bank_balance_gbp=business_bank,
@@ -305,24 +354,8 @@ class FinanceOverviewService:
             month_actual_gbp=actual,
             active_budget=active_budget,
             insights=[],
-            personal_net_worth_gbp=personal_net_worth(
-                personal_bank=personal_bank,
-                pension=totals.pension_gbp,
-                personal_external_debt=totals.personal_debt_gbp,
-                property_gbp=totals.property_gbp,
-                other_assets_gbp=totals.other_assets_gbp,
-                director_owes_company=director_owes,
-                company_owes_director=company_owes,
-            ),
-            company_position_gbp=company_position(
-                business_bank=business_bank,
-                debtors=totals.debtors_gbp,
-                vat_reserve=totals.vat_reserve_gbp,
-                corp_tax_reserve=totals.corp_tax_reserve_gbp,
-                business_external_debt=totals.business_debt_gbp,
-                director_owes_company=director_owes,
-                company_owes_director=company_owes,
-            ),
+            personal_net_worth_gbp=personal_nw,
+            company_position_gbp=company_pos,
             director_owes_company_gbp=director_owes,
             company_owes_director_gbp=company_owes,
             external_debt_gbp=external,
@@ -339,15 +372,8 @@ class FinanceOverviewService:
             monthly_interest_incomplete=interest_incomplete,
             high_interest_debt_gbp=high_interest_debt_gbp(liability_views),
             upcoming_payments=upcoming_payments(liability_views),
-            pension_configured=instrument_configured(
-                account_views, liability_views, account_type="pension"
-            ),
-            mortgage_configured=instrument_configured(
-                account_views,
-                liability_views,
-                account_type="mortgage",
-                debt_type="mortgage",
-            ),
+            pension_configured=pension_configured,
+            mortgage_configured=mortgage_configured,
             safe_to_spend=safe_to_spend,
             cash_status=str(safe_to_spend.get("combined", {}).get("status") or "HEALTHY"),
             quickfile_synced_at=await self._sync_stamp(db, "quickfile"),
@@ -414,6 +440,8 @@ class FinanceOverviewService:
                 ),
                 2,
             ),
+            personal_breakdown=personal_breakdown,
+            business_breakdown=business_breakdown,
             data_gaps=data_gaps,
         )
         # Always regenerate from the same totals the tiles use — never attach
@@ -450,9 +478,8 @@ class FinanceOverviewService:
         personal = await finance_ledger_service.period_flow_totals(
             db, period=personal_period, scope="personal"
         )
-        business = await finance_ledger_service.period_flow_totals(
-            db, period=business_period, scope="business"
-        )
+        personal = self._decorate_period_flow(personal, scope="personal")
+        business = await self._business_period_flow(db, business_period)
         personal.pop("month_keys", None)
         business.pop("month_keys", None)
         overview.personal_period_flow = PeriodFlowSummary(**personal)
@@ -475,6 +502,149 @@ class FinanceOverviewService:
             overview.monthly_flow_source = "budget"
         if overview.monthly_flow_source != previous_source:
             self._realign_safe_to_spend(overview)
+
+    async def _business_period_flow(self, db: AsyncSession, period: str) -> dict:
+        """Prefer QuickFile / business snapshot invoice totals over bank credits."""
+        from app.services.finance.finance_ledger_service import finance_ledger_service
+        from app.services.finance.finance_period import coverage_note, period_window
+
+        window = period_window(period)
+        qf = await self._quickfile_period_totals(db, window.month_keys)
+        if qf is not None:
+            months_with_data = int(qf["months_with_data"])
+            partial, note = coverage_note(
+                window=window,
+                earliest_posted_on=qf.get("earliest_month"),
+                months_with_data=months_with_data,
+            )
+            payload = {
+                "period": window.period,
+                "scope": "business",
+                "label": window.label,
+                "date_from": window.date_from,
+                "date_to": window.date_to,
+                "months_requested": window.months_requested,
+                "months_with_data": months_with_data,
+                "month_keys": list(window.month_keys),
+                "transaction_count": int(qf["snapshot_count"]),
+                "income_gbp": float(qf["income_gbp"]),
+                "spending_gbp": float(qf["spending_gbp"]),
+                "surplus_gbp": float(qf["surplus_gbp"]),
+                "history_partial": partial,
+                "coverage_note": note,
+                "source": "quickfile_pnl",
+            }
+            return self._decorate_period_flow(payload, scope="business")
+
+        business = await finance_ledger_service.period_flow_totals(
+            db, period=period, scope="business"
+        )
+        business["source"] = "transactions"
+        return self._decorate_period_flow(business, scope="business")
+
+    async def _quickfile_period_totals(
+        self, db: AsyncSession, month_keys: tuple[str, ...]
+    ) -> dict | None:
+        """Sum stored QuickFile business snapshots for the period month keys."""
+        if not month_keys:
+            return None
+        rows = (
+            await db.scalars(
+                select(BusinessFinanceSnapshotRow)
+                .where(
+                    or_(
+                        *[
+                            BusinessFinanceSnapshotRow.snapshot_date.startswith(key)
+                            for key in month_keys
+                        ]
+                    )
+                )
+                .order_by(*_business_snapshot_order())
+            )
+        ).all()
+        if not rows:
+            return None
+        # Latest QuickFile-tagged snapshot per calendar month (newest-first query).
+        by_month: dict[str, BusinessFinanceSnapshotRow] = {}
+        for row in rows:
+            month = (row.snapshot_date or "")[:7]
+            if month not in month_keys or month in by_month:
+                continue
+            breakdown = _safe_json(row.breakdown_json)
+            notes = (row.notes or "").lower()
+            from_quickfile = (
+                breakdown.get("source") == "quickfile"
+                or "quickfile" in notes
+                or "profit_and_loss_month" in breakdown
+            )
+            if not from_quickfile:
+                continue
+            by_month[month] = row
+        if not by_month:
+            return None
+        usable = [
+            row
+            for row in by_month.values()
+            if (row.turnover_gbp or 0) > 0 or (row.expenses_gbp or 0) > 0
+        ]
+        if not usable:
+            return None
+        income = round(sum(float(r.turnover_gbp or 0) for r in usable), 2)
+        spending = round(sum(float(r.expenses_gbp or 0) for r in usable), 2)
+        earliest = min((r.snapshot_date[:7] for r in usable if r.snapshot_date), default=None)
+        return {
+            "income_gbp": income,
+            "spending_gbp": spending,
+            "surplus_gbp": round(income - spending, 2),
+            "months_with_data": len({r.snapshot_date[:7] for r in usable}),
+            "snapshot_count": len(usable),
+            "earliest_month": f"{earliest}-01" if earliest else None,
+        }
+
+    @staticmethod
+    def _decorate_period_flow(payload: dict, *, scope: str) -> dict:
+        """Plain-English money-in/out labels and early-month MTD wording."""
+        from datetime import date
+
+        source = str(payload.get("source") or "transactions")
+        period = str(payload.get("period") or "")
+        date_from = str(payload.get("date_from") or "")
+        date_to = str(payload.get("date_to") or "")
+        note = str(payload.get("coverage_note") or "")
+
+        if scope == "business" and source == "quickfile_pnl":
+            money_in = "Invoiced"
+            money_out = "Costs"
+        elif scope == "business":
+            money_in = "Banked"
+            money_out = "Money out"
+        else:
+            money_in = "Money in"
+            money_out = "Money out"
+
+        if period == "mtd" and date_from and date_to:
+            try:
+                start = date.fromisoformat(date_from)
+                end = date.fromisoformat(date_to)
+            except ValueError:
+                start = end = None
+            if start is not None and end is not None and start.month == end.month:
+                if end.day <= 2:
+                    day_label = f"{end.day} {end.strftime('%B')}"
+                    early = f"Just {day_label}"
+                    note = f"{early}. Not a full month of work." if not note else f"{early}. {note}"
+                    payload["label"] = early
+                elif end.day == start.day:
+                    day_label = f"{end.day} {end.strftime('%B')}"
+                    early = f"Just {day_label}"
+                    note = f"{early}. Not a full month of work." if not note else f"{early}. {note}"
+                    payload["label"] = early
+
+        payload["source"] = source
+        payload["money_in_label"] = money_in
+        payload["money_out_label"] = money_out
+        payload["coverage_note"] = note
+        return payload
 
     @staticmethod
     def _realign_safe_to_spend(overview: FinanceOverviewResponse) -> None:

@@ -29,6 +29,13 @@ const ROLLING_LOOKBACK_MONTHS: Partial<Record<FinancePeriodKey, number>> = {
 export const DEFAULT_FINANCE_PERIOD: FinancePeriodKey = "1m";
 export const DEFAULT_FINANCE_SCOPE: FinancePeriodScope = "personal";
 
+/** Overview default: last complete month on day 1 so DLS does not look empty. */
+export function overviewDefaultPeriod(asOf: Date = new Date()): FinancePeriodKey {
+  // Prefer UK/local calendar day for "first of the month" readability.
+  const day = asOf.getDate();
+  return day <= 1 ? "1m" : "mtd";
+}
+
 export const FINANCE_PERIOD_STORAGE_KEY = "finance.period.v1";
 
 export type FinancePeriodPrefs = {

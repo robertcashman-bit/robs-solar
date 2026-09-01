@@ -56,6 +56,27 @@ export const periodFlowSummarySchema = z.object({
   surplus_gbp: z.number().optional().default(0),
   history_partial: z.boolean().optional().default(false),
   coverage_note: z.string().optional().default(""),
+  source: z.string().optional().default("transactions"),
+  money_in_label: z.string().optional().default("Money in"),
+  money_out_label: z.string().optional().default("Money out"),
+});
+
+export const overviewLineItemSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  amount_gbp: z.number().nullable().optional(),
+  kind: z.string().optional().default("asset"),
+  tier: z.string().optional().default("primary"),
+  hint: z.string().optional().default(""),
+});
+
+export const overviewSideBreakdownSchema = z.object({
+  side: z.string(),
+  owned_total_gbp: z.number().optional().default(0),
+  owed_total_gbp: z.number().optional().default(0),
+  whats_left_gbp: z.number().optional().default(0),
+  owned: z.array(overviewLineItemSchema).optional().default([]),
+  owed: z.array(overviewLineItemSchema).optional().default([]),
 });
 
 export const financeDataGapsSchema = z.object({
@@ -173,6 +194,8 @@ export const financeOverviewSchema = z.object({
   business_long_term_debt_gbp: z.number().optional().default(0),
   personal_period_flow: periodFlowSummarySchema.nullable().optional(),
   business_period_flow: periodFlowSummarySchema.nullable().optional(),
+  personal_breakdown: overviewSideBreakdownSchema.nullable().optional(),
+  business_breakdown: overviewSideBreakdownSchema.nullable().optional(),
   data_gaps: financeDataGapsSchema.optional(),
   active_budget: activeBudgetSummarySchema.nullable().optional(),
   insights: z.array(financeInsightSchema),
@@ -800,6 +823,8 @@ export const oidcStatusSchema = z.object({
 
 export type ActiveBudgetSummary = z.infer<typeof activeBudgetSummarySchema>;
 export type PeriodFlowSummary = z.infer<typeof periodFlowSummarySchema>;
+export type OverviewLineItem = z.infer<typeof overviewLineItemSchema>;
+export type OverviewSideBreakdown = z.infer<typeof overviewSideBreakdownSchema>;
 export type FinanceDataGaps = z.infer<typeof financeDataGapsSchema>;
 export type FinanceOverview = z.infer<typeof financeOverviewSchema>;
 export type FinanceAccount = z.infer<typeof financeAccountSchema>;

@@ -72,8 +72,9 @@ describe("FinancePeriodScopeControl", () => {
         showScope={false}
       />,
     );
-    expect(screen.getByText("Personal")).toBeInTheDocument();
-    expect(screen.getByText("Business")).toBeInTheDocument();
+    expect(screen.getByText("You")).toBeInTheDocument();
+    expect(screen.getByText("Defence Legal")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Money this period" })).toBeInTheDocument();
     const lastYearButtons = screen.getAllByRole("button", { name: "Last year" });
     await user.click(lastYearButtons[0]);
     expect(onPersonal).toHaveBeenCalledWith("12m");
@@ -92,7 +93,7 @@ describe("FinancePeriodScopeControl", () => {
         onScopeChange={onScopeChange}
       />,
     );
-    await user.click(screen.getByRole("button", { name: "business" }));
+    await user.click(screen.getByRole("button", { name: "Defence Legal" }));
     expect(onScopeChange).toHaveBeenCalledWith("business");
   });
 });

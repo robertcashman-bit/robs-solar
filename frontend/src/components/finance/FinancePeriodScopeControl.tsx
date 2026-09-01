@@ -23,16 +23,20 @@ type FinancePeriodScopeControlProps = {
   scopeOptions?: FinancePeriodScope[];
   className?: string;
   coverageNote?: string | null;
+  /** Limit which period chips appear (Overview hides 2 years). */
+  periodKeys?: readonly FinancePeriodKey[];
 };
 
 function ChipRow({
   label,
   value,
   onChange,
+  keys,
 }: {
   label?: string;
   value: FinancePeriodKey;
   onChange: (period: FinancePeriodKey) => void;
+  keys: readonly FinancePeriodKey[];
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -42,7 +46,7 @@ function ChipRow({
         </span>
       ) : null}
       <div className="flex flex-wrap gap-1 rounded-lg border border-[var(--border)] p-1">
-        {FINANCE_PERIOD_KEYS.map((key) => (
+        {keys.map((key) => (
           <button
             key={key}
             type="button"
@@ -74,15 +78,14 @@ export function FinancePeriodScopeControl({
   scopeOptions = ["personal", "business", "both"],
   className,
   coverageNote,
+  periodKeys = FINANCE_PERIOD_KEYS,
 }: FinancePeriodScopeControlProps) {
-  const heading = dualPeriod
-    ? "Historical period"
-    : periodLabel(period);
+  const heading = dualPeriod ? "Money this period" : periodLabel(period);
   const blurb = dualPeriod
-    ? "Look back over stored transactions. Point-in-time balances stay current."
+    ? "Money in and out for the dates you pick. Bank and debt totals stay today's figures."
     : period === "mtd"
-      ? "Income and spending from stored transactions this calendar month so far. Cash, debts, and other balances stay current."
-      : "Look back over stored transactions. Point-in-time balances stay current.";
+      ? "Money in and out this month so far. Bank and debt totals stay today's figures."
+      : "Money in and out for the dates you pick. Bank and debt totals stay today's figures.";
 
   return (
     <section
@@ -106,7 +109,7 @@ export function FinancePeriodScopeControl({
                 }`}
                 onClick={() => onScopeChange(item)}
               >
-                {item}
+                {item === "personal" ? "You" : item === "business" ? "Defence Legal" : item}
               </button>
             ))}
           </div>
@@ -115,25 +118,27 @@ export function FinancePeriodScopeControl({
       {dualPeriod && onPersonalPeriodChange && onBusinessPeriodChange ? (
         <div className="space-y-2">
           <ChipRow
-            label="Personal"
+            label="You"
             value={personalPeriod ?? period}
             onChange={onPersonalPeriodChange}
+            keys={periodKeys}
           />
           <ChipRow
-            label="Business"
+            label="Defence Legal"
             value={businessPeriod ?? period}
             onChange={onBusinessPeriodChange}
+            keys={periodKeys}
           />
         </div>
       ) : (
-        <ChipRow value={period} onChange={onPeriodChange} />
+        <ChipRow value={period} onChange={onPeriodChange} keys={periodKeys} />
       )}
       {coverageNote ? (
         <p className="text-xs text-amber-800 dark:text-amber-200">{coverageNote}</p>
       ) : (
         <p className="text-xs text-[var(--muted)]">
           Selected: {periodLabel(dualPeriod ? (personalPeriod ?? period) : period)}
-          {dualPeriod ? ` personal · ${periodLabel(businessPeriod ?? period)} business` : ""}
+          {dualPeriod ? ` You · ${periodLabel(businessPeriod ?? period)} Defence Legal` : ""}
         </p>
       )}
     </section>

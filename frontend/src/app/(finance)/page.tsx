@@ -3,7 +3,6 @@
 import { useState } from "react";
 
 import { BankImportCard } from "@/components/finance/BankImportCard";
-import { FinanceAiAnalystCard } from "@/components/finance/FinanceAiAnalystCard";
 import { FinanceOverviewView } from "@/components/finance/FinanceOverviewView";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
@@ -15,15 +14,17 @@ import { apiClient } from "@/lib/api-client";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import { canWrite } from "@/lib/permissions";
 import { FinancePeriodScopeControl } from "@/components/finance/FinancePeriodScopeControl";
+import { overviewDefaultPeriod } from "@/lib/finance-period";
 import { useFinanceOverview } from "@/lib/use-finance-overview";
 import { useFinancePeriod } from "@/lib/use-finance-period";
 
 export default function FinanceOverviewPage() {
   const { user, gated, redirecting } = useRequireAuth();
+  const defaultPeriod = overviewDefaultPeriod();
   const periodState = useFinancePeriod({
     dualPeriod: true,
     defaultScope: "both",
-    defaultPeriod: "mtd",
+    defaultPeriod,
     preferDefaultPeriod: true,
   });
   const { overview, loading, refreshing, error, refresh, reload } = useFinanceOverview(user, {
@@ -42,7 +43,7 @@ export default function FinanceOverviewPage() {
       <PageHeader
         eyebrow="Finance"
         title="Overview"
-        description="Personal and business finances at a glance — balances, debts, cash flow, and alerts."
+        description="What you own, what you owe, and what's left — You and Defence Legal."
         actions={
           <button type="button" className="solar-btn-secondary text-sm" onClick={() => void refresh()}>
             {refreshing ? "Updating…" : "Refresh"}
@@ -61,10 +62,9 @@ export default function FinanceOverviewPage() {
             void refresh();
           }}
         />
-        <FinanceAiAnalystCard user={user} />
       </div>
       {loading && !overview ? (
-        <p className="mt-8 text-sm text-[var(--muted)]">Loading finance overview…</p>
+        <p className="mt-8 text-sm text-[var(--muted)]">Loading saved figures…</p>
       ) : overview ? (
         <div className="mt-6">
           <SavedFiguresBanner
@@ -84,6 +84,7 @@ export default function FinanceOverviewPage() {
               onPersonalPeriodChange={periodState.setPersonalPeriod}
               onBusinessPeriodChange={periodState.setBusinessPeriod}
               showScope={false}
+              periodKeys={["mtd", "1m", "3m", "6m", "12m"]}
               coverageNote={
                 [overview.personal_period_flow?.coverage_note, overview.business_period_flow?.coverage_note]
                   .filter(Boolean)

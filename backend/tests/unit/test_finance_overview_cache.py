@@ -137,3 +137,34 @@ async def test_soft_stale_overview_cache_still_returns_last_known(
     cached = second.json()
     assert cached.get("cached") is True
     assert cached["personal_bank_balance_gbp"] == body["personal_bank_balance_gbp"]
+
+
+@pytest.mark.asyncio
+async def test_overview_includes_side_breakdowns_without_live_providers(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called = {"live": 0}
+
+    async def boom_live(_db, **_kwargs):
+        called["live"] += 1
+        raise AssertionError("live refresh must not run on default GET")
+
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.finance_live_refresh_service.ensure_fresh",
+        boom_live,
+    )
+    await login(client, "viewer", "viewer-pass")
+    body = (await client.get("/finance/overview")).json()
+    assert called["live"] == 0
+    assert body["personal_breakdown"] is not None
+    assert body["business_breakdown"] is not None
+    assert body["personal_breakdown"]["side"] == "personal"
+    assert body["business_breakdown"]["side"] == "business"
+    assert "owned" in body["personal_breakdown"]
+    assert "owed" in body["business_breakdown"]
+
+    cached = (await client.get("/finance/overview")).json()
+    assert cached.get("cached") is True
+    assert cached["personal_breakdown"]["whats_left_gbp"] == body["personal_breakdown"][
+        "whats_left_gbp"
+    ]

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   FINANCE_PERIOD_STORAGE_KEY,
+  overviewDefaultPeriod,
   parseFinancePeriod,
   parseFinanceScope,
   periodDateRange,
@@ -73,6 +74,11 @@ describe("finance-period", () => {
     expect(periodLabel("1m")).toBe("Last month");
     expect(periodLabel("12m")).toBe("Last year");
     expect(periodLabel("24m")).toBe("2 years");
+  });
+
+  it("defaults Overview to last month on day 1 and mtd afterwards", () => {
+    expect(overviewDefaultPeriod(new Date(2026, 8, 1))).toBe("1m");
+    expect(overviewDefaultPeriod(new Date(2026, 8, 2))).toBe("mtd");
   });
 
   it("persists preferences in localStorage including legacy keys", () => {
