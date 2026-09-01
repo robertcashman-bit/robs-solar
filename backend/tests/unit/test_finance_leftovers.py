@@ -79,6 +79,12 @@ def test_salary_credit_not_treated_as_transfer() -> None:
     assert finance_categoriser_service.looks_like_cross_scope_transfer(
         "TO MY ACCOUNT DLA"
     )
+    assert finance_categoriser_service.looks_like_cross_scope_transfer(
+        "FROM MY ACCOUNT"
+    )
+    assert not finance_categoriser_service.looks_like_cross_scope_transfer(
+        "BACS CREDIT"
+    )
 
 @pytest.mark.asyncio
 async def test_import_salary_fps_credit_is_not_marked_transfer() -> None:

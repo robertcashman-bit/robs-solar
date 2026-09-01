@@ -138,8 +138,13 @@ class FinanceTransferService:
         cross_scope = left.scope != right.scope
         if cross_scope:
             # Business debit + personal credit of the same amount is usually
-            # payroll or DLA — not "between my accounts" — unless wording says so.
-            return finance_categoriser_service.looks_like_cross_scope_transfer(pair_text)
+            # payroll or DLA — not "between my accounts". Both legs must look
+            # like own-account / director-loan wording.
+            return finance_categoriser_service.looks_like_cross_scope_transfer(
+                left.description
+            ) and finance_categoriser_service.looks_like_cross_scope_transfer(
+                right.description
+            )
 
         same_account = (
             left.account_id is not None

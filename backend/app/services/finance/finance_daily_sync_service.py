@@ -73,6 +73,21 @@ class FinanceDailySyncService:
                 result.lunchflow = "Lunch Flow not configured — skipped"
 
             try:
+                from app.services.finance.finance_transfer_service import (
+                    finance_transfer_service,
+                )
+
+                unmarked = await finance_transfer_service.unmark_false_transfers(
+                    db, persist=True, redetect=True
+                )
+                result.transfers = (
+                    f"Cleared {unmarked.get('cleared', 0)} false transfer flag(s)"
+                )
+            except Exception as exc:
+                result.transfers = "Transfer cleanup skipped"
+                logger.warning("Daily transfer cleanup failed: %s", exc)
+
+            try:
                 from app.services.finance.finance_backup_service import create_backup
 
                 backup = await create_backup(db, trigger="daily_sync")

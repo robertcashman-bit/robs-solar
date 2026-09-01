@@ -1043,6 +1043,7 @@ class FinanceDailySyncResult(BaseModel):
     ok: bool = True
     quickfile: str = ""
     lunchflow: str = ""
+    transfers: str = ""
     backup: str = ""
 
 

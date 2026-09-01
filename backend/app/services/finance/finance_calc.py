@@ -789,6 +789,14 @@ _VEHICLE_DEBT_TOKENS = (
     "7090442480",
 )
 _VEHICLE_ASSET_TOKENS = ("tesla", "vehicle", "car", "model 3", "model y")
+# QuickFile nominals / labels that are the same HP as the Tesla register line.
+_QF_HP_NOMINALS = frozenset({"50", "2300"})
+_QF_HP_LABEL_TOKENS = (
+    "hp finance",
+    "hire purchase",
+    "hire-purchase",
+    "tesla",
+)
 # Leftovers small enough to hide behind More (not real debts).
 _MORE_LEFTOVER_GBP = 3000.0
 
@@ -796,6 +804,39 @@ _MORE_LEFTOVER_GBP = 3000.0
 def _text_has_token(text: str, tokens: tuple[str, ...]) -> bool:
     lowered = text.lower()
     return any(token in lowered for token in tokens)
+
+
+def _normalize_nominal(code: str | None) -> str:
+    digits = "".join(ch for ch in str(code or "") if ch.isdigit())
+    return digits.lstrip("0") or (digits if digits else "")
+
+
+def _is_qf_hp_or_vehicle_loan_line(line: dict) -> bool:
+    """True for QuickFile HP Finance / Loans lines that map onto named Tesla HP."""
+    code = _normalize_nominal(str(line.get("nominal_code") or ""))
+    if code in _QF_HP_NOMINALS:
+        return True
+    label = str(line.get("label") or "").strip().lower()
+    if not label:
+        return False
+    if _text_has_token(label, _QF_HP_LABEL_TOKENS):
+        return True
+    # Bare "Loans" / "Bank loan" on 2300-style long-term chart — same HP tail.
+    if label in {"loans", "loan", "bank loan", "bank loans"}:
+        return True
+    return False
+
+
+def _qf_hp_absorbed_gbp(liability_lines: list[dict], *, vehicle_hp_total: float) -> float:
+    """QF HP/loan nominals already represented by the named Tesla register line."""
+    if vehicle_hp_total <= 0:
+        return 0.0
+    absorbed = 0.0
+    for line in liability_lines:
+        if not _is_qf_hp_or_vehicle_loan_line(line):
+            continue
+        absorbed += abs(float(line.get("amount_gbp") or 0))
+    return round(absorbed, 2)
 
 
 def _is_vehicle_hp_debt(debt: LiabilityView) -> bool:
@@ -1204,26 +1245,8 @@ def build_overview_side_breakdowns(
                 "primary",
             )
         )
-    covered_biz = round(
-        totals.business_overdraft_gbp
-        + totals.business_credit_card_gbp
-        + totals.loan_gbp
-        + (totals.creditors_gbp if totals.creditors_gbp > 0 else 0.0),
-        2,
-    )
-    # Register debts not already covered (ex DLA).
-    other_biz = round(
-        max(
-            totals.business_debt_gbp
-            + totals.business_overdraft_gbp
-            - covered_biz
-            + (totals.creditors_gbp if totals.creditors_gbp > 0 else 0.0)
-            - (totals.creditors_gbp if totals.creditors_gbp > 0 else 0.0),
-            0.0,
-        ),
-        2,
-    )
-    # Simpler residual: business_debt - loans - cards - creditors already in register.
+    # Register debts not already covered (ex DLA). Skip this plug when a
+    # balance sheet is present — one QuickFile leftover line covers the gap.
     residual_register = round(
         max(
             totals.business_debt_gbp
@@ -1234,33 +1257,65 @@ def build_overview_side_breakdowns(
         ),
         2,
     )
-    if residual_register > 0.01:
+    if not bs_present and residual_register > 0.01:
         business_owed.append(
             OverviewLine(
                 "business_other_debt",
-                "Other amounts owed",
+                "Other company debts",
                 residual_register,
                 "debt",
                 "primary",
             )
         )
-    del covered_biz, other_biz
 
     if bs_present:
         # Prefer BS liability totals so own − owe tracks Capital and reserves.
-        target_owed = round(current_liab + long_liab, 2)
-        listed_owed = _sum_line_amounts(business_owed)
-        owed_gap = round(target_owed - listed_owed, 2)
-        if owed_gap > 0.01:
-            business_owed.append(
-                OverviewLine(
-                    "bs_other_owed",
-                    "Other amounts owed",
-                    owed_gap,
-                    "debt",
-                    "primary",
-                )
+        liability_lines = [
+            line
+            for line in list(bs.get("liability_lines") or [])
+            if abs(float(line.get("amount_gbp") or 0)) > 0.005
+        ]
+        if liability_lines and vehicle_hp_total > 0:
+            # Name Tesla once from the register (remaining capital). QF HP Finance
+            # (50) and Loans (2300) are the same car — do not dump them into a plug.
+            unnamed_qf = round(
+                sum(
+                    abs(float(line.get("amount_gbp") or 0))
+                    for line in liability_lines
+                    if not _is_qf_hp_or_vehicle_loan_line(line)
+                ),
+                2,
             )
+            if unnamed_qf > 0.01:
+                business_owed.append(
+                    OverviewLine(
+                        "bs_other_owed",
+                        "Unnamed QuickFile creditors",
+                        unnamed_qf,
+                        "debt",
+                        "more" if unnamed_qf < _MORE_LEFTOVER_GBP else "primary",
+                        "VAT, PAYE, accruals and other creditors not named above",
+                    )
+                )
+        else:
+            target_owed = round(current_liab + long_liab, 2)
+            listed_owed = _sum_line_amounts(business_owed)
+            absorbed_qf_hp = _qf_hp_absorbed_gbp(
+                liability_lines, vehicle_hp_total=vehicle_hp_total
+            )
+            extra_hp = round(max(absorbed_qf_hp - vehicle_hp_total, 0.0), 2)
+            owed_gap = round(target_owed - listed_owed - extra_hp, 2)
+            if owed_gap > 0.01:
+                business_owed.append(
+                    OverviewLine(
+                        "bs_other_owed",
+                        "Unnamed QuickFile creditors",
+                        owed_gap,
+                        "debt",
+                        "more" if owed_gap < _MORE_LEFTOVER_GBP else "primary",
+                        "VAT, PAYE, accruals and other creditors not named above",
+                    )
+                )
         business_owned_total = round(fixed_assets + current_assets, 2)
         # Ensure owned lines sum to owned_total.
         listed_owned = _sum_line_amounts(business_owned)

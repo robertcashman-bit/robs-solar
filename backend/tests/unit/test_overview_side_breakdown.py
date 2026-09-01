@@ -126,6 +126,60 @@ def test_business_tesla_hp_is_primary_and_whats_left_uses_capital() -> None:
     assert "Car value not on this list" not in _labels(business.owned)
 
 
+def test_business_qf_hp_loans_map_to_tesla_one_plug_only() -> None:
+    """HP Finance (50) + Loans (2300) must not double the Tesla remaining capital."""
+    accounts = [AccountView(1, "business", "current", "Lloyds business", -6290.0)]
+    debts = [
+        LiabilityView(
+            1,
+            "business",
+            "Tesla Model 3 HP AF-63591",
+            "loan",
+            18018.09,
+            0.0,
+            766.0,
+        ),
+    ]
+    totals = compute_totals(accounts, debts)
+    _personal, business = build_overview_side_breakdowns(
+        totals=totals,
+        accounts=accounts,
+        liabilities=debts,
+        director_owes_company=0.0,
+        company_owes_director=0.0,
+        personal_whats_left=0.0,
+        mortgage_configured=False,
+        pension_configured=False,
+        balance_sheet={
+            "fixed_assets_gbp": 0.0,
+            "current_assets_gbp": 4500.0,
+            # HP Finance 50 + VAT
+            "current_liabilities_gbp": 16423.74 + 3432.0,
+            # Loans 2300 — same HP tail, not a second car
+            "long_term_liabilities_gbp": 27720.15,
+            "capital_and_reserves_gbp": -12000.0,
+            "liability_lines": [
+                {"nominal_code": "50", "label": "HP Finance", "amount_gbp": 16423.74},
+                {"nominal_code": "2200", "label": "VAT Liability", "amount_gbp": 3432.0},
+                {"nominal_code": "2300", "label": "Loans", "amount_gbp": 27720.15},
+            ],
+        },
+    )
+    owed_labels = [line.label for line in business.owed]
+    assert owed_labels.count("Other amounts owed") == 0
+    assert owed_labels.count("Unnamed QuickFile creditors") == 1
+    tesla_lines = [line for line in business.owed if "Tesla" in line.label]
+    assert len(tesla_lines) == 1
+    assert tesla_lines[0].amount_gbp == 18018.09
+    plug = next(line for line in business.owed if line.key == "bs_other_owed")
+    # Only VAT (and similar) left after absorbing 50 + 2300 into the Tesla line.
+    assert plug.amount_gbp == 3432.0
+    assert plug.label == "Unnamed QuickFile creditors"
+    # Never invent a second Tesla-sized plug from remaining instalments.
+    assert plug.amount_gbp < 10000
+    assert business.whats_left_gbp == -12000.0
+
+
 def test_business_without_balance_sheet_shows_gap_not_working_capital() -> None:
     accounts = [AccountView(1, "business", "current", "Lloyds", -6290.0)]
     debts = [

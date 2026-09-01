@@ -51,6 +51,19 @@ class FinanceLiveRefreshService:
         # but each path is balances-only so the whole call stays short.
         await self._refresh_quickfile(db)
         await self._refresh_lunchflow(db, include_transactions=include_transactions)
+        # Heal salary / cross-scope false transfer marks so Money in recovers
+        # without waiting for a manual Detect transfers click.
+        try:
+            from app.services.finance.finance_transfer_service import (
+                finance_transfer_service,
+            )
+
+            await finance_transfer_service.unmark_false_transfers(
+                db, persist=True, redetect=True
+            )
+        except Exception:
+            logger.warning("Could not clear false transfer marks", exc_info=True)
+            await db.rollback()
         try:
             await finance_liabilities_service.ensure_from_accounts(db)
             await db.commit()
