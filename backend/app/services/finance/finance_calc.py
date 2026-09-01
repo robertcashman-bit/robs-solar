@@ -944,8 +944,9 @@ def _plain_qf_asset_line(line: dict) -> OverviewLine | None:
             amount,
             "asset",
             "primary",
-            "Funding Circle, BBL and similar repayments sit on QuickFile 2300 "
-            "— not money owed to the company, not Tesla HP (that is 0050)",
+            "QuickFile 2300 holds loan repayment postings on the books — "
+            "not money owed to the company, not Tesla HP (that is 0050). "
+            "Do not invent a remaining loan balance from this line.",
         )
     label = raw_label or f"Nominal {code or '?'}"
     return OverviewLine(
@@ -1107,7 +1108,7 @@ def _dls_from_quickfile_balance_sheet(
             owed.append(owed_by_key.pop(key))
     owed.extend(owed_by_key.values())
 
-    # VAT as one plain line (2200 + 2202). Tiny Holding can ride with VAT or More.
+    # VAT as one plain line (2200 + 2202). Holding (£6) stays its own More line.
     if vat_total > 0.005:
         owed.append(
             OverviewLine(
@@ -1119,39 +1120,15 @@ def _dls_from_quickfile_balance_sheet(
             )
         )
     if holding_amount > 0.005:
-        if holding_amount < 50:
-            # Fold tiny holding into VAT when VAT exists; else More.
-            if vat_total > 0.005:
-                vat_line = next(line for line in owed if line.key == "vat_owed")
-                idx = owed.index(vat_line)
-                owed[idx] = OverviewLine(
-                    "vat_owed",
-                    "VAT",
-                    round(vat_total + holding_amount, 2),
-                    "debt",
-                    "primary",
-                    "Includes Holding £%.2f" % holding_amount,
-                )
-            else:
-                owed.append(
-                    OverviewLine(
-                        "holding",
-                        "Holding",
-                        holding_amount,
-                        "debt",
-                        "more",
-                    )
-                )
-        else:
-            owed.append(
-                OverviewLine(
-                    "holding",
-                    "Holding",
-                    holding_amount,
-                    "debt",
-                    "primary",
-                )
+        owed.append(
+            OverviewLine(
+                "holding",
+                "Holding",
+                holding_amount,
+                "debt",
+                "more" if holding_amount < 50 else "primary",
             )
+        )
 
     owned_total = round(fixed_assets + current_assets, 2)
     owed_total = round(current_liab + long_liab, 2)

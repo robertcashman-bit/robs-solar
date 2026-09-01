@@ -8,13 +8,14 @@ from app.services.finance.finance_calc import (
     personal_net_worth,
 )
 
-# Live QuickFile Balance Sheet as at 01/09/2026 (GBP) — confirmed on screen.
-_BS_0109 = {
+# Live QuickFile Balance Sheet as at 01/09/2026 AFTER recode journal (GBP).
+# 2300 Loans is gone; HP Finance 14,081.34; capital = 3,879.01.
+_BS_0109_POST_RECODE = {
     "fixed_assets_gbp": 37183.24,
-    "current_assets_gbp": 38190.14,
-    "current_liabilities_gbp": 45335.82,
+    "current_assets_gbp": 10469.99,
+    "current_liabilities_gbp": 43774.22,
     "long_term_liabilities_gbp": 0.0,
-    "capital_and_reserves_gbp": 30037.56,
+    "capital_and_reserves_gbp": 3879.01,
     "asset_lines": [
         {"nominal_code": "1100", "label": "Debtors Control Account", "amount_gbp": 7597.31},
         {"nominal_code": "1200", "label": "Current Account", "amount_gbp": 0.11},
@@ -26,10 +27,9 @@ _BS_0109 = {
         },
         {"nominal_code": "2204", "label": "Manual Adjustments", "amount_gbp": 330.27},
         {"nominal_code": "2230", "label": "Pension Fund", "amount_gbp": 150.00},
-        {"nominal_code": "2300", "label": "Loans", "amount_gbp": 27720.15},
     ],
     "liability_lines": [
-        {"nominal_code": "50", "label": "HP Finance", "amount_gbp": 15642.94},
+        {"nominal_code": "50", "label": "HP Finance", "amount_gbp": 14081.34},
         {"nominal_code": "1201", "label": "Director's Loan", "amount_gbp": 7739.60},
         {
             "nominal_code": "1207",
@@ -186,8 +186,8 @@ def test_business_whats_left_uses_capital_when_bs_present() -> None:
     assert round(business.owned_total_gbp - business.owed_total_gbp, 2) == business.whats_left_gbp
 
 
-def test_dls_0109_balance_sheet_is_plain_english_one_to_one() -> None:
-    """Live 01/09/2026 sheet: QF lines only — no register double-count."""
+def test_dls_0109_post_recode_balance_sheet_is_plain_english_one_to_one() -> None:
+    """Live 01/09/2026 AFTER recode: QF lines only — no register, no 2300."""
     accounts = [
         AccountView(1, "business", "current", "Lloyds business", -3448.22),
     ]
@@ -230,6 +230,16 @@ def test_dls_0109_balance_sheet_is_plain_english_one_to_one() -> None:
             0.0,
             0.0,
         ),
+        # Do not invent Funding Circle as a remaining loan from register.
+        LiabilityView(
+            6,
+            "business",
+            "Funding Circle",
+            "business_loan",
+            12000.0,
+            0.0,
+            0.0,
+        ),
     ]
     totals = compute_totals(accounts, debts)
     _personal, business = build_overview_side_breakdowns(
@@ -253,48 +263,48 @@ def test_dls_0109_balance_sheet_is_plain_english_one_to_one() -> None:
         personal_whats_left=0.0,
         mortgage_configured=False,
         pension_configured=False,
-        balance_sheet=_BS_0109,
+        balance_sheet=_BS_0109_POST_RECODE,
     )
 
-    # What's left = capital & reserves.
-    assert business.whats_left_gbp == 30037.56
+    # What's left = capital & reserves from the Defence Legal balance sheet.
+    assert business.whats_left_gbp == 3879.01
     assert business.whats_left_available is True
     assert "balance sheet" in business.whats_left_hint.lower()
 
-    # Own: FA total + CA lines (plain English).
+    # Own: FA total + CA lines (plain English). Bank = 1200 only, not net of OD.
     assert _amount(business.owned, "Vehicles and kit") == 37183.24
     assert _amount(business.owned, "Customers still to pay") == 7597.31
     assert _amount(business.owned, "Bank") == 0.11
-    loans_2300 = next(
-        line for line in business.owned if line.key == "qf_loans_asset"
-    )
-    assert loans_2300.amount_gbp == 27720.15
-    # Ledger drill: 2300 is a repayments dump, not money owed to the company.
-    assert loans_2300.label == "Loan repayments (on the books as an asset)"
-    assert "Loans outstanding" not in loans_2300.label
-    assert "Funding Circle" in (loans_2300.hint or "")
-    assert "0050" in (loans_2300.hint or "")
-    # 2100 debit is other company money — never "Suppliers still to pay".
     assert _amount(business.owned, "Other company money") == 2391.83
+    assert _amount(business.owned, "VAT account") == 0.47
+    assert _amount(business.owned, "Manual adjustments") == 330.27
+    assert _amount(business.owned, "Pension fund") == 150.00
+    # 2300 is gone after the recode journal — do not invent Funding Circle.
+    assert "Loan repayments" not in " ".join(_labels(business.owned))
+    assert "Funding Circle" not in " ".join(
+        (line.hint or "") + " " + line.label for line in business.owned + business.owed
+    )
     assert "Suppliers still to pay" not in _labels(business.owned) | _labels(business.owed)
 
     # Owe: each QF liability once — Capital on Tap and Lloyds card split.
-    assert _amount(business.owed, "Tesla still to pay") == 15642.94
+    assert _amount(business.owed, "Tesla still to pay") == 14081.34
     assert _amount(business.owed, "Overdraft") == 3448.22
     assert _amount(business.owed, "Lloyds card") == 3310.63
     assert _amount(business.owed, "Capital on Tap") == 11494.13
     assert _amount(business.owed, "Company still owes Robert") == 7739.60
-    assert _amount(business.owed, "VAT") == round(3070.93 + 623.37 + 6.00, 2)
+    assert _amount(business.owed, "VAT") == round(3070.93 + 623.37, 2)
+    # Holding £6 sits in More — not folded into VAT, not inventing FC.
+    holding = next(line for line in business.owed if line.key == "holding")
+    assert holding.amount_gbp == 6.00
+    assert holding.tier == "more"
 
     owed_labels = [line.label for line in business.owed]
-    owned_labels = [line.label for line in business.owned]
     assert owed_labels.count("Credit cards") == 0
-    assert owed_labels.count("Loans") == 0  # CoT is its own line; 2300 is own-side
+    assert owed_labels.count("Loans") == 0
     assert owed_labels.count("Other amounts owed") == 0
     assert owed_labels.count("Unnamed QuickFile creditors") == 0
     assert owed_labels.count("Other QuickFile creditors") == 0
-    assert "Loan repayments (on the books as an asset)" in owned_labels
-    assert "Loans outstanding" not in owned_labels
+    assert owed_labels.count("Funding Circle") == 0
     assert len([line for line in business.owed if "Tesla" in line.label]) == 1
     # No invented Tesla market value on the own side; car = 0010 NBV via FA total.
     assert not any(
@@ -308,17 +318,18 @@ def test_dls_0109_balance_sheet_is_plain_english_one_to_one() -> None:
         and abs(float(line.amount_gbp) - 27720.15) < 0.01
         for line in business.owed
     )
-    # Do not invent a "corrected leftover" — leftover stays QF capital.
-    assert business.whats_left_gbp == 30037.56
+    # Leftover stays QF capital (post-recode £3,879.01).
+    assert business.whats_left_gbp == 3879.01
     # Identity: FA+CA − CL−LTL = capital within 1p.
-    assert business.owned_total_gbp == round(37183.24 + 38190.14, 2)
-    assert business.owed_total_gbp == 45335.82
+    assert business.owned_total_gbp == round(37183.24 + 10469.99, 2)
+    assert business.owed_total_gbp == 43774.22
     assert abs(
         round(business.owned_total_gbp - business.owed_total_gbp, 2)
         - business.whats_left_gbp
     ) <= 0.01
-    # Register extras (£9999 card, stale Tesla) must not inflate totals.
-    assert business.owed_total_gbp < 50000
+    # Register extras (£9999 card, stale Tesla, Funding Circle) must not inflate.
+    assert business.owed_total_gbp < 45000
+    assert business.owned_total_gbp == 47653.23
 
 
 def test_business_without_balance_sheet_shows_gap_not_working_capital() -> None:
