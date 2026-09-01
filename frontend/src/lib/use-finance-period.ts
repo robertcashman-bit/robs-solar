@@ -38,18 +38,24 @@ function readPrefs(opts: Options): FinancePeriodPrefs {
   const params = currentParams();
   const stored = readStoredPeriodPrefs();
   const fallback = opts.defaultPeriod ?? DEFAULT_FINANCE_PERIOD;
-  // preferDefaultPeriod: URL wins, then page default (e.g. mtd on Personal/Business).
+  // preferDefaultPeriod: URL wins, then page default (e.g. last month on Overview
+  // day 1). Stored prefs must not hide that default — dual period used to keep
+  // stored personal_period/business_period and override day-1 last month.
   const period = parseFinancePeriod(
     params.get("period")
       ?? (opts.preferDefaultPeriod ? opts.defaultPeriod : stored.period),
     fallback,
   );
   const personalPeriod = parseFinancePeriod(
-    params.get("personal_period") ?? stored.personalPeriod ?? period,
+    params.get("personal_period")
+      ?? (opts.preferDefaultPeriod ? period : stored.personalPeriod)
+      ?? period,
     period,
   );
   const businessPeriod = parseFinancePeriod(
-    params.get("business_period") ?? stored.businessPeriod ?? period,
+    params.get("business_period")
+      ?? (opts.preferDefaultPeriod ? period : stored.businessPeriod)
+      ?? period,
     period,
   );
   const scope =

@@ -15,6 +15,10 @@ for _scope, _pattern, _category, _priority in [
     ("personal", "SALARY", "Salary", 5),
     ("personal", "PAYROLL", "Salary", 5),
     ("personal", "WAGES", "Salary", 5),
+    # Company payroll narratives often name the employer, not "SALARY".
+    ("personal", "DEFENCE LEGAL", "Salary", 5),
+    ("personal", "DEFENCELEGAL", "Salary", 5),
+    ("personal", "DLS LTD", "Salary", 5),
     ("personal", "DIVIDEND", "Dividends", 10),
     ("personal", "DIRECTOR LOAN", "Director loan repayment", 15),
     ("business", "TESLA", "Vehicle finance", 10),
@@ -82,6 +86,24 @@ SALARY_HINTS = (
     "SALARY",
     "PAYROLL",
     "WAGES",
+    # Employer / company payroll narratives (BACS often omits "SALARY").
+    "DEFENCE LEGAL",
+    "DEFENCELEGAL",
+    "DLS LTD",
+)
+
+# Cross-scope equal amounts are usually payroll or DLA, not "between my accounts".
+# Only pair business↔personal when wording is clearly an internal move.
+CROSS_SCOPE_TRANSFER_HINTS = (
+    "OWN ACCOUNT",
+    "BETWEEN ACCOUNTS",
+    "INTERNAL TRANSFER",
+    "INTERNAL TFR",
+    "TO MY ACCOUNT",
+    "FROM MY ACCOUNT",
+    "DIRECTOR LOAN",
+    "DIRECTORS LOAN",
+    "DIRECTOR'S LOAN",
 )
 
 
@@ -123,6 +145,21 @@ class FinanceCategoriserService:
     def looks_like_salary(self, description: str) -> bool:
         text = (description or "").upper()
         return any(hint in text for hint in SALARY_HINTS)
+
+    def looks_like_cross_scope_transfer(self, description: str) -> bool:
+        """True only for clear own-account / director-loan wording across scopes.
+
+        Equal business debit + personal credit without this wording is treated as
+        payroll (or similar), not an internal transfer.
+        """
+        text = (description or "").upper()
+        if self.looks_like_salary(description):
+            return False
+        if any(hint in text for hint in CROSS_SCOPE_TRANSFER_HINTS):
+            return True
+        if re.search(r"\bDLA\b", text):
+            return True
+        return False
 
     def looks_like_payment_rail_only(self, description: str) -> bool:
         """True when FPS/BACS/Faster Payment appear without own-account hints."""

@@ -28,6 +28,10 @@ class FinanceTransferService:
         lookback_days: int = 120,
         persist: bool = True,
     ) -> dict[str, Any]:
+        # Clear salary / cross-scope false positives before pairing again so
+        # already-flagged August wages return as income on the next pass.
+        cleared = await self._clear_false_transfer_marks(db, persist=False)
+
         cutoff = (datetime.now(timezone.utc).date() - timedelta(days=lookback_days)).isoformat()
         rows = list(
             (
@@ -76,22 +80,7 @@ class FinanceTransferService:
                     continue
                 if left.amount_pence + right.amount_pence != 0:
                     continue
-                # Salary-looking credits should not be paired away as transfers
-                # unless the counterpart also looks like an internal move.
-                left_salary = finance_categoriser_service.looks_like_salary(left.description)
-                right_salary = finance_categoriser_service.looks_like_salary(right.description)
-                if left_salary or right_salary:
-                    pair_text = f"{left.description} {right.description}"
-                    if not finance_categoriser_service.looks_like_transfer(pair_text):
-                        continue
-                same_account = (
-                    left.account_id is not None
-                    and right.account_id is not None
-                    and left.account_id == right.account_id
-                )
-                if same_account and not finance_categoriser_service.looks_like_transfer(
-                    left.description + " " + right.description
-                ):
+                if not self._should_pair_as_transfer(left, right):
                     continue
 
                 left.is_transfer = True
@@ -124,25 +113,50 @@ class FinanceTransferService:
         return {
             "examined": len(rows),
             "marked_or_linked": linked,
+            "cleared_false_transfers": cleared,
             "needs_review": flagged_review,
             "message": (
                 "Transfers are excluded from expenditure totals but kept for cashflow."
             ),
         }
 
-    async def unmark_false_transfers(
+    def _should_pair_as_transfer(
+        self,
+        left: FinanceTransactionRow,
+        right: FinanceTransactionRow,
+    ) -> bool:
+        """Decide whether equal-and-opposite legs are a real internal transfer."""
+        pair_text = f"{left.description} {right.description}"
+        left_salary = finance_categoriser_service.looks_like_salary(left.description)
+        right_salary = finance_categoriser_service.looks_like_salary(right.description)
+        if left_salary or right_salary:
+            # Salary-looking credits stay income unless the pair is clearly
+            # an own-account move (rare).
+            if not finance_categoriser_service.looks_like_transfer(pair_text):
+                return False
+
+        cross_scope = left.scope != right.scope
+        if cross_scope:
+            # Business debit + personal credit of the same amount is usually
+            # payroll or DLA — not "between my accounts" — unless wording says so.
+            return finance_categoriser_service.looks_like_cross_scope_transfer(pair_text)
+
+        same_account = (
+            left.account_id is not None
+            and right.account_id is not None
+            and left.account_id == right.account_id
+        )
+        if same_account and not finance_categoriser_service.looks_like_transfer(pair_text):
+            return False
+        return True
+
+    async def _clear_false_transfer_marks(
         self,
         db: AsyncSession,
         *,
-        persist: bool = True,
-        redetect: bool = True,
-    ) -> dict[str, Any]:
-        """Clear transfer flags that came from payment-rail false positives.
-
-        Keeps rows with an opposite-leg ``transfer_group_id`` and rows whose
-        description still has a clear own-account hint. Re-categorises cleared
-        rows and optionally re-runs pair detection.
-        """
+        persist: bool,
+    ) -> int:
+        """Unmark salary and cross-scope false positives, including paired legs."""
         rows = list(
             (
                 await db.scalars(
@@ -153,45 +167,130 @@ class FinanceTransferService:
                 )
             ).all()
         )
+        by_id = {row.id: row for row in rows}
+        by_group: dict[str, list[FinanceTransactionRow]] = {}
+        for row in rows:
+            group = (row.transfer_group_id or "").strip()
+            if group:
+                by_group.setdefault(group, []).append(row)
+
+        to_clear: set[int] = set()
+        for row in rows:
+            if row.id in to_clear:
+                continue
+            group = (row.transfer_group_id or "").strip()
+            partners = list(by_group.get(group) or []) if group else []
+            # Unpaired + no own-account hint → legacy FPS/BACS false positive.
+            if not group or len(partners) < 2:
+                if finance_categoriser_service.looks_like_transfer(row.description):
+                    continue
+                to_clear.add(row.id)
+                continue
+
+            # Paired: clear when the pair would not be made under current rules.
+            if not self._paired_group_still_valid(partners):
+                for partner in partners:
+                    to_clear.add(partner.id)
+
+        # Also catch orphan group ids where the partner is not transfer-marked.
+        for row in rows:
+            if row.id in to_clear:
+                continue
+            if finance_categoriser_service.looks_like_salary(row.description):
+                if not finance_categoriser_service.looks_like_transfer(row.description):
+                    to_clear.add(row.id)
+
         cleared = 0
         now = datetime.now(timezone.utc)
-        for row in rows:
-            if row.transfer_group_id:
+        for row_id in to_clear:
+            row = by_id.get(row_id)
+            if row is None:
                 continue
-            if finance_categoriser_service.looks_like_transfer(row.description):
-                continue
-            # Unpaired + no own-account hint → legacy false positive (FPS/BACS
-            # salary credits, rails-only marks, etc.).
-            row.is_transfer = False
-            row.txn_type = "income" if row.amount_pence > 0 else "expense"
-            row.updated_at = now
-            if (row.category or "").strip() == "Transfers":
-                guessed = await finance_categoriser_service.categorise(
-                    db, row.description, scope=row.scope
-                )
-                row.category = guessed.get("category") or ""
-                row.category_confidence = guessed.get("confidence") or ""
-            if row.subcategory == "needs_review":
-                row.subcategory = ""
+            await self._unmark_row(db, row, now=now)
             cleared += 1
 
         if persist:
             await db.commit()
         else:
             await db.flush()
+        return cleared
+
+    def _paired_group_still_valid(self, partners: list[FinanceTransactionRow]) -> bool:
+        if len(partners) < 2:
+            return False
+        # Validate each opposite-sign combination; if any valid pair remains, keep.
+        for index, left in enumerate(partners):
+            for right in partners[index + 1 :]:
+                if left.amount_pence + right.amount_pence != 0:
+                    continue
+                left_day = _parse(left.posted_on)
+                right_day = _parse(right.posted_on)
+                if left_day is None or right_day is None:
+                    continue
+                if abs((right_day - left_day).days) > 1:
+                    continue
+                if self._should_pair_as_transfer(left, right):
+                    return True
+        return False
+
+    async def _unmark_row(
+        self,
+        db: AsyncSession,
+        row: FinanceTransactionRow,
+        *,
+        now: datetime,
+    ) -> None:
+        row.is_transfer = False
+        row.txn_type = "income" if row.amount_pence > 0 else "expense"
+        row.transfer_group_id = None
+        row.updated_at = now
+        if (row.category or "").strip() == "Transfers":
+            guessed = await finance_categoriser_service.categorise(
+                db, row.description, scope=row.scope
+            )
+            row.category = guessed.get("category") or ""
+            row.category_confidence = guessed.get("confidence") or ""
+        if row.subcategory == "needs_review":
+            row.subcategory = ""
+
+    async def unmark_false_transfers(
+        self,
+        db: AsyncSession,
+        *,
+        persist: bool = True,
+        redetect: bool = True,
+    ) -> dict[str, Any]:
+        """Clear transfer flags that came from payment-rail or payroll false positives.
+
+        Clears unpaired rails-only marks and cross-scope / salary pairs that are
+        not clear own-account moves. Optionally re-runs pair detection.
+        """
+        rows_before = list(
+            (
+                await db.scalars(
+                    select(FinanceTransactionRow).where(
+                        FinanceTransactionRow.is_deleted.is_(False),
+                        FinanceTransactionRow.is_transfer.is_(True),
+                    )
+                )
+            ).all()
+        )
+        cleared = await self._clear_false_transfer_marks(db, persist=persist)
 
         redetect_result: dict[str, Any] = {}
         if redetect:
             redetect_result = await self.detect_and_mark(
                 db, lookback_days=400, persist=persist
             )
+            # detect_and_mark also clears; report total cleared from this call path.
+            cleared = max(cleared, int(redetect_result.get("cleared_false_transfers") or 0))
         return {
             "cleared": cleared,
-            "examined": len(rows),
+            "examined": len(rows_before),
             "redetect": redetect_result,
             "message": (
                 f"Cleared {cleared} false transfer flag(s). "
-                "Opposite-leg pairs and own-account wording were kept."
+                "True own-account pairs and internal wording were kept."
             ),
         }
 
@@ -203,8 +302,9 @@ class FinanceTransferService:
     ) -> dict[str, Any]:
         """Resolve transfer-review rows that are no longer transfers.
 
-        Cross-scope pairs keep ``needs_review`` until manually categorised.
-        False-positive transfer marks are cleared via ``unmark_false_transfers``.
+        Cross-scope pairs keep ``needs_review`` until manually categorised when
+        they are still valid internal moves. False-positive transfer marks are
+        cleared via ``unmark_false_transfers``.
         """
         unmarked = await self.unmark_false_transfers(db, persist=persist, redetect=True)
         remaining = list(

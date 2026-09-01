@@ -54,14 +54,31 @@ def test_salary_credit_not_treated_as_transfer() -> None:
         "BACS CREDIT SALARY ACME LTD"
     )
     assert finance_categoriser_service.looks_like_salary("BACS CREDIT SALARY ACME LTD")
+    assert finance_categoriser_service.looks_like_salary("BACS DEFENCE LEGAL SERVICES")
+    assert finance_categoriser_service.looks_like_salary("DEFENCELEGAL BACS")
+    assert finance_categoriser_service.looks_like_salary("DLS LTD WAGES")
+    assert finance_categoriser_service.looks_like_salary("FPS PAYROLL")
     hit = finance_categoriser_service.categorise_description(
         "FPS SALARY ACME LTD", scope="personal"
     )
     assert hit["category"] == "Salary"
+    dls = finance_categoriser_service.categorise_description(
+        "BACS DEFENCE LEGAL SERVICES", scope="personal"
+    )
+    assert dls["category"] == "Salary"
     # Own-account wording still counts.
     assert finance_categoriser_service.looks_like_transfer("FASTER PAYMENT TO SAVINGS")
     assert finance_categoriser_service.looks_like_transfer("INTERNAL TRANSFER")
-
+    # Cross-scope needs clearer wording than equal amounts alone.
+    assert not finance_categoriser_service.looks_like_cross_scope_transfer(
+        "BACS DEFENCE LEGAL SERVICES FPS WAGES ROBERT"
+    )
+    assert finance_categoriser_service.looks_like_cross_scope_transfer(
+        "INTERNAL TRANSFER DIRECTOR LOAN"
+    )
+    assert finance_categoriser_service.looks_like_cross_scope_transfer(
+        "TO MY ACCOUNT DLA"
+    )
 
 @pytest.mark.asyncio
 async def test_import_salary_fps_credit_is_not_marked_transfer() -> None:
@@ -107,6 +124,136 @@ async def test_import_salary_fps_credit_is_not_marked_transfer() -> None:
         assert by_ext["salary-1"].category == "Salary"
         assert by_ext["salary-1"].amount_pence > 0
         assert by_ext["xfer-1"].is_transfer is True
+
+
+@pytest.mark.asyncio
+async def test_defence_legal_wage_pair_not_marked_transfer() -> None:
+    """Personal credit + matching business wage debit must stay as income/expense."""
+    async with SessionLocal() as db:
+        result = await finance_import_service.commit(
+            db,
+            [
+                {
+                    "posted_on": "2026-08-28",
+                    "amount_gbp": -4200.0,
+                    "description": "BACS WAGES ROBERT CASHMAN",
+                    "account_name": "Business Current",
+                    "account_external_id": "acc-biz",
+                    "external_id": "biz-wage-out",
+                    "scope": "business",
+                },
+                {
+                    "posted_on": "2026-08-28",
+                    "amount_gbp": 4200.0,
+                    "description": "BACS DEFENCE LEGAL SERVICES",
+                    "account_name": "Personal Current",
+                    "account_external_id": "acc-pers",
+                    "external_id": "pers-wage-in",
+                    "scope": "personal",
+                },
+                {
+                    "posted_on": "2026-08-29",
+                    "amount_gbp": -500.0,
+                    "description": "INTERNAL TRANSFER TO SAVINGS",
+                    "account_name": "Personal Current",
+                    "account_external_id": "acc-pers",
+                    "external_id": "pers-own-out",
+                    "scope": "personal",
+                },
+                {
+                    "posted_on": "2026-08-29",
+                    "amount_gbp": 500.0,
+                    "description": "INTERNAL TRANSFER FROM CURRENT",
+                    "account_name": "Personal Savings",
+                    "account_external_id": "acc-save",
+                    "external_id": "pers-own-in",
+                    "scope": "personal",
+                },
+            ],
+            source="lunchflow",
+            actor="test",
+            persist=True,
+        )
+        assert result["imported"] == 4
+        rows = list(
+            (
+                await db.scalars(
+                    select(FinanceTransactionRow).where(
+                        FinanceTransactionRow.is_deleted.is_(False)
+                    )
+                )
+            ).all()
+        )
+        by_ext = {row.external_id: row for row in rows}
+        assert by_ext["pers-wage-in"].is_transfer is False
+        assert by_ext["pers-wage-in"].amount_pence > 0
+        assert by_ext["pers-wage-in"].category == "Salary"
+        assert by_ext["biz-wage-out"].is_transfer is False
+        assert by_ext["pers-own-out"].is_transfer is True
+        assert by_ext["pers-own-in"].is_transfer is True
+
+
+@pytest.mark.asyncio
+async def test_unmark_clears_paired_defence_legal_false_transfer() -> None:
+    """Already-flagged cross-scope wage pairs return as income without a DB edit."""
+    now = datetime.now(timezone.utc)
+    async with SessionLocal() as db:
+        biz = FinanceTransactionRow(
+            scope="business",
+            account_id=None,
+            account_name="Business Current",
+            external_id="paired-biz-wage",
+            posted_on="2026-08-27",
+            amount_pence=-380000,
+            description="FPS WAGES R CASHMAN",
+            txn_type="transfer",
+            category="Transfers",
+            subcategory="needs_review",
+            transfer_group_id="xfer:901-902",
+            source="lunchflow",
+            fingerprint="fp-paired-biz-wage",
+            is_transfer=True,
+            is_deleted=False,
+            currency="GBP",
+            created_at=now,
+            updated_at=now,
+        )
+        personal = FinanceTransactionRow(
+            scope="personal",
+            account_id=None,
+            account_name="Personal Current",
+            external_id="paired-pers-wage",
+            posted_on="2026-08-27",
+            amount_pence=380000,
+            description="BACS DEFENCE LEGAL SERVICES",
+            txn_type="transfer",
+            category="Transfers",
+            subcategory="needs_review",
+            transfer_group_id="xfer:901-902",
+            source="lunchflow",
+            fingerprint="fp-paired-pers-wage",
+            is_transfer=True,
+            is_deleted=False,
+            currency="GBP",
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(biz)
+        db.add(personal)
+        await db.commit()
+
+        result = await finance_transfer_service.detect_and_mark(
+            db, lookback_days=400, persist=True
+        )
+        assert result["cleared_false_transfers"] >= 2
+        await db.refresh(biz)
+        await db.refresh(personal)
+        assert personal.is_transfer is False
+        assert personal.txn_type == "income"
+        assert personal.category == "Salary"
+        assert personal.transfer_group_id is None
+        assert biz.is_transfer is False
+        assert biz.subcategory != "needs_review"
 
 
 @pytest.mark.asyncio
