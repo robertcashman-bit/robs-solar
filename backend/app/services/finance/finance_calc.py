@@ -790,7 +790,11 @@ _VEHICLE_DEBT_TOKENS = (
 )
 _VEHICLE_ASSET_TOKENS = ("tesla", "vehicle", "car", "model 3", "model y")
 # QuickFile HP Finance only (0050 / 50) — remaining capital for Tesla.
-# 2300 Loans is a current-asset debit on Defence Legal, NOT the HP tail.
+# 2300 Loans is a current-asset debit on Defence Legal, NOT the HP tail and
+# NOT money lent out: ledger drill shows Funding Circle / BBL / Flexipay
+# repayments (plus two Tesla HP instalments misposted here) dumped on 2300,
+# flipping it to a debit asset. Loan liabilities for those facilities are
+# missing from the BS — do not invent them; Overview still 1:1s the sheet.
 _QF_HP_NOMINALS = frozenset({"50"})
 _QF_HP_LABEL_TOKENS = (
     "hp finance",
@@ -823,7 +827,11 @@ def _is_qf_hp_finance_line(line: dict) -> bool:
 
 
 def _is_qf_loans_asset_line(line: dict) -> bool:
-    """True for QuickFile 2300 Loans when it is a current-asset debit."""
+    """True for QuickFile 2300 Loans when it is a current-asset debit.
+
+    On Defence Legal this is a repayments dump (Funding Circle, BBL, etc.),
+    not cash owed to the company and not Tesla HP (that is 0050).
+    """
     code = _normalize_nominal(str(line.get("nominal_code") or ""))
     if code in _QF_LOANS_ASSET_NOMINALS:
         return True
@@ -903,7 +911,7 @@ def _plain_qf_asset_line(line: dict) -> OverviewLine | None:
             "more" if amount < _MORE_LEFTOVER_GBP else "primary",
         )
     if code == "2100" or "creditors control" in raw_label.lower():
-        # Debit creditors control = suppliers in credit / other company money.
+        # Debit creditors control = unallocated supplier payments / other company money.
         # Never label this "Suppliers still to pay".
         return OverviewLine(
             "creditors_debit",
@@ -911,7 +919,7 @@ def _plain_qf_asset_line(line: dict) -> OverviewLine | None:
             amount,
             "asset",
             "primary",
-            "Suppliers in credit (QuickFile 2100 debit)",
+            "Unallocated supplier payments (QuickFile 2100 debit)",
         )
     if code == "2204" or "manual adjustment" in raw_label.lower():
         return OverviewLine(
@@ -932,11 +940,12 @@ def _plain_qf_asset_line(line: dict) -> OverviewLine | None:
     if _is_qf_loans_asset_line(line):
         return OverviewLine(
             "qf_loans_asset",
-            "Loans outstanding",
+            "Loan repayments (on the books as an asset)",
             amount,
             "asset",
             "primary",
-            "QuickFile 2300 — money outstanding, not car finance",
+            "Funding Circle, BBL and similar repayments sit on QuickFile 2300 "
+            "— not money owed to the company, not Tesla HP (that is 0050)",
         )
     label = raw_label or f"Nominal {code or '?'}"
     return OverviewLine(

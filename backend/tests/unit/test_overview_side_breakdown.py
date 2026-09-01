@@ -265,7 +265,15 @@ def test_dls_0109_balance_sheet_is_plain_english_one_to_one() -> None:
     assert _amount(business.owned, "Vehicles and kit") == 37183.24
     assert _amount(business.owned, "Customers still to pay") == 7597.31
     assert _amount(business.owned, "Bank") == 0.11
-    assert _amount(business.owned, "Loans outstanding") == 27720.15
+    loans_2300 = next(
+        line for line in business.owned if line.key == "qf_loans_asset"
+    )
+    assert loans_2300.amount_gbp == 27720.15
+    # Ledger drill: 2300 is a repayments dump, not money owed to the company.
+    assert loans_2300.label == "Loan repayments (on the books as an asset)"
+    assert "Loans outstanding" not in loans_2300.label
+    assert "Funding Circle" in (loans_2300.hint or "")
+    assert "0050" in (loans_2300.hint or "")
     # 2100 debit is other company money — never "Suppliers still to pay".
     assert _amount(business.owned, "Other company money") == 2391.83
     assert "Suppliers still to pay" not in _labels(business.owned) | _labels(business.owed)
@@ -285,20 +293,23 @@ def test_dls_0109_balance_sheet_is_plain_english_one_to_one() -> None:
     assert owed_labels.count("Other amounts owed") == 0
     assert owed_labels.count("Unnamed QuickFile creditors") == 0
     assert owed_labels.count("Other QuickFile creditors") == 0
-    assert "Loans outstanding" in owned_labels
+    assert "Loan repayments (on the books as an asset)" in owned_labels
+    assert "Loans outstanding" not in owned_labels
     assert len([line for line in business.owed if "Tesla" in line.label]) == 1
-    # No invented Tesla market value on the own side.
+    # No invented Tesla market value on the own side; car = 0010 NBV via FA total.
     assert not any(
         line.amount_gbp is not None and abs(float(line.amount_gbp) - 43054.85) < 0.01
         for line in business.owned
     )
-    # 2300 must never appear as a debt.
+    # 2300 must never appear as a debt; Tesla is 0050 only.
     assert not any(
         line.kind == "debt"
         and line.amount_gbp is not None
         and abs(float(line.amount_gbp) - 27720.15) < 0.01
         for line in business.owed
     )
+    # Do not invent a "corrected leftover" — leftover stays QF capital.
+    assert business.whats_left_gbp == 30037.56
     # Identity: FA+CA − CL−LTL = capital within 1p.
     assert business.owned_total_gbp == round(37183.24 + 38190.14, 2)
     assert business.owed_total_gbp == 45335.82
