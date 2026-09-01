@@ -292,6 +292,7 @@ class FinanceOverviewService:
             director_owes_company=director_owes,
             company_owes_director=company_owes,
         )
+        # Keep working-capital figure for API consumers; Overview UI uses BS.
         company_pos = company_position(
             business_bank=business_bank,
             debtors=totals.debtors_gbp,
@@ -301,6 +302,7 @@ class FinanceOverviewService:
             director_owes_company=director_owes,
             company_owes_director=company_owes,
         )
+        balance_sheet = await self._quickfile_balance_sheet(db)
         personal_bd, business_bd = build_overview_side_breakdowns(
             totals=totals,
             accounts=account_views,
@@ -308,9 +310,9 @@ class FinanceOverviewService:
             director_owes_company=director_owes,
             company_owes_director=company_owes,
             personal_whats_left=personal_nw,
-            business_whats_left=company_pos,
             mortgage_configured=mortgage_configured,
             pension_configured=pension_configured,
+            balance_sheet=balance_sheet,
         )
         from app.schemas.finance import OverviewSideBreakdown
 
@@ -320,6 +322,14 @@ class FinanceOverviewService:
         business_breakdown = OverviewSideBreakdown.model_validate(
             overview_side_to_dict(business_bd)
         )
+        # Combined what's-left: personal + DLS BS (or personal only if BS missing).
+        # DLA cancels once across the two sides.
+        if business_bd.whats_left_available and business_bd.whats_left_gbp is not None:
+            combined_left = round(personal_nw + float(business_bd.whats_left_gbp), 2)
+            display_company = float(business_bd.whats_left_gbp)
+        else:
+            combined_left = personal_nw
+            display_company = company_pos
 
         overview = FinanceOverviewResponse(
             personal_bank_balance_gbp=personal_bank,
@@ -341,7 +351,7 @@ class FinanceOverviewService:
             mortgage_balance_gbp=totals.mortgage_gbp,
             pension_value_gbp=totals.pension_gbp,
             directors_loan_gbp=totals.directors_loan_gbp,
-            net_worth_estimate_gbp=totals.net_worth_gbp,
+            net_worth_estimate_gbp=combined_left,
             monthly_surplus_gbp=round(income - spending - repayments, 2),
             available_cash_gbp=totals.available_cash_gbp,
             available_credit_gbp=totals.available_credit_gbp,
@@ -355,7 +365,7 @@ class FinanceOverviewService:
             active_budget=active_budget,
             insights=[],
             personal_net_worth_gbp=personal_nw,
-            company_position_gbp=company_pos,
+            company_position_gbp=display_company,
             director_owes_company_gbp=director_owes,
             company_owes_director_gbp=company_owes,
             external_debt_gbp=external,
@@ -688,6 +698,27 @@ class FinanceOverviewService:
         safe["combined"] = combined
         overview.safe_to_spend = safe
         overview.cash_status = str(combined.get("status") or overview.cash_status)
+
+    async def _quickfile_balance_sheet(self, db: AsyncSession) -> dict[str, float] | None:
+        """Latest stored QuickFile balance sheet totals, if synced."""
+        try:
+            from app.services.finance.quickfile_reports_service import (
+                quickfile_reports_service,
+            )
+
+            reports = await quickfile_reports_service.get_stored_reports(db)
+        except Exception:
+            return None
+        if reports is None or reports.balance_sheet is None:
+            return None
+        bs = reports.balance_sheet
+        return {
+            "fixed_assets_gbp": float(bs.fixed_assets_gbp or 0.0),
+            "current_assets_gbp": float(bs.current_assets_gbp or 0.0),
+            "current_liabilities_gbp": float(bs.current_liabilities_gbp or 0.0),
+            "long_term_liabilities_gbp": float(bs.long_term_liabilities_gbp or 0.0),
+            "capital_and_reserves_gbp": float(bs.capital_and_reserves_gbp),
+        }
 
     async def _sync_stamp(self, db: AsyncSession, source: str) -> str | None:
         try:

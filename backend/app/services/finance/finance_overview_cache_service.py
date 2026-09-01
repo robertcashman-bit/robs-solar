@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_TTL = timedelta(minutes=15)
 # Bump when overview calculation rules change so stale payloads are discarded.
-CACHE_VERSION = "5"
+CACHE_VERSION = "6"
 
 
 def _now() -> datetime:

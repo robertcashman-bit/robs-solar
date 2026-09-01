@@ -771,9 +771,11 @@ class OverviewSideBreakdown:
     side: str  # personal | business
     owned_total_gbp: float
     owed_total_gbp: float
-    whats_left_gbp: float
+    whats_left_gbp: float | None
     owned: tuple[OverviewLine, ...]
     owed: tuple[OverviewLine, ...]
+    whats_left_hint: str = ""
+    whats_left_available: bool = True
 
 
 _VEHICLE_DEBT_TOKENS = (
@@ -787,6 +789,8 @@ _VEHICLE_DEBT_TOKENS = (
     "7090442480",
 )
 _VEHICLE_ASSET_TOKENS = ("tesla", "vehicle", "car", "model 3", "model y")
+# Leftovers small enough to hide behind More (not real debts).
+_MORE_LEFTOVER_GBP = 3000.0
 
 
 def _text_has_token(text: str, tokens: tuple[str, ...]) -> bool:
@@ -823,6 +827,13 @@ def _plain_debt_label(debt: LiabilityView) -> str:
     return name or "Debt"
 
 
+def _sum_line_amounts(lines: list[OverviewLine]) -> float:
+    return round(
+        sum(float(line.amount_gbp) for line in lines if line.amount_gbp is not None),
+        2,
+    )
+
+
 def build_overview_side_breakdowns(
     *,
     totals: FinanceTotals,
@@ -831,16 +842,17 @@ def build_overview_side_breakdowns(
     director_owes_company: float,
     company_owes_director: float,
     personal_whats_left: float,
-    business_whats_left: float,
     mortgage_configured: bool,
     pension_configured: bool,
+    balance_sheet: dict[str, float] | None = None,
 ) -> tuple[OverviewSideBreakdown, OverviewSideBreakdown]:
-    """Assets and debts for Overview columns — formula totals unchanged.
+    """You / Defence Legal columns for Overview.
 
-    Bank lines use positive cash pots; overdrafts sit under what you owe so
-    HP + OD + creditors − cash/customers explains company what's-left.
-    Vehicle HP without a matching company vehicle asset surfaces as
-    "Car value not on this list" rather than inventing a car value.
+    Real debts and fixed assets are always ``tier=primary`` (first paint).
+    ``More`` is only for small leftovers such as a VAT pot.
+
+    Defence Legal what's-left prefers QuickFile Capital and reserves when the
+    balance sheet is present — never the working-capital company_position figure.
     """
     account_list = [a for a in accounts if a.is_active]
     debt_list = [d for d in liabilities if d.is_active]
@@ -857,7 +869,7 @@ def build_overview_side_breakdowns(
         2,
     )
 
-    # Personal owned (primary): bank, house, pension. DLA receivable → more.
+    # --- You: own ---
     personal_owned: list[OverviewLine] = [
         OverviewLine("personal_bank", "Bank", personal_cash, "asset", "primary"),
     ]
@@ -883,10 +895,6 @@ def build_overview_side_breakdowns(
                 "" if pension_configured else "Add a pension to track this",
             )
         )
-    if personal_other > 0:
-        personal_owned.append(
-            OverviewLine("personal_other", "Other", personal_other, "asset", "more")
-        )
     if company_owes_director > 0:
         personal_owned.append(
             OverviewLine(
@@ -894,41 +902,73 @@ def build_overview_side_breakdowns(
                 "Company still owes Robert",
                 company_owes_director,
                 "asset",
-                "more",
+                "primary",
+            )
+        )
+    if personal_other > 0:
+        personal_owned.append(
+            OverviewLine(
+                "personal_other",
+                "Other",
+                personal_other,
+                "asset",
+                "more" if personal_other < _MORE_LEFTOVER_GBP else "primary",
             )
         )
 
+    # --- You: owe (all real debts on first paint) ---
     personal_owed: list[OverviewLine] = []
-    if mortgage_configured or totals.mortgage_gbp > 0:
+    mortgage_gbp = totals.mortgage_gbp
+    # Prefer live register mortgage if totals somehow lag.
+    if mortgage_gbp <= 0:
+        mortgage_gbp = round(
+            sum(
+                d.balance_gbp
+                for d in debt_list
+                if d.scope == "personal" and d.debt_type == "mortgage" and d.balance_gbp > 0
+            ),
+            2,
+        )
+    if mortgage_configured or mortgage_gbp > 0:
         personal_owed.append(
             OverviewLine(
                 "mortgage",
                 "House mortgage",
-                totals.mortgage_gbp if totals.mortgage_gbp > 0 else None,
+                mortgage_gbp if mortgage_gbp > 0 else None,
                 "debt",
                 "primary",
-                "Your half of the joint mortgage" if totals.mortgage_gbp > 0 else "",
+                "Your half of the £164,421 joint mortgage" if mortgage_gbp > 0 else "",
             )
         )
-    if totals.personal_credit_card_gbp > 0:
-        personal_owed.append(
-            OverviewLine(
-                "personal_cards",
-                "Credit cards",
-                totals.personal_credit_card_gbp,
-                "debt",
-                "primary",
-            )
+    cards_gbp = totals.personal_credit_card_gbp
+    if cards_gbp <= 0:
+        cards_gbp = round(
+            sum(
+                d.balance_gbp
+                for d in debt_list
+                if d.scope == "personal" and d.debt_type == "credit_card" and d.balance_gbp > 0
+            ),
+            2,
         )
-    if totals.personal_loan_gbp > 0:
+    if cards_gbp > 0:
         personal_owed.append(
-            OverviewLine(
-                "personal_loans",
-                "Loans",
-                totals.personal_loan_gbp,
-                "debt",
-                "primary",
-            )
+            OverviewLine("personal_cards", "Credit cards", cards_gbp, "debt", "primary")
+        )
+    loans_gbp = totals.personal_loan_gbp
+    if loans_gbp <= 0:
+        loans_gbp = round(
+            sum(
+                d.balance_gbp
+                for d in debt_list
+                if d.scope == "personal"
+                and d.debt_type in {"loan", "business_loan"}
+                and d.balance_gbp > 0
+            ),
+            2,
+        )
+    if loans_gbp > 0:
+        personal_owed.append(
+            OverviewLine("personal_loans", "Loans", loans_gbp, "debt", "primary")
         )
     if totals.personal_overdraft_gbp > 0:
         personal_owed.append(
@@ -940,6 +980,19 @@ def build_overview_side_breakdowns(
                 "primary",
             )
         )
+    # Catch-all for personal register debts not already listed (never invent).
+    covered = mortgage_gbp + cards_gbp + loans_gbp
+    other_personal = round(max(totals.personal_debt_gbp - covered, 0.0), 2)
+    if other_personal > 0.01:
+        personal_owed.append(
+            OverviewLine(
+                "personal_other_debt",
+                "Other amounts owed",
+                other_personal,
+                "debt",
+                "primary",
+            )
+        )
     if director_owes_company > 0:
         personal_owed.append(
             OverviewLine(
@@ -947,25 +1000,29 @@ def build_overview_side_breakdowns(
                 "Robert still owes the company",
                 director_owes_company,
                 "debt",
-                "more",
+                "primary",
             )
         )
 
-    # Matches personal_net_worth when bank is cash−OD: cash+… − debt − OD − DLA.
-    personal_owned_total = round(
-        personal_cash
-        + totals.property_gbp
-        + (totals.pension_gbp if pension_configured else 0.0)
-        + personal_other
-        + company_owes_director,
-        2,
-    )
-    personal_owed_total = round(
-        totals.personal_debt_gbp + totals.personal_overdraft_gbp + director_owes_company,
-        2,
-    )
+    personal_owned_total = _sum_line_amounts(personal_owned)
+    personal_owed_total = _sum_line_amounts(personal_owed)
+    # Prefer the canonical personal_net_worth when it matches own−owe; else own−owe.
+    personal_left = round(personal_owned_total - personal_owed_total, 2)
+    if abs(personal_left - personal_whats_left) < 0.02:
+        personal_left = personal_whats_left
 
-    # Business owned: cash + customers on first paint. Tax pots / DLA → more.
+    # --- Defence Legal ---
+    bs = balance_sheet or {}
+    fixed_assets = float(bs.get("fixed_assets_gbp") or 0.0)
+    current_assets = float(bs.get("current_assets_gbp") or 0.0)
+    current_liab = float(bs.get("current_liabilities_gbp") or 0.0)
+    long_liab = float(bs.get("long_term_liabilities_gbp") or 0.0)
+    capital = bs.get("capital_and_reserves_gbp")
+    bs_present = capital is not None
+
+    vehicle_debts = [d for d in debt_list if _is_vehicle_hp_debt(d) and d.balance_gbp > 0]
+    vehicle_hp_total = round(sum(d.balance_gbp for d in vehicle_debts), 2)
+
     business_owned: list[OverviewLine] = [
         OverviewLine("business_bank", "Bank", business_cash, "asset", "primary"),
     ]
@@ -979,9 +1036,18 @@ def build_overview_side_breakdowns(
                 "primary",
             )
         )
-    vehicle_debts = [d for d in debt_list if _is_vehicle_hp_debt(d) and d.balance_gbp > 0]
-    vehicle_assets = [a for a in account_list if _is_vehicle_asset(a) and a.balance_gbp > 0]
-    if vehicle_debts and not vehicle_assets:
+    if fixed_assets > 0:
+        business_owned.append(
+            OverviewLine(
+                "fixed_assets",
+                "Vehicles and kit",
+                fixed_assets,
+                "asset",
+                "primary",
+                "From the Defence Legal balance sheet",
+            )
+        )
+    elif vehicle_debts:
         business_owned.append(
             OverviewLine(
                 "car_gap",
@@ -992,11 +1058,13 @@ def build_overview_side_breakdowns(
                 "Finance is listed under what you owe, but the car itself is not counted here",
             )
         )
+    # Other company other_asset accounts (not inventing Tesla value).
     for account in account_list:
         if (
             account.scope == "business"
             and account.account_type == "other_asset"
             and account.balance_gbp > 0
+            and fixed_assets <= 0
         ):
             business_owned.append(
                 OverviewLine(
@@ -1004,7 +1072,7 @@ def build_overview_side_breakdowns(
                     account.name,
                     account.balance_gbp,
                     "asset",
-                    "more",
+                    "primary",
                 )
             )
     if totals.vat_reserve_gbp != 0:
@@ -1014,7 +1082,9 @@ def build_overview_side_breakdowns(
                 "VAT pot",
                 totals.vat_reserve_gbp,
                 "asset",
-                "more",
+                "more"
+                if abs(totals.vat_reserve_gbp) < _MORE_LEFTOVER_GBP
+                else "primary",
             )
         )
     if totals.corp_tax_reserve_gbp != 0:
@@ -1024,7 +1094,9 @@ def build_overview_side_breakdowns(
                 "Corporation tax set aside",
                 totals.corp_tax_reserve_gbp,
                 "asset",
-                "more",
+                "more"
+                if abs(totals.corp_tax_reserve_gbp) < _MORE_LEFTOVER_GBP
+                else "primary",
             )
         )
     if director_owes_company > 0:
@@ -1034,11 +1106,40 @@ def build_overview_side_breakdowns(
                 "Robert still owes the company",
                 director_owes_company,
                 "asset",
-                "more",
+                "primary",
             )
         )
+    # Pad owned to match BS current+fixed when present so totals reconcile.
+    if bs_present and current_assets > 0:
+        listed_current = round(
+            business_cash
+            + totals.debtors_gbp
+            + (
+                totals.vat_reserve_gbp
+                if any(line.key == "vat_pot" for line in business_owned)
+                else 0.0
+            )
+            + (
+                totals.corp_tax_reserve_gbp
+                if any(line.key == "corp_tax_pot" for line in business_owned)
+                else 0.0
+            )
+            + (director_owes_company if director_owes_company > 0 else 0.0),
+            2,
+        )
+        # current_assets is the BS pot; fixed is separate.
+        remainder = round(current_assets - listed_current, 2)
+        if remainder > 0.01:
+            business_owned.append(
+                OverviewLine(
+                    "other_company_money",
+                    "Other company money",
+                    remainder,
+                    "asset",
+                    "primary",
+                )
+            )
 
-    # Overdraft + non-vehicle loans on primary; Tesla HP / DLA / suppliers → more.
     business_owed: list[OverviewLine] = []
     if totals.business_overdraft_gbp > 0:
         business_owed.append(
@@ -1060,17 +1161,17 @@ def build_overview_side_breakdowns(
                 "primary",
             )
         )
-    vehicle_hp_total = round(sum(d.balance_gbp for d in vehicle_debts), 2)
+    for debt in vehicle_debts:
+        business_owed.append(
+            OverviewLine(
+                f"vehicle_hp_{debt.id}",
+                _plain_debt_label(debt),
+                debt.balance_gbp,
+                "debt",
+                "primary",
+            )
+        )
     other_business_loans = round(max(totals.loan_gbp - vehicle_hp_total, 0.0), 2)
-    non_loan_business = round(
-        max(
-            totals.business_debt_gbp
-            - totals.loan_gbp
-            - totals.business_credit_card_gbp,
-            0.0,
-        ),
-        2,
-    )
     if other_business_loans > 0:
         business_owed.append(
             OverviewLine(
@@ -1081,26 +1182,6 @@ def build_overview_side_breakdowns(
                 "primary",
             )
         )
-    if non_loan_business > 0 and totals.creditors_gbp <= 0:
-        business_owed.append(
-            OverviewLine(
-                "business_other_debt",
-                "Other amounts owed",
-                non_loan_business,
-                "debt",
-                "primary",
-            )
-        )
-    for debt in vehicle_debts:
-        business_owed.append(
-            OverviewLine(
-                f"vehicle_hp_{debt.id}",
-                _plain_debt_label(debt),
-                debt.balance_gbp,
-                "debt",
-                "more",
-            )
-        )
     if totals.creditors_gbp > 0:
         business_owed.append(
             OverviewLine(
@@ -1108,7 +1189,9 @@ def build_overview_side_breakdowns(
                 "Suppliers still to pay",
                 totals.creditors_gbp,
                 "debt",
-                "more",
+                "more"
+                if totals.creditors_gbp < _MORE_LEFTOVER_GBP
+                else "primary",
             )
         )
     if company_owes_director > 0:
@@ -1118,39 +1201,123 @@ def build_overview_side_breakdowns(
                 "Company still owes Robert",
                 company_owes_director,
                 "debt",
-                "more",
+                "primary",
             )
         )
+    covered_biz = round(
+        totals.business_overdraft_gbp
+        + totals.business_credit_card_gbp
+        + totals.loan_gbp
+        + (totals.creditors_gbp if totals.creditors_gbp > 0 else 0.0),
+        2,
+    )
+    # Register debts not already covered (ex DLA).
+    other_biz = round(
+        max(
+            totals.business_debt_gbp
+            + totals.business_overdraft_gbp
+            - covered_biz
+            + (totals.creditors_gbp if totals.creditors_gbp > 0 else 0.0)
+            - (totals.creditors_gbp if totals.creditors_gbp > 0 else 0.0),
+            0.0,
+        ),
+        2,
+    )
+    # Simpler residual: business_debt - loans - cards - creditors already in register.
+    residual_register = round(
+        max(
+            totals.business_debt_gbp
+            - totals.loan_gbp
+            - totals.business_credit_card_gbp
+            - (totals.creditors_gbp if totals.creditors_gbp > 0 else 0.0),
+            0.0,
+        ),
+        2,
+    )
+    if residual_register > 0.01:
+        business_owed.append(
+            OverviewLine(
+                "business_other_debt",
+                "Other amounts owed",
+                residual_register,
+                "debt",
+                "primary",
+            )
+        )
+    del covered_biz, other_biz
 
-    # Same sides as company_position (cash pots + OD listed under owe, no car invention).
-    business_owned_total = round(
-        business_cash
-        + totals.debtors_gbp
-        + totals.vat_reserve_gbp
-        + totals.corp_tax_reserve_gbp
-        + director_owes_company,
-        2,
-    )
-    business_owed_total = round(
-        totals.business_debt_gbp + totals.business_overdraft_gbp + company_owes_director,
-        2,
-    )
+    if bs_present:
+        # Prefer BS liability totals so own − owe tracks Capital and reserves.
+        target_owed = round(current_liab + long_liab, 2)
+        listed_owed = _sum_line_amounts(business_owed)
+        owed_gap = round(target_owed - listed_owed, 2)
+        if owed_gap > 0.01:
+            business_owed.append(
+                OverviewLine(
+                    "bs_other_owed",
+                    "Other amounts owed",
+                    owed_gap,
+                    "debt",
+                    "primary",
+                )
+            )
+        business_owned_total = round(fixed_assets + current_assets, 2)
+        # Ensure owned lines sum to owned_total.
+        listed_owned = _sum_line_amounts(business_owned)
+        owned_gap = round(business_owned_total - listed_owned, 2)
+        if owned_gap > 0.01:
+            business_owned.append(
+                OverviewLine(
+                    "bs_other_owned",
+                    "Other company money",
+                    owned_gap,
+                    "asset",
+                    "primary",
+                )
+            )
+            listed_owned = _sum_line_amounts(business_owned)
+        business_owned_total = listed_owned
+        business_owed_total = _sum_line_amounts(business_owed)
+        business_left = round(float(capital), 2)
+        business_hint = "From the Defence Legal balance sheet"
+        business_available = True
+    else:
+        business_owned_total = _sum_line_amounts(business_owned)
+        business_owed_total = _sum_line_amounts(business_owed)
+        business_left = None
+        business_hint = "Balance sheet not synced"
+        business_available = False
+        business_owned.insert(
+            0,
+            OverviewLine(
+                "bs_missing",
+                "Balance sheet not synced",
+                None,
+                "gap",
+                "primary",
+                "Connect QuickFile so What's left matches the company books",
+            ),
+        )
 
     personal = OverviewSideBreakdown(
         side="personal",
         owned_total_gbp=personal_owned_total,
         owed_total_gbp=personal_owed_total,
-        whats_left_gbp=personal_whats_left,
+        whats_left_gbp=personal_left,
         owned=tuple(personal_owned),
         owed=tuple(personal_owed),
+        whats_left_hint="",
+        whats_left_available=True,
     )
     business = OverviewSideBreakdown(
         side="business",
         owned_total_gbp=business_owned_total,
         owed_total_gbp=business_owed_total,
-        whats_left_gbp=business_whats_left,
+        whats_left_gbp=business_left if business_available else None,
         owned=tuple(business_owned),
         owed=tuple(business_owed),
+        whats_left_hint=business_hint,
+        whats_left_available=business_available,
     )
     return personal, business
 
@@ -1161,6 +1328,8 @@ def overview_side_to_dict(side: OverviewSideBreakdown) -> dict:
         "owned_total_gbp": side.owned_total_gbp,
         "owed_total_gbp": side.owed_total_gbp,
         "whats_left_gbp": side.whats_left_gbp,
+        "whats_left_hint": side.whats_left_hint,
+        "whats_left_available": side.whats_left_available,
         "owned": [
             {
                 "key": line.key,

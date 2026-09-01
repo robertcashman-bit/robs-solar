@@ -18,7 +18,7 @@ type FinanceOverviewViewProps = {
 
 type Line = OverviewSideBreakdown["owned"][number];
 
-function primaryLines(lines: Line[], limit = 5): Line[] {
+function primaryLines(lines: Line[], limit = 8): Line[] {
   return lines.filter((line) => line.tier !== "more").slice(0, limit);
 }
 
@@ -118,7 +118,9 @@ function SideColumn({
   const ownedMore = useMemo(() => moreLines(breakdown?.owned ?? []), [breakdown]);
   const owedMore = useMemo(() => moreLines(breakdown?.owed ?? []), [breakdown]);
   const hasMore = ownedMore.length > 0 || owedMore.length > 0;
-  const left = breakdown?.whats_left_gbp ?? 0;
+  const available = breakdown?.whats_left_available !== false;
+  const left = breakdown?.whats_left_gbp;
+  const leftHint = breakdown?.whats_left_hint || "";
 
   return (
     <section
@@ -155,11 +157,16 @@ function SideColumn({
           </p>
           <p
             className={`mt-1 text-2xl font-bold tabular-nums tracking-tight ${
-              left < 0 ? "text-amber-800 dark:text-amber-200" : ""
+              available && left != null && left < 0
+                ? "text-amber-800 dark:text-amber-200"
+                : ""
             }`}
           >
-            {formatGbp(left)}
+            {available && left != null ? formatGbp(left) : "—"}
           </p>
+          {leftHint ? (
+            <p className="mt-1 text-xs text-[var(--muted)]">{leftHint}</p>
+          ) : null}
         </div>
       </div>
 
@@ -199,98 +206,199 @@ function SideColumn({
   );
 }
 
-function fallbackPersonalBreakdown(overview: FinanceOverview): OverviewSideBreakdown {
-  return {
-    side: "personal",
-    owned_total_gbp: round2(
-      (overview.personal_bank_balance_gbp ?? 0)
-        + (overview.personal_overdraft_gbp ?? 0)
-        + (overview.property_gbp ?? 0)
-        + (overview.pension_configured === false ? 0 : overview.pension_value_gbp ?? 0)
-        + (overview.company_owes_director_gbp ?? 0),
-    ),
-    owed_total_gbp: round2(
-      (overview.total_personal_debt_gbp ?? 0)
-        + (overview.personal_overdraft_gbp ?? 0)
-        + (overview.director_owes_company_gbp ?? 0),
-    ),
-    whats_left_gbp: overview.personal_net_worth_gbp ?? 0,
-    owned: [
-      {
-        key: "personal_bank",
-        label: "Bank",
-        amount_gbp: round2(
-          (overview.personal_bank_balance_gbp ?? 0) + (overview.personal_overdraft_gbp ?? 0),
-        ),
-        kind: "asset",
-        tier: "primary",
-        hint: "",
-      },
-      {
-        key: "house_share",
-        label: "House share",
-        amount_gbp: overview.property_gbp ?? 0,
-        kind: "asset",
-        tier: "primary",
-        hint: "Your half only",
-      },
-      {
-        key: "pension",
-        label: "Pension",
-        amount_gbp: overview.pension_configured === false ? null : overview.pension_value_gbp,
-        kind: "asset",
-        tier: "primary",
-        hint: "",
-      },
-    ],
-    owed: [
-      {
-        key: "mortgage",
-        label: "House mortgage",
-        amount_gbp: overview.mortgage_balance_gbp,
-        kind: "debt",
-        tier: "primary",
-        hint: "Your half of the joint mortgage",
-      },
-    ],
-  };
-}
-
-function fallbackBusinessBreakdown(overview: FinanceOverview): OverviewSideBreakdown {
-  return {
-    side: "business",
-    owned_total_gbp: round2(
-      (overview.business_bank_balance_gbp ?? 0)
-        + (overview.business_overdraft_gbp ?? 0)
-        + (overview.debtors_gbp ?? 0)
-        + (overview.vat_reserve_gbp ?? 0)
-        + (overview.corp_tax_reserve_gbp ?? 0)
-        + (overview.director_owes_company_gbp ?? 0),
-    ),
-    owed_total_gbp: round2(
-      (overview.total_business_debt_gbp ?? 0)
-        + (overview.business_overdraft_gbp ?? 0)
-        + (overview.company_owes_director_gbp ?? 0),
-    ),
-    whats_left_gbp: overview.company_position_gbp ?? 0,
-    owned: [
-      {
-        key: "business_bank",
-        label: "Bank",
-        amount_gbp: round2(
-          (overview.business_bank_balance_gbp ?? 0) + (overview.business_overdraft_gbp ?? 0),
-        ),
-        kind: "asset",
-        tier: "primary",
-        hint: "",
-      },
-    ],
-    owed: [],
-  };
-}
-
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function pushOwed(
+  lines: OverviewSideBreakdown["owed"],
+  key: string,
+  label: string,
+  amount: number,
+  hint = "",
+) {
+  if (amount > 0) {
+    lines.push({
+      key,
+      label,
+      amount_gbp: amount,
+      kind: "debt",
+      tier: "primary",
+      hint,
+    });
+  }
+}
+
+/** Never leave owed empty when totals say there is debt. */
+export function fallbackPersonalBreakdown(overview: FinanceOverview): OverviewSideBreakdown {
+  const bank = round2(
+    (overview.personal_bank_balance_gbp ?? 0) + (overview.personal_overdraft_gbp ?? 0),
+  );
+  const owned: OverviewSideBreakdown["owned"] = [
+    {
+      key: "personal_bank",
+      label: "Bank",
+      amount_gbp: bank,
+      kind: "asset",
+      tier: "primary",
+      hint: "",
+    },
+  ];
+  if ((overview.property_gbp ?? 0) > 0 || overview.mortgage_configured) {
+    owned.push({
+      key: "house_share",
+      label: "House share",
+      amount_gbp: overview.property_gbp ?? 0,
+      kind: "asset",
+      tier: "primary",
+      hint: "Your half only",
+    });
+  }
+  if (overview.pension_configured !== false) {
+    owned.push({
+      key: "pension",
+      label: "Pension",
+      amount_gbp: overview.pension_value_gbp,
+      kind: "asset",
+      tier: "primary",
+      hint: "",
+    });
+  }
+  if ((overview.company_owes_director_gbp ?? 0) > 0) {
+    owned.push({
+      key: "company_owes_robert",
+      label: "Company still owes Robert",
+      amount_gbp: overview.company_owes_director_gbp,
+      kind: "asset",
+      tier: "primary",
+      hint: "",
+    });
+  }
+
+  const owed: OverviewSideBreakdown["owed"] = [];
+  pushOwed(
+    owed,
+    "mortgage",
+    "House mortgage",
+    overview.mortgage_balance_gbp ?? 0,
+    "Your half of the £164,421 joint mortgage",
+  );
+  pushOwed(owed, "personal_cards", "Credit cards", overview.personal_credit_card_balances_gbp ?? 0);
+  pushOwed(owed, "personal_loans", "Loans", overview.personal_loan_balances_gbp ?? 0);
+  pushOwed(owed, "personal_od", "Overdraft", overview.personal_overdraft_gbp ?? 0);
+  pushOwed(
+    owed,
+    "robert_owes_company",
+    "Robert still owes the company",
+    overview.director_owes_company_gbp ?? 0,
+  );
+  const listed = owed.reduce((sum, line) => sum + (line.amount_gbp ?? 0), 0);
+  const residual = round2(
+    Math.max(
+      (overview.total_personal_debt_gbp ?? 0)
+        + (overview.personal_overdraft_gbp ?? 0)
+        + (overview.director_owes_company_gbp ?? 0)
+        - listed,
+      0,
+    ),
+  );
+  pushOwed(owed, "personal_other_debt", "Other amounts owed", residual);
+
+  const ownedTotal = round2(owned.reduce((sum, line) => sum + (line.amount_gbp ?? 0), 0));
+  const owedTotal = round2(owed.reduce((sum, line) => sum + (line.amount_gbp ?? 0), 0));
+
+  return {
+    side: "personal",
+    owned_total_gbp: ownedTotal,
+    owed_total_gbp: owedTotal,
+    whats_left_gbp: overview.personal_net_worth_gbp ?? round2(ownedTotal - owedTotal),
+    owned,
+    owed,
+    whats_left_hint: "",
+    whats_left_available: true,
+  };
+}
+
+export function fallbackBusinessBreakdown(overview: FinanceOverview): OverviewSideBreakdown {
+  const bank = round2(
+    (overview.business_bank_balance_gbp ?? 0) + (overview.business_overdraft_gbp ?? 0),
+  );
+  const owned: OverviewSideBreakdown["owned"] = [
+    {
+      key: "business_bank",
+      label: "Bank",
+      amount_gbp: bank,
+      kind: "asset",
+      tier: "primary",
+      hint: "",
+    },
+  ];
+  if ((overview.debtors_gbp ?? 0) > 0) {
+    owned.push({
+      key: "customers_owe",
+      label: "Customers still to pay",
+      amount_gbp: overview.debtors_gbp,
+      kind: "asset",
+      tier: "primary",
+      hint: "",
+    });
+  }
+  if ((overview.director_owes_company_gbp ?? 0) > 0) {
+    owned.push({
+      key: "robert_owes_company_biz",
+      label: "Robert still owes the company",
+      amount_gbp: overview.director_owes_company_gbp,
+      kind: "asset",
+      tier: "primary",
+      hint: "",
+    });
+  }
+
+  const owed: OverviewSideBreakdown["owed"] = [];
+  pushOwed(owed, "business_od", "Overdraft", overview.business_overdraft_gbp ?? 0);
+  pushOwed(owed, "business_cards", "Credit cards", overview.business_credit_card_balances_gbp ?? 0);
+  pushOwed(owed, "business_loans", "Loans", overview.loan_balances_gbp ?? 0);
+  pushOwed(
+    owed,
+    "company_owes_robert_biz",
+    "Company still owes Robert",
+    overview.company_owes_director_gbp ?? 0,
+  );
+  const listed = owed.reduce((sum, line) => sum + (line.amount_gbp ?? 0), 0);
+  const residual = round2(
+    Math.max(
+      (overview.total_business_debt_gbp ?? 0)
+        + (overview.business_overdraft_gbp ?? 0)
+        + (overview.company_owes_director_gbp ?? 0)
+        - listed,
+      0,
+    ),
+  );
+  pushOwed(owed, "business_other_debt", "Other amounts owed", residual);
+
+  const ownedTotal = round2(owned.reduce((sum, line) => sum + (line.amount_gbp ?? 0), 0));
+  const owedTotal = round2(owed.reduce((sum, line) => sum + (line.amount_gbp ?? 0), 0));
+
+  return {
+    side: "business",
+    owned_total_gbp: ownedTotal,
+    owed_total_gbp: owedTotal,
+    whats_left_gbp: null,
+    owned: [
+      {
+        key: "bs_missing",
+        label: "Balance sheet not synced",
+        amount_gbp: null,
+        kind: "gap",
+        tier: "primary",
+        hint: "Connect QuickFile so What's left matches the company books",
+      },
+      ...owned,
+    ],
+    owed,
+    whats_left_hint: "Balance sheet not synced",
+    whats_left_available: false,
+  };
 }
 
 export function FinanceOverviewView({ overview }: FinanceOverviewViewProps) {

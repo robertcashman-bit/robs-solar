@@ -74,9 +74,11 @@ export const overviewSideBreakdownSchema = z.object({
   side: z.string(),
   owned_total_gbp: z.number().optional().default(0),
   owed_total_gbp: z.number().optional().default(0),
-  whats_left_gbp: z.number().optional().default(0),
+  whats_left_gbp: z.number().nullable().optional(),
   owned: z.array(overviewLineItemSchema).optional().default([]),
   owed: z.array(overviewLineItemSchema).optional().default([]),
+  whats_left_hint: z.string().optional().default(""),
+  whats_left_available: z.boolean().optional().default(true),
 });
 
 export const financeDataGapsSchema = z.object({

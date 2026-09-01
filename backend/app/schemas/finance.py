@@ -617,9 +617,11 @@ class OverviewSideBreakdown(BaseModel):
     side: str
     owned_total_gbp: float = 0.0
     owed_total_gbp: float = 0.0
-    whats_left_gbp: float = 0.0
+    whats_left_gbp: float | None = None
     owned: list[OverviewLineItem] = Field(default_factory=list)
     owed: list[OverviewLineItem] = Field(default_factory=list)
+    whats_left_hint: str = ""
+    whats_left_available: bool = True
 
 
 class FinanceDataGaps(BaseModel):
