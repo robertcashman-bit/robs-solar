@@ -798,6 +798,7 @@ _QF_HP_LABEL_TOKENS = (
     "hire-purchase",
 )
 _QF_LOANS_ASSET_NOMINALS = frozenset({"2300"})
+_QF_VAT_LIABILITY_NOMINALS = frozenset({"2200", "2202"})
 # Leftovers small enough to hide behind More (not real debts).
 _MORE_LEFTOVER_GBP = 3000.0
 
@@ -830,6 +831,18 @@ def _is_qf_loans_asset_line(line: dict) -> bool:
     return label in {"loans", "loan", "bank loan", "bank loans"}
 
 
+def _is_qf_vat_liability_line(line: dict) -> bool:
+    code = _normalize_nominal(str(line.get("nominal_code") or ""))
+    if code in _QF_VAT_LIABILITY_NOMINALS:
+        return True
+    label = str(line.get("label") or "").strip().lower()
+    return bool(label) and (
+        "vat liability" in label
+        or "sales tax" in label
+        or label in {"vat", "vat control", "sales tax control"}
+    )
+
+
 def _qf_hp_finance_gbp(liability_lines: list[dict]) -> float:
     total = 0.0
     for line in liability_lines:
@@ -856,6 +869,318 @@ def _qf_hp_absorbed_gbp(liability_lines: list[dict], *, vehicle_hp_total: float)
     if vehicle_hp_total <= 0 and _qf_hp_finance_gbp(liability_lines) <= 0:
         return 0.0
     return _qf_hp_finance_gbp(liability_lines)
+
+
+def _plain_qf_asset_line(line: dict) -> OverviewLine | None:
+    """Map one QuickFile current-asset line to plain English. Skip zeros."""
+    amount = round(abs(float(line.get("amount_gbp") or 0)), 2)
+    if amount <= 0.005:
+        return None
+    code = _normalize_nominal(str(line.get("nominal_code") or ""))
+    raw_label = str(line.get("label") or "").strip()
+
+    if code == "1100" or "debtors" in raw_label.lower():
+        return OverviewLine(
+            "customers_owe",
+            "Customers still to pay",
+            amount,
+            "asset",
+            "primary",
+        )
+    if code == "1200" or raw_label.lower() in {
+        "current",
+        "current account",
+        "bank",
+        "bank account",
+    }:
+        return OverviewLine("business_bank", "Bank", amount, "asset", "primary")
+    if code == "1210" or "vat account" in raw_label.lower():
+        return OverviewLine(
+            "vat_account",
+            "VAT account",
+            amount,
+            "asset",
+            "more" if amount < _MORE_LEFTOVER_GBP else "primary",
+        )
+    if code == "2100" or "creditors control" in raw_label.lower():
+        # Debit creditors control = suppliers in credit / other company money.
+        # Never label this "Suppliers still to pay".
+        return OverviewLine(
+            "creditors_debit",
+            "Other company money",
+            amount,
+            "asset",
+            "primary",
+            "Suppliers in credit (QuickFile 2100 debit)",
+        )
+    if code == "2204" or "manual adjustment" in raw_label.lower():
+        return OverviewLine(
+            "manual_adjustments",
+            "Manual adjustments",
+            amount,
+            "asset",
+            "more" if amount < _MORE_LEFTOVER_GBP else "primary",
+        )
+    if code == "2230" or "pension" in raw_label.lower():
+        return OverviewLine(
+            "pension_fund",
+            "Pension fund",
+            amount,
+            "asset",
+            "more" if amount < _MORE_LEFTOVER_GBP else "primary",
+        )
+    if _is_qf_loans_asset_line(line):
+        return OverviewLine(
+            "qf_loans_asset",
+            "Loans outstanding",
+            amount,
+            "asset",
+            "primary",
+            "QuickFile 2300 — money outstanding, not car finance",
+        )
+    label = raw_label or f"Nominal {code or '?'}"
+    return OverviewLine(
+        f"qf_asset_{code or 'x'}",
+        label,
+        amount,
+        "asset",
+        "more" if amount < _MORE_LEFTOVER_GBP else "primary",
+    )
+
+
+def _plain_qf_liability_key_label(line: dict) -> tuple[str, str, str] | None:
+    """Return (key, label, hint) for a named QF liability, or None if VAT/HP handled elsewhere."""
+    code = _normalize_nominal(str(line.get("nominal_code") or ""))
+    raw_label = str(line.get("label") or "").strip()
+    lowered = raw_label.lower()
+
+    if _is_qf_hp_finance_line(line) or _is_qf_vat_liability_line(line):
+        return None
+    if code == "1201" or "director" in lowered and "loan" in lowered:
+        return (
+            "company_owes_robert_biz",
+            "Company still owes Robert",
+            "",
+        )
+    if code == "1207" or "overdraft" in lowered:
+        return ("business_od", "Overdraft", "")
+    if code == "1211" or lowered == "holding":
+        return ("holding", "Holding", "")
+    if code == "1258" or ("lloyds" in lowered and "card" in lowered):
+        return ("lloyds_card", "Lloyds card", "")
+    if code == "1259" or "capital on tap" in lowered:
+        return ("capital_on_tap", "Capital on Tap", "")
+    label = raw_label or f"Nominal {code or '?'}"
+    return (f"qf_liab_{code or 'x'}", label, "")
+
+
+def _dls_from_quickfile_balance_sheet(
+    *,
+    fixed_assets: float,
+    current_assets: float,
+    current_liab: float,
+    long_liab: float,
+    capital: float,
+    asset_lines: list[dict],
+    liability_lines: list[dict],
+) -> tuple[list[OverviewLine], list[OverviewLine], float, float, float]:
+    """Defence Legal column as a plain-English 1:1 of the stored QuickFile BS.
+
+    Does not mix Lunch Flow bank balances or the debt register. Register is
+    only used when no balance sheet is present (see caller).
+    """
+    owned: list[OverviewLine] = []
+    if fixed_assets > 0.005:
+        owned.append(
+            OverviewLine(
+                "fixed_assets",
+                "Vehicles and kit",
+                round(fixed_assets, 2),
+                "asset",
+                "primary",
+                "From the Defence Legal balance sheet",
+            )
+        )
+
+    # Merge duplicate keys (e.g. multiple debtors lines) by summing.
+    owned_by_key: dict[str, OverviewLine] = {}
+    for line in asset_lines:
+        mapped = _plain_qf_asset_line(line)
+        if mapped is None:
+            continue
+        existing = owned_by_key.get(mapped.key)
+        if existing is None:
+            owned_by_key[mapped.key] = mapped
+        else:
+            owned_by_key[mapped.key] = OverviewLine(
+                existing.key,
+                existing.label,
+                round(float(existing.amount_gbp or 0) + float(mapped.amount_gbp or 0), 2),
+                existing.kind,
+                existing.tier,
+                existing.hint,
+            )
+    # Stable-ish order: Bank, customers, loans, then the rest.
+    preferred_own = (
+        "business_bank",
+        "customers_owe",
+        "qf_loans_asset",
+        "creditors_debit",
+        "vat_account",
+        "manual_adjustments",
+        "pension_fund",
+    )
+    for key in preferred_own:
+        if key in owned_by_key:
+            owned.append(owned_by_key.pop(key))
+    owned.extend(owned_by_key.values())
+
+    owed: list[OverviewLine] = []
+    # Tesla from HP Finance (50) only — never invent market value, never use 2300.
+    tesla = _qf_hp_finance_gbp(liability_lines)
+    if tesla > 0.005:
+        owed.append(
+            OverviewLine(
+                "vehicle_hp_qf",
+                "Tesla still to pay",
+                tesla,
+                "debt",
+                "primary",
+                "QuickFile HP Finance remaining capital",
+            )
+        )
+
+    vat_total = round(
+        sum(
+            abs(float(line.get("amount_gbp") or 0))
+            for line in liability_lines
+            if _is_qf_vat_liability_line(line)
+        ),
+        2,
+    )
+    holding_amount = 0.0
+    owed_by_key: dict[str, OverviewLine] = {}
+    for line in liability_lines:
+        if _is_qf_hp_finance_line(line) or _is_qf_vat_liability_line(line):
+            continue
+        mapped = _plain_qf_liability_key_label(line)
+        if mapped is None:
+            continue
+        key, label, hint = mapped
+        amount = round(abs(float(line.get("amount_gbp") or 0)), 2)
+        if amount <= 0.005:
+            continue
+        if key == "holding":
+            holding_amount = round(holding_amount + amount, 2)
+            continue
+        tier = "primary"
+        existing = owed_by_key.get(key)
+        if existing is None:
+            owed_by_key[key] = OverviewLine(key, label, amount, "debt", tier, hint)
+        else:
+            owed_by_key[key] = OverviewLine(
+                existing.key,
+                existing.label,
+                round(float(existing.amount_gbp or 0) + amount, 2),
+                "debt",
+                tier,
+                existing.hint,
+            )
+
+    preferred_owe = (
+        "business_od",
+        "lloyds_card",
+        "capital_on_tap",
+        "company_owes_robert_biz",
+    )
+    for key in preferred_owe:
+        if key in owed_by_key:
+            owed.append(owed_by_key.pop(key))
+    owed.extend(owed_by_key.values())
+
+    # VAT as one plain line (2200 + 2202). Tiny Holding can ride with VAT or More.
+    if vat_total > 0.005:
+        owed.append(
+            OverviewLine(
+                "vat_owed",
+                "VAT",
+                vat_total,
+                "debt",
+                "primary",
+            )
+        )
+    if holding_amount > 0.005:
+        if holding_amount < 50:
+            # Fold tiny holding into VAT when VAT exists; else More.
+            if vat_total > 0.005:
+                vat_line = next(line for line in owed if line.key == "vat_owed")
+                idx = owed.index(vat_line)
+                owed[idx] = OverviewLine(
+                    "vat_owed",
+                    "VAT",
+                    round(vat_total + holding_amount, 2),
+                    "debt",
+                    "primary",
+                    "Includes Holding £%.2f" % holding_amount,
+                )
+            else:
+                owed.append(
+                    OverviewLine(
+                        "holding",
+                        "Holding",
+                        holding_amount,
+                        "debt",
+                        "more",
+                    )
+                )
+        else:
+            owed.append(
+                OverviewLine(
+                    "holding",
+                    "Holding",
+                    holding_amount,
+                    "debt",
+                    "primary",
+                )
+            )
+
+    owned_total = round(fixed_assets + current_assets, 2)
+    owed_total = round(current_liab + long_liab, 2)
+    # Pad only if line walk missed pennies vs official totals (never invent Tesla).
+    listed_owned = _sum_line_amounts(owned)
+    owned_gap = round(owned_total - listed_owned, 2)
+    if owned_gap > 0.01:
+        owned.append(
+            OverviewLine(
+                "bs_other_owned",
+                "Other company money",
+                owned_gap,
+                "asset",
+                "primary",
+            )
+        )
+        listed_owned = _sum_line_amounts(owned)
+    listed_owed = _sum_line_amounts(owed)
+    owed_gap = round(owed_total - listed_owed, 2)
+    if owed_gap > 0.01:
+        # Only when liability_lines were incomplete — not a named-line plug.
+        owed.append(
+            OverviewLine(
+                "bs_other_owed",
+                "Other QuickFile creditors",
+                owed_gap,
+                "debt",
+                "more" if owed_gap < _MORE_LEFTOVER_GBP else "primary",
+            )
+        )
+        listed_owed = _sum_line_amounts(owed)
+
+    left = round(float(capital), 2)
+    # Prefer identity own − owe == capital when within 1p of official capital.
+    identity = round(listed_owned - listed_owed, 2)
+    if abs(identity - left) <= 0.01:
+        left = identity
+    return owned, owed, listed_owned, listed_owed, left
 
 
 def _is_vehicle_hp_debt(debt: LiabilityView) -> bool:
@@ -911,8 +1236,10 @@ def build_overview_side_breakdowns(
     Real debts and fixed assets are always ``tier=primary`` (first paint).
     ``More`` is only for small leftovers such as a VAT pot.
 
-    Defence Legal what's-left prefers QuickFile Capital and reserves when the
-    balance sheet is present — never the working-capital company_position figure.
+    When a stored QuickFile balance sheet is present, Defence Legal is a
+    plain-English 1:1 of that sheet (capital & reserves for what's left;
+    asset_lines / liability_lines for own / owe). Lunch Flow and the debt
+    register are not mixed in — register is fallback only if the BS is missing.
     """
     account_list = [a for a in accounts if a.is_active]
     debt_list = [d for d in liabilities if d.is_active]
@@ -1090,307 +1417,190 @@ def build_overview_side_breakdowns(
         if abs(float(line.get("amount_gbp") or 0)) > 0.005
     ]
 
-    vehicle_debts = [d for d in debt_list if _is_vehicle_hp_debt(d) and d.balance_gbp > 0]
-    register_vehicle_hp = round(sum(d.balance_gbp for d in vehicle_debts), 2)
-    # Prefer live QuickFile HP Finance (50) remaining capital over a stale register.
-    qf_hp_finance = _qf_hp_finance_gbp(liability_lines)
-    tesla_hp_gbp = qf_hp_finance if qf_hp_finance > 0 else register_vehicle_hp
-    vehicle_hp_total = tesla_hp_gbp
-    qf_loans_asset = _qf_loans_asset_gbp(asset_lines)
-
-    business_owned: list[OverviewLine] = [
-        OverviewLine("business_bank", "Bank", business_cash, "asset", "primary"),
-    ]
-    if totals.debtors_gbp > 0:
-        business_owned.append(
-            OverviewLine(
-                "customers_owe",
-                "Customers still to pay",
-                totals.debtors_gbp,
-                "asset",
-                "primary",
-            )
-        )
-    if fixed_assets > 0:
-        business_owned.append(
-            OverviewLine(
-                "fixed_assets",
-                "Vehicles and kit",
-                fixed_assets,
-                "asset",
-                "primary",
-                "From the Defence Legal balance sheet",
-            )
-        )
-    elif vehicle_debts or tesla_hp_gbp > 0:
-        business_owned.append(
-            OverviewLine(
-                "car_gap",
-                "Car value not on this list",
-                None,
-                "gap",
-                "primary",
-                "Finance is listed under what you owe, but the car itself is not counted here",
-            )
-        )
-    # Other company other_asset accounts (not inventing Tesla value).
-    for account in account_list:
-        if (
-            account.scope == "business"
-            and account.account_type == "other_asset"
-            and account.balance_gbp > 0
-            and fixed_assets <= 0
-        ):
-            business_owned.append(
-                OverviewLine(
-                    f"biz_asset_{account.id}",
-                    account.name,
-                    account.balance_gbp,
-                    "asset",
-                    "primary",
-                )
-            )
-    if qf_loans_asset > 0:
-        business_owned.append(
-            OverviewLine(
-                "qf_loans_asset",
-                "Loans outstanding",
-                qf_loans_asset,
-                "asset",
-                "primary",
-                "QuickFile 2300 — money outstanding, not car finance",
-            )
-        )
-    if totals.vat_reserve_gbp != 0:
-        business_owned.append(
-            OverviewLine(
-                "vat_pot",
-                "VAT pot",
-                totals.vat_reserve_gbp,
-                "asset",
-                "more"
-                if abs(totals.vat_reserve_gbp) < _MORE_LEFTOVER_GBP
-                else "primary",
-            )
-        )
-    if totals.corp_tax_reserve_gbp != 0:
-        business_owned.append(
-            OverviewLine(
-                "corp_tax_pot",
-                "Corporation tax set aside",
-                totals.corp_tax_reserve_gbp,
-                "asset",
-                "more"
-                if abs(totals.corp_tax_reserve_gbp) < _MORE_LEFTOVER_GBP
-                else "primary",
-            )
-        )
-    if director_owes_company > 0:
-        business_owned.append(
-            OverviewLine(
-                "robert_owes_company_biz",
-                "Robert still owes the company",
-                director_owes_company,
-                "asset",
-                "primary",
-            )
-        )
-    # Pad owned to match BS current+fixed when present so totals reconcile.
-    if bs_present and current_assets > 0:
-        listed_current = round(
-            business_cash
-            + totals.debtors_gbp
-            + qf_loans_asset
-            + (
-                totals.vat_reserve_gbp
-                if any(line.key == "vat_pot" for line in business_owned)
-                else 0.0
-            )
-            + (
-                totals.corp_tax_reserve_gbp
-                if any(line.key == "corp_tax_pot" for line in business_owned)
-                else 0.0
-            )
-            + (director_owes_company if director_owes_company > 0 else 0.0),
-            2,
-        )
-        # current_assets is the BS pot; fixed is separate.
-        remainder = round(current_assets - listed_current, 2)
-        if remainder > 0.01:
-            business_owned.append(
-                OverviewLine(
-                    "other_company_money",
-                    "Other company money",
-                    remainder,
-                    "asset",
-                    "primary",
-                )
-            )
-
-    business_owed: list[OverviewLine] = []
-    if totals.business_overdraft_gbp > 0:
-        business_owed.append(
-            OverviewLine(
-                "business_od",
-                "Overdraft",
-                totals.business_overdraft_gbp,
-                "debt",
-                "primary",
-            )
-        )
-    if totals.business_credit_card_gbp > 0:
-        business_owed.append(
-            OverviewLine(
-                "business_cards",
-                "Credit cards",
-                totals.business_credit_card_gbp,
-                "debt",
-                "primary",
-            )
-        )
-    if tesla_hp_gbp > 0:
-        business_owed.append(
-            OverviewLine(
-                "vehicle_hp_qf" if qf_hp_finance > 0 else f"vehicle_hp_{vehicle_debts[0].id}",
-                "Tesla still to pay",
-                tesla_hp_gbp,
-                "debt",
-                "primary",
-                "QuickFile HP Finance remaining capital"
-                if qf_hp_finance > 0
-                else "",
-            )
-        )
-    # Non-Tesla loans from the register only (never invent instalment totals).
-    other_business_loans = round(
-        max(totals.loan_gbp - register_vehicle_hp, 0.0),
-        2,
-    )
-    if other_business_loans > 0:
-        business_owed.append(
-            OverviewLine(
-                "business_loans",
-                "Loans",
-                other_business_loans,
-                "debt",
-                "primary",
-            )
-        )
-    if totals.creditors_gbp > 0:
-        business_owed.append(
-            OverviewLine(
-                "suppliers",
-                "Suppliers still to pay",
-                totals.creditors_gbp,
-                "debt",
-                "more"
-                if totals.creditors_gbp < _MORE_LEFTOVER_GBP
-                else "primary",
-            )
-        )
-    if company_owes_director > 0:
-        business_owed.append(
-            OverviewLine(
-                "company_owes_robert_biz",
-                "Company still owes Robert",
-                company_owes_director,
-                "debt",
-                "primary",
-            )
-        )
-    # Register debts not already covered (ex DLA). Skip this plug when a
-    # balance sheet is present — one QuickFile leftover line covers the gap.
-    residual_register = round(
-        max(
-            totals.business_debt_gbp
-            - totals.loan_gbp
-            - totals.business_credit_card_gbp
-            - (totals.creditors_gbp if totals.creditors_gbp > 0 else 0.0),
-            0.0,
-        ),
-        2,
-    )
-    if not bs_present and residual_register > 0.01:
-        business_owed.append(
-            OverviewLine(
-                "business_other_debt",
-                "Other company debts",
-                residual_register,
-                "debt",
-                "primary",
-            )
-        )
-
     if bs_present:
-        if liability_lines:
-            # Name Tesla from QF HP Finance (50). Leave VAT/PAYE/etc. as one plug.
-            # Never put 2300 here — that is an asset (Loans outstanding).
-            unnamed_qf = round(
-                sum(
-                    abs(float(line.get("amount_gbp") or 0))
-                    for line in liability_lines
-                    if not _is_qf_hp_finance_line(line)
-                )
-                - (
-                    totals.business_overdraft_gbp
-                    + totals.business_credit_card_gbp
-                    + other_business_loans
-                    + (totals.creditors_gbp if totals.creditors_gbp > 0 else 0.0)
-                    + (company_owes_director if company_owes_director > 0 else 0.0)
-                ),
-                2,
+        # Plain-English 1:1 of the stored QuickFile balance sheet.
+        # Do not mix Lunch Flow / debt-register Tesla, cards, CoT, or loans.
+        business_owned, business_owed, business_owned_total, business_owed_total, business_left = (
+            _dls_from_quickfile_balance_sheet(
+                fixed_assets=fixed_assets,
+                current_assets=current_assets,
+                current_liab=current_liab,
+                long_liab=long_liab,
+                capital=float(capital),
+                asset_lines=asset_lines,
+                liability_lines=liability_lines,
             )
-            if unnamed_qf > 0.01:
-                business_owed.append(
-                    OverviewLine(
-                        "bs_other_owed",
-                        "Unnamed QuickFile creditors",
-                        unnamed_qf,
-                        "debt",
-                        "more" if unnamed_qf < _MORE_LEFTOVER_GBP else "primary",
-                        "VAT, PAYE, accruals and other creditors not named above",
-                    )
-                )
-        else:
-            target_owed = round(current_liab + long_liab, 2)
-            listed_owed = _sum_line_amounts(business_owed)
-            absorbed_qf_hp = _qf_hp_absorbed_gbp(
-                liability_lines, vehicle_hp_total=vehicle_hp_total
-            )
-            extra_hp = round(max(absorbed_qf_hp - vehicle_hp_total, 0.0), 2)
-            owed_gap = round(target_owed - listed_owed - extra_hp, 2)
-            if owed_gap > 0.01:
-                business_owed.append(
-                    OverviewLine(
-                        "bs_other_owed",
-                        "Unnamed QuickFile creditors",
-                        owed_gap,
-                        "debt",
-                        "more" if owed_gap < _MORE_LEFTOVER_GBP else "primary",
-                        "VAT, PAYE, accruals and other creditors not named above",
-                    )
-                )
-        business_owned_total = round(fixed_assets + current_assets, 2)
-        # Ensure owned lines sum to owned_total.
-        listed_owned = _sum_line_amounts(business_owned)
-        owned_gap = round(business_owned_total - listed_owned, 2)
-        if owned_gap > 0.01:
-            business_owned.append(
-                OverviewLine(
-                    "bs_other_owned",
-                    "Other company money",
-                    owned_gap,
-                    "asset",
-                    "primary",
-                )
-            )
-            listed_owned = _sum_line_amounts(business_owned)
-        business_owned_total = listed_owned
-        business_owed_total = _sum_line_amounts(business_owed)
-        business_left = round(float(capital), 2)
+        )
         business_hint = "From the Defence Legal balance sheet"
         business_available = True
     else:
+        # Register / Lunch Flow fallback only when QuickFile BS is missing.
+        vehicle_debts = [d for d in debt_list if _is_vehicle_hp_debt(d) and d.balance_gbp > 0]
+        register_vehicle_hp = round(sum(d.balance_gbp for d in vehicle_debts), 2)
+        tesla_hp_gbp = register_vehicle_hp
+
+        business_owned = [
+            OverviewLine("business_bank", "Bank", business_cash, "asset", "primary"),
+        ]
+        if totals.debtors_gbp > 0:
+            business_owned.append(
+                OverviewLine(
+                    "customers_owe",
+                    "Customers still to pay",
+                    totals.debtors_gbp,
+                    "asset",
+                    "primary",
+                )
+            )
+        if vehicle_debts or tesla_hp_gbp > 0:
+            business_owned.append(
+                OverviewLine(
+                    "car_gap",
+                    "Car value not on this list",
+                    None,
+                    "gap",
+                    "primary",
+                    "Finance is listed under what you owe, but the car itself is not counted here",
+                )
+            )
+        for account in account_list:
+            if (
+                account.scope == "business"
+                and account.account_type == "other_asset"
+                and account.balance_gbp > 0
+            ):
+                business_owned.append(
+                    OverviewLine(
+                        f"biz_asset_{account.id}",
+                        account.name,
+                        account.balance_gbp,
+                        "asset",
+                        "primary",
+                    )
+                )
+        if totals.vat_reserve_gbp != 0:
+            business_owned.append(
+                OverviewLine(
+                    "vat_pot",
+                    "VAT pot",
+                    totals.vat_reserve_gbp,
+                    "asset",
+                    "more"
+                    if abs(totals.vat_reserve_gbp) < _MORE_LEFTOVER_GBP
+                    else "primary",
+                )
+            )
+        if totals.corp_tax_reserve_gbp != 0:
+            business_owned.append(
+                OverviewLine(
+                    "corp_tax_pot",
+                    "Corporation tax set aside",
+                    totals.corp_tax_reserve_gbp,
+                    "asset",
+                    "more"
+                    if abs(totals.corp_tax_reserve_gbp) < _MORE_LEFTOVER_GBP
+                    else "primary",
+                )
+            )
+        if director_owes_company > 0:
+            business_owned.append(
+                OverviewLine(
+                    "robert_owes_company_biz",
+                    "Robert still owes the company",
+                    director_owes_company,
+                    "asset",
+                    "primary",
+                )
+            )
+
+        business_owed = []
+        if totals.business_overdraft_gbp > 0:
+            business_owed.append(
+                OverviewLine(
+                    "business_od",
+                    "Overdraft",
+                    totals.business_overdraft_gbp,
+                    "debt",
+                    "primary",
+                )
+            )
+        if totals.business_credit_card_gbp > 0:
+            business_owed.append(
+                OverviewLine(
+                    "business_cards",
+                    "Credit cards",
+                    totals.business_credit_card_gbp,
+                    "debt",
+                    "primary",
+                )
+            )
+        if tesla_hp_gbp > 0:
+            business_owed.append(
+                OverviewLine(
+                    f"vehicle_hp_{vehicle_debts[0].id}",
+                    "Tesla still to pay",
+                    tesla_hp_gbp,
+                    "debt",
+                    "primary",
+                )
+            )
+        other_business_loans = round(
+            max(totals.loan_gbp - register_vehicle_hp, 0.0),
+            2,
+        )
+        if other_business_loans > 0:
+            business_owed.append(
+                OverviewLine(
+                    "business_loans",
+                    "Loans",
+                    other_business_loans,
+                    "debt",
+                    "primary",
+                )
+            )
+        if totals.creditors_gbp > 0:
+            business_owed.append(
+                OverviewLine(
+                    "suppliers",
+                    "Suppliers still to pay",
+                    totals.creditors_gbp,
+                    "debt",
+                    "more"
+                    if totals.creditors_gbp < _MORE_LEFTOVER_GBP
+                    else "primary",
+                )
+            )
+        if company_owes_director > 0:
+            business_owed.append(
+                OverviewLine(
+                    "company_owes_robert_biz",
+                    "Company still owes Robert",
+                    company_owes_director,
+                    "debt",
+                    "primary",
+                )
+            )
+        residual_register = round(
+            max(
+                totals.business_debt_gbp
+                - totals.loan_gbp
+                - totals.business_credit_card_gbp
+                - (totals.creditors_gbp if totals.creditors_gbp > 0 else 0.0),
+                0.0,
+            ),
+            2,
+        )
+        if residual_register > 0.01:
+            business_owed.append(
+                OverviewLine(
+                    "business_other_debt",
+                    "Other company debts",
+                    residual_register,
+                    "debt",
+                    "primary",
+                )
+            )
+
         business_owned_total = _sum_line_amounts(business_owned)
         business_owed_total = _sum_line_amounts(business_owed)
         business_left = None

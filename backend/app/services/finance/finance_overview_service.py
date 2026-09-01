@@ -713,13 +713,15 @@ class FinanceOverviewService:
             return None
         bs = reports.balance_sheet
         liability_lines: list[dict[str, float | str]] = []
+        # Current assets only — fixed assets are shown as one "Vehicles and kit"
+        # total so we never double-count 0010/0030 NBV lines.
         asset_lines: list[dict[str, float | str]] = []
         for section in bs.sections or []:
             key = str(getattr(section, "key", "") or "")
             target: list[dict[str, float | str]] | None = None
             if key in {"CurrentLiabilities", "LongTermLiabilities"}:
                 target = liability_lines
-            elif key in {"CurrentAssets", "FixedAssets"}:
+            elif key == "CurrentAssets":
                 target = asset_lines
             if target is None:
                 continue
