@@ -40,16 +40,23 @@ class FinanceLiveRefreshService:
         db: AsyncSession,
         *,
         include_transactions: bool = False,
+        force_quickfile_reports: bool = False,
     ) -> None:
         """Update live balances (and optionally Lunch Flow transactions) when stale.
 
         Dashboard background refresh uses balances only so pages stay fast and
         QuickFile never runs Bank_Search history from a dashboard hit.
         Full QuickFile transaction import is reserved for explicit Sync / daily cron.
+
+        Explicit Overview Refresh / POST ``/live-refresh`` sets
+        ``force_quickfile_reports=True`` so P&L + balance sheet are re-pulled
+        every time, even when ``last_sync_at`` is still fresh.
         """
         # Same AsyncSession cannot be used concurrently — keep these sequential
         # but each path is balances-only so the whole call stays short.
-        await self._refresh_quickfile(db)
+        await self._refresh_quickfile(
+            db, force_reports=force_quickfile_reports
+        )
         await self._refresh_lunchflow(db, include_transactions=include_transactions)
         # Heal salary / cross-scope false transfer marks so Money in recovers
         # without waiting for a manual Detect transfers click.
@@ -80,11 +87,15 @@ class FinanceLiveRefreshService:
             logger.warning("Could not create recommended budget from live data", exc_info=True)
             await db.rollback()
 
-    async def _refresh_quickfile(self, db: AsyncSession) -> None:
+    async def _refresh_quickfile(
+        self, db: AsyncSession, *, force_reports: bool = False
+    ) -> None:
         status = await quickfile_settings_service.get_status(db)
         if not status.configured:
             return
-        if not is_stale(status.last_sync_at):
+        # Background / balances-only: skip when a recent sync already ran.
+        # Explicit live-refresh must always re-pull P&L + balance sheet.
+        if not force_reports and not is_stale(status.last_sync_at):
             return
         if await quickfile_settings_service.is_quota_blocked(db):
             logger.info(
@@ -93,9 +104,10 @@ class FinanceLiveRefreshService:
             return
         try:
             config = await quickfile_settings_service.get_config(db)
-            # Balances + debtors only. Never full sync() / Bank_Search history.
+            # Balances + debtors only for history. Reports when forced / explicit.
+            # Never full sync() / Bank_Search history.
             await quickfile_sync_service.sync_balances(
-                db, config, include_reports=False
+                db, config, include_reports=force_reports
             )
         except QuickFileError as exc:
             await quickfile_settings_service.record_error(db, str(exc))

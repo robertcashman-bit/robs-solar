@@ -40,6 +40,14 @@ def _patch_live_side_effects(monkeypatch: pytest.MonkeyPatch) -> dict:
     return called
 
 
+class _Db:
+    async def commit(self):
+        return None
+
+    async def rollback(self):
+        return None
+
+
 @pytest.mark.asyncio
 async def test_ensure_fresh_skips_recent_syncs(monkeypatch: pytest.MonkeyPatch) -> None:
     service = FinanceLiveRefreshService()
@@ -88,15 +96,88 @@ async def test_ensure_fresh_skips_recent_syncs(monkeypatch: pytest.MonkeyPatch) 
         mark_debts,
     )
 
-    class _Db:
-        async def commit(self):
-            return None
-
-        async def rollback(self):
-            return None
-
     await service.ensure_fresh(_Db())
     assert called["debts"] is True
+    assert extras["budget"] is True
+
+
+@pytest.mark.asyncio
+async def test_force_quickfile_reports_syncs_even_when_last_sync_fresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /live-refresh must re-pull P&L + BS even if last_sync_at is <15 min."""
+    service = FinanceLiveRefreshService()
+    called = {"qf_balances": 0, "include_reports": None, "lf": 0}
+    extras = _patch_live_side_effects(monkeypatch)
+
+    async def recent_status(_db):
+        return SimpleNamespace(
+            configured=True,
+            last_sync_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    async def fake_config(_db):
+        return object()
+
+    async def fake_qf_balances(_db, _config, **kwargs):
+        called["qf_balances"] += 1
+        called["include_reports"] = kwargs.get("include_reports")
+        return QuickFileSyncResult(
+            accounts_synced=2,
+            debtors_gbp=1,
+            reports_synced=True,
+            message="qf+reports",
+        )
+
+    async def fail_qf_full(*_a, **_k):
+        raise AssertionError("must not call full QuickFile sync()")
+
+    async def fail_lf(*_a, **_k):
+        raise AssertionError("Lunch Flow should stay skipped when last_sync is fresh")
+
+    async def mark_debts(_db):
+        return 0
+
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.quickfile_settings_service.get_status",
+        recent_status,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.lunchflow_settings_service.get_status",
+        recent_status,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.quickfile_settings_service.get_config",
+        fake_config,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.quickfile_settings_service.is_quota_blocked",
+        AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.quickfile_sync_service.sync_balances",
+        fake_qf_balances,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.quickfile_sync_service.sync",
+        fail_qf_full,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.lunchflow_sync_service.sync",
+        fail_lf,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.lunchflow_sync_service.sync_balances",
+        fail_lf,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.finance_liabilities_service.ensure_from_accounts",
+        mark_debts,
+    )
+
+    await service.ensure_fresh(_Db(), force_quickfile_reports=True)
+    assert called["qf_balances"] == 1
+    assert called["include_reports"] is True
     assert extras["budget"] is True
 
 
@@ -105,7 +186,7 @@ async def test_ensure_fresh_uses_quickfile_balances_not_full_sync(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = FinanceLiveRefreshService()
-    called = {"qf_balances": 0, "qf_full": 0, "lf": 0}
+    called = {"qf_balances": 0, "qf_full": 0, "lf": 0, "include_reports": None}
 
     async def empty_status(_db):
         return SimpleNamespace(configured=True, last_sync_at=None)
@@ -113,8 +194,9 @@ async def test_ensure_fresh_uses_quickfile_balances_not_full_sync(
     async def fake_config(_db):
         return object()
 
-    async def fake_qf_balances(_db, _config, **_kwargs):
+    async def fake_qf_balances(_db, _config, **kwargs):
         called["qf_balances"] += 1
+        called["include_reports"] = kwargs.get("include_reports", False)
         return QuickFileSyncResult(accounts_synced=2, debtors_gbp=1, message="qf")
 
     async def fail_qf_full(_db, _config, **_kwargs):
@@ -171,13 +253,9 @@ async def test_ensure_fresh_uses_quickfile_balances_not_full_sync(
         mark_debts,
     )
 
-    class _Db:
-        async def commit(self):
-            return None
-
-        async def rollback(self):
-            return None
-
     await service.ensure_fresh(_Db())
-    assert called == {"qf_balances": 1, "qf_full": 0, "lf": 1}
+    assert called["qf_balances"] == 1
+    assert called["qf_full"] == 0
+    assert called["lf"] == 1
+    assert called["include_reports"] is False
     assert extras["budget"] is True

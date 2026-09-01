@@ -165,8 +165,13 @@ async def finance_live_refresh(
         finance_live_refresh_service,
     )
 
-    # Default: balances + reports only. Full=True also pulls Lunch Flow txs.
-    await finance_live_refresh_service.ensure_fresh(db, include_transactions=full)
+    # Always re-pull QuickFile P&L + balance sheet (ignore fresh last_sync_at).
+    # Full=True also pulls Lunch Flow txs. Background ensure_fresh stays light.
+    await finance_live_refresh_service.ensure_fresh(
+        db,
+        include_transactions=full,
+        force_quickfile_reports=True,
+    )
     return {
         "ok": True,
         "message": "Live connections refreshed",
