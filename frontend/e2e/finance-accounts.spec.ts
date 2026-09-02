@@ -15,7 +15,9 @@ test("personal asset add, update, and archive", async ({ page }) => {
   await expect(created.getByText("£12,500.00")).toBeVisible();
 
   await openFinanceOverview(page);
-  await expect(page.getByText("Personal pension", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "You" })).toBeVisible();
+  // Pension appears as a plain "Pension" line on the You column.
+  await expect(page.getByRole("region", { name: "You" }).getByText("Pension", { exact: true })).toBeVisible();
 
   await page.goto("/finance/personal");
   const row = page.getByText(name).locator("xpath=ancestor::li");

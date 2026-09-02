@@ -14,7 +14,9 @@ test("debt create, total, edit, archive", async ({ page }) => {
   await expect(page.getByRole("cell", { name })).toBeVisible();
 
   await openFinanceOverview(page);
-  await expect(page.getByText("Personal debts", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "You" })).toBeVisible();
+  // New Overview lists personal debts on the You column (not a "Personal debts" tile).
+  await expect(page.getByRole("region", { name: "You" }).getByText(/Credit cards|Loans|Overdraft/)).toBeVisible();
 
   await page.goto("/finance/debts");
   const row = page.getByRole("row", { name: new RegExp(name) });
