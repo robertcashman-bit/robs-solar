@@ -49,9 +49,10 @@ _BS_0109_POST_RECODE = {
 }
 
 # Live QuickFile Balance Sheet as at 02/09/2026 (synced ~20:23 UTC).
-# 2204 Manual Adj £330.27 + 2230 Pension £350 sit in liability LINES, but QF
-# section totals count that £680.27 in current_assets (and out of CL). They are
-# debit balances — Own, never Owe. Capital kept at 3465.90.
+# Printed sheet puts 2204 Manual Adj £330.27 + 2230 Pension £350 under
+# Creditors due within one year — keep them on Owe. Section totals net that
+# £680.27 into current assets; Overview must NOT invent a ghost Own plug or
+# force those section totals. Leftover stays official capital 3465.90.
 _BS_0209_LIVE = {
     "fixed_assets_gbp": 37183.24,
     "current_assets_gbp": 10959.95,
@@ -318,7 +319,7 @@ def test_dls_0109_post_recode_balance_sheet_is_plain_english_one_to_one() -> Non
     assert _amount(business.owned, "Vehicles and kit") == 37183.24
     assert _amount(business.owned, "Customers still to pay") == 7597.31
     assert _amount(business.owned, "Bank") == 0.11
-    assert _amount(business.owned, "Other company money") == 2391.83
+    assert _amount(business.owned, "Unallocated supplier payments") == 2391.83
     assert _amount(business.owned, "VAT account") == 0.47
     assert _amount(business.owned, "Manual adjustments") == 330.27
     assert _amount(business.owned, "Pension fund") == 150.00
@@ -328,6 +329,7 @@ def test_dls_0109_post_recode_balance_sheet_is_plain_english_one_to_one() -> Non
         (line.hint or "") + " " + line.label for line in business.owned + business.owed
     )
     assert "Suppliers still to pay" not in _labels(business.owned) | _labels(business.owed)
+    assert "Other company money" not in _labels(business.owned)
 
     # Owe: each QF liability once — Capital on Tap and Lloyds card split.
     assert _amount(business.owed, "Tesla still to pay") == 14081.34
@@ -363,7 +365,7 @@ def test_dls_0109_post_recode_balance_sheet_is_plain_english_one_to_one() -> Non
     )
     # Leftover stays QF capital (post-recode £3,879.01).
     assert business.whats_left_gbp == 3879.01
-    # Identity: FA+CA − CL−LTL = capital within 1p.
+    # Headers = sum of shown lines (for this sheet that matches FA+CA / CL).
     assert business.owned_total_gbp == round(37183.24 + 10469.99, 2)
     assert business.owed_total_gbp == 43774.22
     assert abs(
@@ -375,8 +377,8 @@ def test_dls_0109_post_recode_balance_sheet_is_plain_english_one_to_one() -> Non
     assert business.owned_total_gbp == 47653.23
 
 
-def test_dls_0209_prepaid_2204_2230_on_own_not_owe() -> None:
-    """Live 02/09/2026: 2204+2230 in liability lines are Own; leftover stays capital."""
+def test_dls_0209_printed_sheet_2204_2230_on_owe() -> None:
+    """Live 02/09/2026: printed sheet keeps 2204+2230 on Owe; leftover = capital."""
     accounts = [
         AccountView(1, "business", "current", "Lloyds business", -4351.29),
     ]
@@ -389,6 +391,24 @@ def test_dls_0209_prepaid_2204_2230_on_own_not_owe() -> None:
             18018.09,
             0.0,
             766.0,
+        ),
+        LiabilityView(
+            2,
+            "business",
+            "Funding Circle",
+            "business_loan",
+            12000.0,
+            0.0,
+            0.0,
+        ),
+        LiabilityView(
+            3,
+            "personal",
+            "Amex",
+            "credit_card",
+            800.0,
+            20.0,
+            40.0,
         ),
     ]
     totals = compute_totals(accounts, debts)
@@ -404,53 +424,71 @@ def test_dls_0209_prepaid_2204_2230_on_own_not_owe() -> None:
         balance_sheet=_BS_0209_LIVE,
     )
 
-    # What's left = official capital & reserves (do not change leftover).
+    # What's left = official capital & reserves (sheet bottom line).
     assert business.whats_left_gbp == 3465.90
     assert business.whats_left_available is True
+    assert "balance sheet" in business.whats_left_hint.lower()
 
-    # Official pile headers.
-    assert business.owned_total_gbp == round(37183.24 + 10959.95, 2)
-    assert business.owed_total_gbp == 44677.29
-    assert abs(
-        round(business.owned_total_gbp - business.owed_total_gbp, 2)
-        - business.whats_left_gbp
-    ) <= 0.01
-
-    # 2204 / 2230 on Own under real names — never Owe, never ghost plug.
-    assert _amount(business.owned, "Manual adjustments") == 330.27
-    assert _amount(business.owned, "Pension fund") == 350.00
-    assert "Manual adjustments" not in _labels(business.owed)
-    assert "Pension fund" not in _labels(business.owed)
+    # Own: printed asset lines only (no 2204/2230, no ghost 680.27 plug).
+    assert _amount(business.owned, "Vehicles and kit") == 37183.24
+    assert _amount(business.owned, "Customers still to pay") == 7597.31
+    assert _amount(business.owned, "Bank") == 0.11
+    assert _amount(business.owned, "VAT account") == 0.47
+    assert _amount(business.owned, "Unallocated supplier payments") == 2391.83
+    assert _amount(business.owned, "Loan repayments on the books") == 289.96
+    assert "Manual adjustments" not in _labels(business.owned)
+    assert "Pension fund" not in _labels(business.owned)
     assert not any(line.key == "bs_other_owned" for line in business.owned)
     assert not any(
-        abs(float(line.amount_gbp or 0) - 680.27) < 0.01
-        for line in business.owned
-        if line.label == "Other company money"
+        abs(float(line.amount_gbp or 0) - 680.27) < 0.01 for line in business.owned
     )
-    # 2100 debit stays "Other company money" (unallocated supplier payments).
-    other_money = [
-        line
-        for line in business.owned
-        if line.label == "Other company money"
-    ]
-    assert len(other_money) == 1
-    assert other_money[0].amount_gbp == 2391.83
-    assert other_money[0].key == "creditors_debit"
+    assert "Other company money" not in _labels(business.owned)
 
-    # 2300 = loan repayments on the books (asset), not a Tesla/loan balance.
-    assert _amount(business.owned, "Loan repayments (on the books as an asset)") == 289.96
-
-    # Named owe lines; Tesla from 0050 only.
+    # Owe: printed creditor lines — 2204 and 2230 stay on Owe as the sheet prints.
     assert _amount(business.owed, "Tesla still to pay") == 14081.34
+    assert _amount(business.owed, "Company still owes Robert") == 7739.60
     assert _amount(business.owed, "Overdraft") == 4351.29
     assert _amount(business.owed, "Lloyds card") == 3310.63
     assert _amount(business.owed, "Capital on Tap") == 11494.13
-    assert _amount(business.owed, "Company still owes Robert") == 7739.60
     assert _amount(business.owed, "VAT") == round(3070.93 + 623.37, 2)
+    assert _amount(business.owed, "Manual adjustments") == 330.27
+    assert _amount(business.owed, "Pension fund") == 350.00
     holding = next(line for line in business.owed if line.key == "holding")
     assert holding.amount_gbp == 6.00
     assert holding.tier == "more"
     assert len([line for line in business.owed if "Tesla" in line.label]) == 1
+    # Register / Lunch Flow must not add Funding Circle or personal cards.
+    assert "Funding Circle" not in _labels(business.owed)
+    assert "Amex" not in _labels(business.owed)
+    assert "Credit cards" not in _labels(business.owed)
+    assert not any(line.key == "bs_other_owed" for line in business.owed)
+
+    # Headers = sum of shown lines (not forced QF section totals that hide 680).
+    expected_own = round(
+        37183.24 + 7597.31 + 0.11 + 0.47 + 2391.83 + 289.96,
+        2,
+    )
+    expected_owe = round(
+        14081.34
+        + 7739.60
+        + 4351.29
+        + 6.00
+        + 3310.63
+        + 11494.13
+        + 3070.93
+        + 623.37
+        + 330.27
+        + 350.00,
+        2,
+    )
+    assert business.owned_total_gbp == expected_own
+    assert business.owed_total_gbp == expected_owe
+    # OK that own − owe ≠ leftover: leftover is capital, not a recomputed plug.
+    assert round(business.owned_total_gbp - business.owed_total_gbp, 2) != business.whats_left_gbp
+    assert business.whats_left_gbp == 3465.90
+    # Official section totals must not be forced when they hide the 680 netting.
+    assert business.owned_total_gbp != round(37183.24 + 10959.95, 2)
+    assert business.owed_total_gbp != 44677.29
 
 
 def test_business_without_balance_sheet_shows_gap_not_working_capital() -> None:

@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 CACHE_TTL = timedelta(minutes=15)
 # Bump when overview calculation rules or first-paint cache semantics change
-# so stale payloads are discarded. v16: 2204/2230 debit liability lines map to
-# Own (not Owe); drop ghost bs_other_owned when QF netted the same gap.
-CACHE_VERSION = "16"
+# so stale payloads are discarded. v17: printed QuickFile BS 1:1 — 2204/2230
+# stay on Owe as printed; Own/Owe headers = sum of shown lines; no ghost plug.
+CACHE_VERSION = "17"
 
 _QUICKFILE_REPORTS_KEY = "quickfile_reports"
 
