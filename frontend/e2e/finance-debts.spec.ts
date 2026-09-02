@@ -9,9 +9,11 @@ test("debt create, total, edit, archive", async ({ page }) => {
   await page.getByPlaceholder("Balance", { exact: true }).fill("900");
   await page.getByPlaceholder("APR %").fill("22.9");
   await page.getByPlaceholder("Minimum payment").fill("35");
+  // Credit cards need a limit or the name cell includes gap copy that breaks exact matchers.
+  await page.getByPlaceholder("Credit limit").fill("2000");
   await page.getByRole("button", { name: "Add debt" }).click();
   await expect(page.getByText("Debt added")).toBeVisible();
-  await expect(page.getByRole("cell", { name: new RegExp(name) })).toBeVisible();
+  await expect(page.getByText(name, { exact: true })).toBeVisible();
 
   await openFinanceOverview(page);
   await expect(page.getByRole("region", { name: "You" })).toBeVisible();
@@ -29,5 +31,5 @@ test("debt create, total, edit, archive", async ({ page }) => {
   await row.getByRole("button", { name: "Archive" }).click();
   await page.getByRole("button", { name: "Archive" }).last().click();
   await expect(page.getByText("Debt archived")).toBeVisible();
-  await expect(page.getByRole("cell", { name: new RegExp(name) })).toHaveCount(0);
+  await expect(page.getByText(name, { exact: true })).toHaveCount(0);
 });
