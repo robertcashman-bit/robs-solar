@@ -8,10 +8,13 @@ export async function expectFinanceOverviewAfterLogin(page: Page) {
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible({
     timeout: LOGIN_TIMEOUT,
   });
-  await expect(page.getByRole("heading", { name: "Net worth" })).toBeVisible({
+  await expect(page.getByRole("region", { name: "What's left" })).toBeVisible({
     timeout: LOGIN_TIMEOUT,
   });
-  await expect(page.getByRole("heading", { name: "Position" })).toBeVisible({
+  await expect(page.getByRole("region", { name: "You" })).toBeVisible({
+    timeout: LOGIN_TIMEOUT,
+  });
+  await expect(page.getByRole("region", { name: "Defence Legal" })).toBeVisible({
     timeout: LOGIN_TIMEOUT,
   });
 }

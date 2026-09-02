@@ -11,7 +11,7 @@ test("finance routes load from navigation", async ({ page }) => {
     ["Cash Flow", "/finance/cash-flow", "Cash Flow"],
     ["Budget", "/finance/budget", "Budget"],
     ["Reports", "/finance/reports", "Reports"],
-    ["Connect banks", "/finance/connect", "Connect banks"],
+    ["Connections", "/finance/connect", "Connections"],
     ["Settings", "/settings", "Settings"],
   ] as const;
   for (const [nav, path, heading] of routes) {
