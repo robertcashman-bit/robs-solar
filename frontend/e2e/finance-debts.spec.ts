@@ -11,7 +11,7 @@ test("debt create, total, edit, archive", async ({ page }) => {
   await page.getByPlaceholder("Minimum payment").fill("35");
   await page.getByRole("button", { name: "Add debt" }).click();
   await expect(page.getByText("Debt added")).toBeVisible();
-  await expect(page.getByRole("cell", { name })).toBeVisible();
+  await expect(page.getByRole("cell", { name: new RegExp(name) })).toBeVisible();
 
   await openFinanceOverview(page);
   await expect(page.getByRole("region", { name: "You" })).toBeVisible();
@@ -29,5 +29,5 @@ test("debt create, total, edit, archive", async ({ page }) => {
   await row.getByRole("button", { name: "Archive" }).click();
   await page.getByRole("button", { name: "Archive" }).last().click();
   await expect(page.getByText("Debt archived")).toBeVisible();
-  await expect(page.getByRole("cell", { name })).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: new RegExp(name) })).toHaveCount(0);
 });
