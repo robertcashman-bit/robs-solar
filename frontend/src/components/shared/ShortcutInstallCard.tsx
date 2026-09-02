@@ -21,7 +21,7 @@ export function ShortcutInstallCard() {
         Put Rob&apos;s Finance on your Desktop
       </h2>
       <p className="mt-1 text-[var(--muted)]">
-        The shortcut opens the live sign-in page and emails you a new 6-digit code.
+        The shortcut opens the live sign-in page. Use your password — you stay signed in for weeks.
       </p>
       <ul className="mt-3 list-inside list-disc space-y-2 text-[var(--muted)]">
         <li>

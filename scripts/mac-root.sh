@@ -129,7 +129,7 @@ write_backend_launch_agent() {
 EOF
 }
 
-HOSTED_ROBS_FINANCE_URL="${HOSTED_ROBS_FINANCE_URL:-https://robs-solar.vercel.app/login?send=1}"
+HOSTED_ROBS_FINANCE_URL="${HOSTED_ROBS_FINANCE_URL:-https://robs-solar.vercel.app/login}"
 
 open_hosted_robs_finance() {
   # Used when the local All checkout / RobsFinance.app is missing so the

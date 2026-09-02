@@ -31,7 +31,7 @@ if [[ ! -x "$ROOT/scripts/mac-launch.sh" ]]; then
     exit 0
   fi
   if command -v open >/dev/null 2>&1; then
-    open "https://robs-solar.vercel.app/login?send=1"
+    open "https://robs-solar.vercel.app/login"
     exit 0
   fi
   if [[ -x /usr/bin/osascript ]]; then

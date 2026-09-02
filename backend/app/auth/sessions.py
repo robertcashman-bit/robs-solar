@@ -9,7 +9,10 @@ from app.schemas.domain import UserRole
 
 SESSION_COOKIE = "robs_solar_session"
 CSRF_HEADER = "X-CSRF-Token"
-SESSION_MAX_AGE_SECONDS = 60 * 60 * 12
+# Remember-me (default): survive browser restarts for personal testing.
+SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
+# When remember is off: cookie dies with the browser session (no Max-Age).
+SESSION_SHORT_MAX_AGE_SECONDS: Optional[int] = None
 
 
 @dataclass(frozen=True)

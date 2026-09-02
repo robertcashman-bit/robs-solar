@@ -33,7 +33,7 @@ fi
 
 if [[ -z "$ROOT" || ! -x "$ROOT/scripts/mac-launch.sh" ]]; then
   if command -v open >/dev/null 2>&1; then
-    exec open "https://robs-solar.vercel.app/login?send=1"
+    exec open "https://robs-solar.vercel.app/login"
   fi
   if [[ -x /usr/bin/osascript ]]; then
     /usr/bin/osascript -e 'display alert "Rob'\''s Finance could not start" message "The project folder was not found. Open https://robs-solar.vercel.app or install from that site."' 2>/dev/null || true

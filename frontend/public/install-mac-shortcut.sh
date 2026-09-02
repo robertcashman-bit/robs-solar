@@ -5,7 +5,7 @@
 set -u
 
 HOSTED_ORIGIN="${HOSTED_ROBS_FINANCE_ORIGIN:-https://robs-solar.vercel.app}"
-LOGIN_URL="${HOSTED_ROBS_FINANCE_URL:-${HOSTED_ORIGIN}/login?send=1}"
+LOGIN_URL="${HOSTED_ROBS_FINANCE_URL:-${HOSTED_ORIGIN}/login}"
 APP_DIR="${HOME}/Applications/RobsFinance.app"
 DESKTOP_DIR="${HOME}/Desktop"
 DOWNLOADS_DIR="${HOME}/Downloads"

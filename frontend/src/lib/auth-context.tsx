@@ -43,10 +43,10 @@ type AuthContextValue = {
   authResolved: boolean;
   magicCodeEnabled: boolean;
   magicCodeDevDelivery: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, remember?: boolean) => Promise<void>;
   requestMagicCode: (email: string) => Promise<MagicCodeRequestResult>;
-  verifyMagicCode: (email: string, code: string) => Promise<void>;
-  consumeMagicLink: (token: string) => Promise<void>;
+  verifyMagicCode: (email: string, code: string, remember?: boolean) => Promise<void>;
+  consumeMagicLink: (token: string, remember?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
@@ -228,9 +228,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (username: string, password: string) => {
+    async (username: string, password: string, remember = true) => {
       const data = loginResponseSchema.parse(
-        await apiClient.post("/auth/login", { username, password }),
+        await apiClient.post("/auth/login", { username, password, remember }),
       );
       await confirmSessionCookie(data);
     },
@@ -250,9 +250,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const verifyMagicCode = useCallback(
-    async (email: string, code: string) => {
+    async (email: string, code: string, remember = true) => {
       const data = loginResponseSchema.parse(
-        await apiClient.post("/auth/magic-code/verify", { email, code }),
+        await apiClient.post("/auth/magic-code/verify", { email, code, remember }),
       );
       await confirmSessionCookie(data);
     },
@@ -260,9 +260,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const consumeMagicLink = useCallback(
-    async (token: string) => {
+    async (token: string, remember = true) => {
       const data = loginResponseSchema.parse(
-        await apiClient.post("/auth/magic-link/consume", { token }),
+        await apiClient.post("/auth/magic-link/consume", { token, remember }),
       );
       await confirmSessionCookie(data);
     },

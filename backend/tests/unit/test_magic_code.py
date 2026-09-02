@@ -84,7 +84,7 @@ async def test_request_and_verify_dev_code(client: AsyncClient) -> None:
     assert second["dev_code"]
     assert second["dev_code"] != first_code
     assert second["dev_link"].startswith("https://robs-solar.vercel.app/login?token=")
-    assert "new 6-digit" in second["message"].lower() or "shown below" in second["message"].lower()
+    assert "6-digit" in second["message"].lower() or "shown below" in second["message"].lower()
 
     stale = await client.post(
         "/auth/magic-code/verify",

@@ -117,6 +117,8 @@ class SunsynkVerificationCodeRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=128)
+    # Stay signed in across browser restarts (default on for personal use).
+    remember: bool = True
 
 
 class MagicCodeRequest(BaseModel):
@@ -126,6 +128,7 @@ class MagicCodeRequest(BaseModel):
 class MagicCodeVerifyRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     code: str = Field(min_length=4, max_length=12)
+    remember: bool = True
 
 
 class MagicCodeRequestResponse(BaseModel):
@@ -140,6 +143,7 @@ class MagicCodeRequestResponse(BaseModel):
 
 class MagicLinkConsumeRequest(BaseModel):
     token: str = Field(min_length=8, max_length=2048)
+    remember: bool = True
 
 
 class MagicCodeStatusResponse(BaseModel):

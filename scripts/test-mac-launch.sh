@@ -159,7 +159,7 @@ if [[ -x "$INSTALLER" ]]; then
   TEST_HOME="$(mktemp -d)"
   if INSTALL_MAC_SHORTCUT_TEST=1 HOME="$TEST_HOME" bash "$INSTALLER" >/tmp/install-mac-website-shortcut.log 2>&1 \
     && [[ -x "$TEST_HOME/Applications/RobsFinance.app/Contents/MacOS/RobsFinance" ]] \
-    && grep -q 'https://robs-solar.vercel.app/login?send=1' "$TEST_HOME/Applications/RobsFinance.app/Contents/MacOS/RobsFinance" \
+    && grep -q 'https://robs-solar.vercel.app/login' "$TEST_HOME/Applications/RobsFinance.app/Contents/MacOS/RobsFinance" \
     && [[ -x "$TEST_HOME/Desktop/RobsFinance.command" ]] \
     && ! grep -q '127.0.0.1:3000' "$TEST_HOME/Applications/RobsFinance.app/Contents/MacOS/RobsFinance"; then
   pass "website Mac installer creates RobsFinance.app without localhost"
@@ -171,7 +171,7 @@ else
   bad "missing executable: $INSTALLER"
 fi
 if [[ -f "$ROOT/frontend/public/RobsFinance.url" ]] \
-  && grep -q 'https://robs-solar.vercel.app/login?send=1' "$ROOT/frontend/public/RobsFinance.url" \
+  && grep -q 'https://robs-solar.vercel.app/login' "$ROOT/frontend/public/RobsFinance.url" \
   && [[ -f "$ROOT/frontend/public/install-windows-shortcut.ps1" ]]; then
   pass "Windows Desktop shortcut opens hosted login"
 else

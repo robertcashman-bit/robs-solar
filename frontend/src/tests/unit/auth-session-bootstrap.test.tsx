@@ -127,6 +127,7 @@ describe("AuthProvider session bootstrap", () => {
     expect(post).toHaveBeenCalledWith("/auth/magic-code/verify", {
       email: "rob@example.com",
       code: "123456",
+      remember: true,
     });
     expect(meCalls).toBeGreaterThanOrEqual(2);
 

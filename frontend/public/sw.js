@@ -1,4 +1,4 @@
-const CACHE_VERSION = "robs-finance-v1";
+const CACHE_VERSION = "robs-finance-v2";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());

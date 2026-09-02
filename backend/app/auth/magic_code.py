@@ -176,14 +176,14 @@ class MagicCodeService:
         payload = dict(generic)
         if sent:
             payload["message"] = (
-                "A new 6-digit sign-in code is on its way. "
-                "It replaces any previous code."
+                "Check your email for a 6-digit code. "
+                "Any older code no longer works."
             )
             payload["delivery"] = "email"
         else:
             payload["message"] = (
-                "Use the new 6-digit code shown below "
-                "(email delivery is not configured)."
+                "Use the 6-digit code shown below "
+                "(email sending is not set up here)."
             )
             payload["delivery"] = "dev"
             payload["dev_code"] = code

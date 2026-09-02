@@ -53,7 +53,7 @@ done
 
 # Local app is not installed. Open the live Finance site instead of bouncing.
 if command -v open >/dev/null 2>&1; then
-  exec open "https://robs-solar.vercel.app/login?send=1"
+  exec open "https://robs-solar.vercel.app/login"
 fi
 if command -v osascript >/dev/null 2>&1; then
   /usr/bin/osascript -e 'display alert "Rob'\''s Finance could not start" message "The app was not found. Open https://robs-solar.vercel.app or run the Mac installer from that site."' 2>/dev/null || true

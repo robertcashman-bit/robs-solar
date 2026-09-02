@@ -14,7 +14,13 @@ from app.auth.oidc import (
     oidc_configured,
     verify_state,
 )
-from app.auth.sessions import SESSION_COOKIE, SessionData, session_manager
+from app.auth.sessions import (
+    SESSION_COOKIE,
+    SESSION_MAX_AGE_SECONDS,
+    SESSION_SHORT_MAX_AGE_SECONDS,
+    SessionData,
+    session_manager,
+)
 from app.config import settings
 from app.schemas.domain import (
     LoginRequest,
@@ -37,21 +43,25 @@ def _frontend_redirect(path: str = "/") -> str:
     return f"{base.rstrip('/')}{path}"
 
 
-def _set_session_cookie(response: Response, username: str, role) -> str:
+def _set_session_cookie(response: Response, username: str, role, *, remember: bool = True) -> str:
     """Attach the host-only session cookie for same-origin /backend traffic.
 
     Flags are intentional for https://robs-solar.vercel.app multi-service:
     Path=/, HttpOnly, SameSite=Lax, Secure in production/Vercel, and no Domain
     attribute (a Domain on vercel.app would be dropped by browsers).
+
+    Remember-me (default) uses a 30-day Max-Age so the cookie survives browser
+    restarts. Signature validation always allows the full 30-day window.
     """
     token, csrf_token = session_manager.create_session_token(username, role)
+    max_age = SESSION_MAX_AGE_SECONDS if remember else SESSION_SHORT_MAX_AGE_SECONDS
     response.set_cookie(
         key=SESSION_COOKIE,
         value=token,
         httponly=True,
         samesite=settings.cookie_samesite,
         secure=settings.cookie_secure,
-        max_age=60 * 60 * 12,
+        max_age=max_age,
         path="/",
         # domain intentionally omitted — host-only cookie for this apex host
     )
@@ -127,7 +137,7 @@ async def magic_link_consume(
         username, role = await magic_code_service.consume_link(body.token)
     except MagicCodeError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-    csrf_token = _set_session_cookie(response, username, role)
+    csrf_token = _set_session_cookie(response, username, role, remember=body.remember)
     return LoginResponse(
         user=UserInfo(username=username, role=role),
         csrf_token=csrf_token,
@@ -143,7 +153,7 @@ async def magic_code_verify(
         username, role = await magic_code_service.verify_code(body.email, body.code)
     except MagicCodeError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-    csrf_token = _set_session_cookie(response, username, role)
+    csrf_token = _set_session_cookie(response, username, role, remember=body.remember)
     return LoginResponse(
         user=UserInfo(username=username, role=role),
         csrf_token=csrf_token,
@@ -155,7 +165,9 @@ async def login(request: LoginRequest, response: Response) -> LoginResponse:
     user = authenticate_user(request)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    csrf_token = _set_session_cookie(response, user.username, user.role)
+    csrf_token = _set_session_cookie(
+        response, user.username, user.role, remember=request.remember
+    )
     return LoginResponse(
         user=UserInfo(username=user.username, role=user.role),
         csrf_token=csrf_token,

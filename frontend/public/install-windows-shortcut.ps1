@@ -2,7 +2,7 @@
 # Safe to run via:
 #   irm https://robs-solar.vercel.app/install-windows-shortcut.ps1 | iex
 $ErrorActionPreference = "Stop"
-$loginUrl = "https://robs-solar.vercel.app/login?send=1"
+$loginUrl = "https://robs-solar.vercel.app/login"
 $desktop = [Environment]::GetFolderPath("Desktop")
 if (-not $desktop) {
   $desktop = Join-Path $env:USERPROFILE "Desktop"
