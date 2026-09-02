@@ -803,6 +803,9 @@ _QF_HP_LABEL_TOKENS = (
 )
 _QF_LOANS_ASSET_NOMINALS = frozenset({"2300"})
 _QF_VAT_LIABILITY_NOMINALS = frozenset({"2200", "2202"})
+# Debit balances on liability nominals that QuickFile section *totals* treat as
+# current assets (prepaid / overpaid) — never list these on Owe.
+_QF_PREPAID_LIABILITY_AS_ASSET_NOMINALS = frozenset({"2204", "2230"})
 # Leftovers small enough to hide behind More (not real debts).
 _MORE_LEFTOVER_GBP = 3000.0
 
@@ -849,6 +852,24 @@ def _is_qf_vat_liability_line(line: dict) -> bool:
         or "sales tax" in label
         or label in {"vat", "vat control", "sales tax control"}
     )
+
+
+def _is_qf_prepaid_liability_as_asset(line: dict) -> bool:
+    """True for 2204 / 2230 debit balances filed under Current liabilities.
+
+    QuickFile may list Manual Adjustments and Pension Fund under liability
+    lines while section totals count the same amounts in current assets.
+    Those are prepaid/overpaid balances — Own, never Owe.
+    """
+    code = _normalize_nominal(str(line.get("nominal_code") or ""))
+    if code in _QF_PREPAID_LIABILITY_AS_ASSET_NOMINALS:
+        return True
+    label = str(line.get("label") or "").strip().lower()
+    if "manual adjustment" in label:
+        return True
+    if "pension fund" in label:
+        return True
+    return False
 
 
 def _qf_hp_finance_gbp(liability_lines: list[dict]) -> float:
@@ -966,6 +987,8 @@ def _plain_qf_liability_key_label(line: dict) -> tuple[str, str, str] | None:
 
     if _is_qf_hp_finance_line(line) or _is_qf_vat_liability_line(line):
         return None
+    if _is_qf_prepaid_liability_as_asset(line):
+        return None
     if code == "1201" or "director" in lowered and "loan" in lowered:
         return (
             "company_owes_robert_biz",
@@ -998,6 +1021,10 @@ def _dls_from_quickfile_balance_sheet(
 
     Does not mix Lunch Flow bank balances or the debt register. Register is
     only used when no balance sheet is present (see caller).
+
+    Pile headers always use official section totals (fixed+current,
+    current+long). Leftover is official capital & reserves. Debit liability
+    nominals 2204 / 2230 are Own (Manual adjustments / Pension fund), never Owe.
     """
     owned: list[OverviewLine] = []
     if fixed_assets > 0.005:
@@ -1012,9 +1039,18 @@ def _dls_from_quickfile_balance_sheet(
             )
         )
 
+    # 2204 / 2230 may sit in liability_lines while QF section totals already
+    # count them in current_assets. Peel them onto Own under real names.
+    prepaid_as_asset = [
+        line for line in liability_lines if _is_qf_prepaid_liability_as_asset(line)
+    ]
+    debt_liability_lines = [
+        line for line in liability_lines if not _is_qf_prepaid_liability_as_asset(line)
+    ]
+
     # Merge duplicate keys (e.g. multiple debtors lines) by summing.
     owned_by_key: dict[str, OverviewLine] = {}
-    for line in asset_lines:
+    for line in list(asset_lines) + prepaid_as_asset:
         mapped = _plain_qf_asset_line(line)
         if mapped is None:
             continue
@@ -1047,7 +1083,7 @@ def _dls_from_quickfile_balance_sheet(
 
     owed: list[OverviewLine] = []
     # Tesla from HP Finance (50) only — never invent market value, never use 2300.
-    tesla = _qf_hp_finance_gbp(liability_lines)
+    tesla = _qf_hp_finance_gbp(debt_liability_lines)
     if tesla > 0.005:
         owed.append(
             OverviewLine(
@@ -1063,14 +1099,14 @@ def _dls_from_quickfile_balance_sheet(
     vat_total = round(
         sum(
             abs(float(line.get("amount_gbp") or 0))
-            for line in liability_lines
+            for line in debt_liability_lines
             if _is_qf_vat_liability_line(line)
         ),
         2,
     )
     holding_amount = 0.0
     owed_by_key: dict[str, OverviewLine] = {}
-    for line in liability_lines:
+    for line in debt_liability_lines:
         if _is_qf_hp_finance_line(line) or _is_qf_vat_liability_line(line):
             continue
         mapped = _plain_qf_liability_key_label(line)
@@ -1130,12 +1166,17 @@ def _dls_from_quickfile_balance_sheet(
             )
         )
 
+    # Official section totals for pile headers — not line-walk sums.
     owned_total = round(fixed_assets + current_assets, 2)
     owed_total = round(current_liab + long_liab, 2)
-    # Pad only if line walk missed pennies vs official totals (never invent Tesla).
     listed_owned = _sum_line_amounts(owned)
+    listed_owed = _sum_line_amounts(owed)
     owned_gap = round(owned_total - listed_owned, 2)
-    if owned_gap > 0.01:
+    owed_gap = round(owed_total - listed_owed, 2)
+    # Pad only true incomplete line walks. When QF netted the same amount into
+    # asset totals and out of liability totals (e.g. 2204+2230 already rehomed
+    # onto Own, or still mirrored as ±gap), do NOT invent "Other company money".
+    if owned_gap > 0.01 and abs(owned_gap + owed_gap) > 0.01:
         owned.append(
             OverviewLine(
                 "bs_other_owned",
@@ -1146,10 +1187,10 @@ def _dls_from_quickfile_balance_sheet(
             )
         )
         listed_owned = _sum_line_amounts(owned)
-    listed_owed = _sum_line_amounts(owed)
-    owed_gap = round(owed_total - listed_owed, 2)
+        owned_gap = round(owned_total - listed_owned, 2)
     if owed_gap > 0.01:
         # Only when liability_lines were incomplete — not a named-line plug.
+        # Never pad a negative gap (lines exceed official) as extra debt.
         owed.append(
             OverviewLine(
                 "bs_other_owed",
@@ -1163,10 +1204,10 @@ def _dls_from_quickfile_balance_sheet(
 
     left = round(float(capital), 2)
     # Prefer identity own − owe == capital when within 1p of official capital.
-    identity = round(listed_owned - listed_owed, 2)
+    identity = round(owned_total - owed_total, 2)
     if abs(identity - left) <= 0.01:
         left = identity
-    return owned, owed, listed_owned, listed_owed, left
+    return owned, owed, owned_total, owed_total, left
 
 
 def _is_vehicle_hp_debt(debt: LiabilityView) -> bool:

@@ -398,7 +398,7 @@ async def test_overview_cache_invalidates_when_quickfile_reports_change(
     from app.db.session import SessionLocal
     from app.services.finance.finance_overview_cache_service import CACHE_VERSION
 
-    assert CACHE_VERSION == "15"
+    assert CACHE_VERSION == "16"
 
     await login(client, "viewer", "viewer-pass")
     first = await client.get("/finance/overview")

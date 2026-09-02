@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 CACHE_TTL = timedelta(minutes=15)
 # Bump when overview calculation rules or first-paint cache semantics change
-# so stale payloads are discarded. v15: fingerprint includes QuickFile reports
-# so a BS-only recode invalidates DLS leftover without waiting for account churn.
-CACHE_VERSION = "15"
+# so stale payloads are discarded. v16: 2204/2230 debit liability lines map to
+# Own (not Owe); drop ghost bs_other_owned when QF netted the same gap.
+CACHE_VERSION = "16"
 
 _QUICKFILE_REPORTS_KEY = "quickfile_reports"
 

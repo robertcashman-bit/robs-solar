@@ -48,6 +48,49 @@ _BS_0109_POST_RECODE = {
     ],
 }
 
+# Live QuickFile Balance Sheet as at 02/09/2026 (synced ~20:23 UTC).
+# 2204 Manual Adj £330.27 + 2230 Pension £350 sit in liability LINES, but QF
+# section totals count that £680.27 in current_assets (and out of CL). They are
+# debit balances — Own, never Owe. Capital kept at 3465.90.
+_BS_0209_LIVE = {
+    "fixed_assets_gbp": 37183.24,
+    "current_assets_gbp": 10959.95,
+    "current_liabilities_gbp": 44677.29,
+    "long_term_liabilities_gbp": 0.0,
+    "capital_and_reserves_gbp": 3465.90,
+    "asset_lines": [
+        {"nominal_code": "1100", "label": "Debtors Control Account", "amount_gbp": 7597.31},
+        {"nominal_code": "1200", "label": "Current Account", "amount_gbp": 0.11},
+        {"nominal_code": "1210", "label": "VAT Account", "amount_gbp": 0.47},
+        {
+            "nominal_code": "2100",
+            "label": "Creditors Control Account",
+            "amount_gbp": 2391.83,
+        },
+        {"nominal_code": "2300", "label": "Loans", "amount_gbp": 289.96},
+    ],
+    "liability_lines": [
+        {"nominal_code": "50", "label": "HP Finance", "amount_gbp": 14081.34},
+        {"nominal_code": "1201", "label": "Director's Loan", "amount_gbp": 7739.60},
+        {
+            "nominal_code": "1207",
+            "label": "Lloyds Bank Business Account",
+            "amount_gbp": 4351.29,
+        },
+        {"nominal_code": "1211", "label": "Holding", "amount_gbp": 6.00},
+        {
+            "nominal_code": "1258",
+            "label": "Lloyds Bank Business Credit Card",
+            "amount_gbp": 3310.63,
+        },
+        {"nominal_code": "1259", "label": "Capital on Tap", "amount_gbp": 11494.13},
+        {"nominal_code": "2200", "label": "Sales Tax", "amount_gbp": 3070.93},
+        {"nominal_code": "2202", "label": "VAT Liability", "amount_gbp": 623.37},
+        {"nominal_code": "2204", "label": "Manual Adjustments", "amount_gbp": 330.27},
+        {"nominal_code": "2230", "label": "Pension Fund", "amount_gbp": 350.00},
+    ],
+}
+
 
 def _labels(lines, *, tier: str | None = None) -> set[str]:
     return {
@@ -330,6 +373,84 @@ def test_dls_0109_post_recode_balance_sheet_is_plain_english_one_to_one() -> Non
     # Register extras (£9999 card, stale Tesla, Funding Circle) must not inflate.
     assert business.owed_total_gbp < 45000
     assert business.owned_total_gbp == 47653.23
+
+
+def test_dls_0209_prepaid_2204_2230_on_own_not_owe() -> None:
+    """Live 02/09/2026: 2204+2230 in liability lines are Own; leftover stays capital."""
+    accounts = [
+        AccountView(1, "business", "current", "Lloyds business", -4351.29),
+    ]
+    debts = [
+        LiabilityView(
+            1,
+            "business",
+            "Tesla Model 3 HP AF-63591",
+            "loan",
+            18018.09,
+            0.0,
+            766.0,
+        ),
+    ]
+    totals = compute_totals(accounts, debts)
+    _personal, business = build_overview_side_breakdowns(
+        totals=totals,
+        accounts=accounts,
+        liabilities=debts,
+        director_owes_company=0.0,
+        company_owes_director=7739.60,
+        personal_whats_left=0.0,
+        mortgage_configured=False,
+        pension_configured=False,
+        balance_sheet=_BS_0209_LIVE,
+    )
+
+    # What's left = official capital & reserves (do not change leftover).
+    assert business.whats_left_gbp == 3465.90
+    assert business.whats_left_available is True
+
+    # Official pile headers.
+    assert business.owned_total_gbp == round(37183.24 + 10959.95, 2)
+    assert business.owed_total_gbp == 44677.29
+    assert abs(
+        round(business.owned_total_gbp - business.owed_total_gbp, 2)
+        - business.whats_left_gbp
+    ) <= 0.01
+
+    # 2204 / 2230 on Own under real names — never Owe, never ghost plug.
+    assert _amount(business.owned, "Manual adjustments") == 330.27
+    assert _amount(business.owned, "Pension fund") == 350.00
+    assert "Manual adjustments" not in _labels(business.owed)
+    assert "Pension fund" not in _labels(business.owed)
+    assert not any(line.key == "bs_other_owned" for line in business.owned)
+    assert not any(
+        abs(float(line.amount_gbp or 0) - 680.27) < 0.01
+        for line in business.owned
+        if line.label == "Other company money"
+    )
+    # 2100 debit stays "Other company money" (unallocated supplier payments).
+    other_money = [
+        line
+        for line in business.owned
+        if line.label == "Other company money"
+    ]
+    assert len(other_money) == 1
+    assert other_money[0].amount_gbp == 2391.83
+    assert other_money[0].key == "creditors_debit"
+
+    # 2300 = loan repayments on the books (asset), not a Tesla/loan balance.
+    assert _amount(business.owned, "Loan repayments (on the books as an asset)") == 289.96
+
+    # Named owe lines; Tesla from 0050 only.
+    assert _amount(business.owed, "Tesla still to pay") == 14081.34
+    assert _amount(business.owed, "Overdraft") == 4351.29
+    assert _amount(business.owed, "Lloyds card") == 3310.63
+    assert _amount(business.owed, "Capital on Tap") == 11494.13
+    assert _amount(business.owed, "Company still owes Robert") == 7739.60
+    assert _amount(business.owed, "VAT") == round(3070.93 + 623.37, 2)
+    holding = next(line for line in business.owed if line.key == "holding")
+    assert holding.amount_gbp == 6.00
+    assert holding.tier == "more"
+    assert len([line for line in business.owed if "Tesla" in line.label]) == 1
 
 
 def test_business_without_balance_sheet_shows_gap_not_working_capital() -> None:
