@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
+    AppSettingRow,
     BusinessFinanceSnapshotRow,
     CashflowForecastRow,
     FinanceAccountRow,
@@ -27,8 +28,11 @@ logger = logging.getLogger(__name__)
 
 CACHE_TTL = timedelta(minutes=15)
 # Bump when overview calculation rules or first-paint cache semantics change
-# so stale payloads are discarded.
-CACHE_VERSION = "14"
+# so stale payloads are discarded. v15: fingerprint includes QuickFile reports
+# so a BS-only recode invalidates DLS leftover without waiting for account churn.
+CACHE_VERSION = "15"
+
+_QUICKFILE_REPORTS_KEY = "quickfile_reports"
 
 
 def _now() -> datetime:
@@ -87,6 +91,16 @@ class FinanceOverviewCacheService:
                 FinanceInsightRow.status == "active"
             )
         )
+        # Defence Legal leftover comes from stored QuickFile BS. Include a short
+        # content hash so BS-only updates (recode journals) bust the cache even
+        # when Lunch Flow / account balances are unchanged.
+        reports_row = await db.get(AppSettingRow, _QUICKFILE_REPORTS_KEY)
+        reports_raw = reports_row.value if reports_row is not None else ""
+        reports_fp = (
+            hashlib.sha256(reports_raw.encode("utf-8")).hexdigest()[:16]
+            if reports_raw
+            else "0"
+        )
         raw = "|".join(
             [
                 CACHE_VERSION,
@@ -104,6 +118,7 @@ class FinanceOverviewCacheService:
                 _stamp(budget_stamp[1]),
                 str(cashflow_id or 0),
                 str(insight_count or 0),
+                reports_fp,
             ]
         )
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]

@@ -120,6 +120,46 @@ export function useFinanceOverview(
     overviewRef.current = overview;
   }, [overview]);
 
+  const applyOverview = useCallback(
+    (
+      parsed: FinanceOverview,
+      requestedKey: string,
+      requestedPersonal: string,
+      requestedBusiness: string,
+      liveWarning: string | null,
+    ) => {
+      overviewRef.current = parsed;
+      setFetched({ key: requestedKey, overview: parsed });
+      setFetchMeta({
+        key: requestedKey,
+        status: liveWarning ? "error" : "ready",
+        error: liveWarning,
+      });
+      writeLastOverview(parsed, requestedPersonal, requestedBusiness);
+      notifyFinanceOverviewReady();
+    },
+    [],
+  );
+
+  const fetchStoredOverview = useCallback(
+    async (
+      requestedPersonal: string,
+      requestedBusiness: string,
+      options: { fresh: boolean },
+    ) => {
+      const month = currentMonthKey();
+      const params = new URLSearchParams({ month });
+      params.set("personal_period", requestedPersonal);
+      params.set("business_period", requestedBusiness);
+      if (options.fresh) params.set("fresh", "1");
+      const data = await apiClient.get<unknown>(
+        `/finance/overview?${params.toString()}`,
+      );
+      return financeOverviewSchema.parse(data);
+    },
+    [],
+  );
+
   const refresh = useCallback(
     async (refreshOpts?: { live?: boolean; fresh?: boolean }) => {
       if (!enabled) {
@@ -140,10 +180,14 @@ export function useFinanceOverview(
       try {
         // Manual Refresh: never block painting on QuickFile/Lunch Flow.
         // Race a short live sync, then always GET stored overview (?fresh=1).
+        // If the race times out, keep showing last figures and re-GET when
+        // the POST eventually finishes (so QF BS still lands).
         let liveWarning: string | null = null;
+        let liveTimedOut = false;
+        let livePost: Promise<unknown> | null = null;
         if (live) {
           let timeoutId = 0;
-          const livePost = apiClient.post("/finance/live-refresh", {});
+          livePost = apiClient.post("/finance/live-refresh", {});
           // Losing side of the race must not surface as unhandledrejection.
           void livePost.catch(() => undefined);
           try {
@@ -160,6 +204,7 @@ export function useFinanceOverview(
               }),
             ]);
           } catch (err) {
+            liveTimedOut = true;
             liveWarning =
               err instanceof Error
                 ? err.message
@@ -168,45 +213,77 @@ export function useFinanceOverview(
             window.clearTimeout(timeoutId);
           }
         }
-        const month = currentMonthKey();
-        const params = new URLSearchParams({ month });
-        params.set("personal_period", requestedPersonal);
-        params.set("business_period", requestedBusiness);
-        if (live || fresh) params.set("fresh", "1");
-        const data = await apiClient.get<unknown>(
-          `/finance/overview?${params.toString()}`,
+        const parsed = await fetchStoredOverview(
+          requestedPersonal,
+          requestedBusiness,
+          { fresh: live || fresh },
         );
-        const parsed = financeOverviewSchema.parse(data);
         if (
           requestId !== requestIdRef.current ||
           !isFinanceCacheWriteCurrent(cacheEpoch)
         ) {
           return;
         }
-        overviewRef.current = parsed;
-        setFetched({ key: requestedKey, overview: parsed });
-        setFetchMeta({
-          key: requestedKey,
-          status: liveWarning ? "error" : "ready",
-          error: liveWarning,
-        });
-        writeLastOverview(parsed, requestedPersonal, requestedBusiness);
-        notifyFinanceOverviewReady();
+        applyOverview(
+          parsed,
+          requestedKey,
+          requestedPersonal,
+          requestedBusiness,
+          liveWarning,
+        );
+
+        if (live && liveTimedOut && livePost) {
+          void livePost
+            .then(async () => {
+              if (
+                requestId !== requestIdRef.current ||
+                !isFinanceCacheWriteCurrent(cacheEpoch)
+              ) {
+                return;
+              }
+              try {
+                const late = await fetchStoredOverview(
+                  requestedPersonal,
+                  requestedBusiness,
+                  { fresh: true },
+                );
+                if (
+                  requestId !== requestIdRef.current ||
+                  !isFinanceCacheWriteCurrent(cacheEpoch)
+                ) {
+                  return;
+                }
+                applyOverview(
+                  late,
+                  requestedKey,
+                  requestedPersonal,
+                  requestedBusiness,
+                  null,
+                );
+              } catch {
+                // Keep whatever we already painted.
+              }
+            })
+            .catch(() => undefined);
+        }
       } catch (err) {
         if (requestId !== requestIdRef.current) {
           return;
         }
-        // Keep last-known figures on timeout / network blips — do not strand
-        // the Overview on a dead error banner when local/server cache exists.
+        // Keep last-known figures on timeout / network blips — including
+        // manual Refresh — so Overview never blanks when cache exists.
         const keepCached =
           Boolean(overviewRef.current)
           && err instanceof ApiError
           && (err.status === 504 || err.status === 503);
-        if (keepCached && !live) {
+        if (keepCached) {
           setFetchMeta({
             key: requestedKey,
             status: "ready",
-            error: null,
+            error:
+              live
+                ? "Live refresh timed out — showing last saved figures."
+                : null,
           });
           return;
         }
@@ -224,7 +301,7 @@ export function useFinanceOverview(
         }
       }
     },
-    [enabled, personalPeriod, businessPeriod],
+    [enabled, personalPeriod, businessPeriod, applyOverview, fetchStoredOverview],
   );
 
   useEffect(() => {

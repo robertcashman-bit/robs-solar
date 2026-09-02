@@ -36,10 +36,15 @@ vi.mock("@/components/settings/QuickFileSettingsPanel", () => ({
   QuickFileSettingsPanel: () => <div>QuickFile panel</div>,
 }));
 
+vi.mock("@/components/finance/FinanceHealthPanel", () => ({
+  FinanceHealthPanel: () => <div>Finance health panel</div>,
+}));
+
 describe("ConnectBanksPage", () => {
   it("renders the recovered bank connection sections", () => {
     render(<ConnectBanksPage />);
-    expect(screen.getByRole("heading", { name: "Connect banks" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Connections" })).toBeInTheDocument();
+    expect(screen.getByText("Finance health panel")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Open Banking" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Lunch Flow" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "QuickFile" })).toBeInTheDocument();

@@ -151,4 +151,25 @@ describe("useFinanceOverview", () => {
     await waitFor(() => expect(screen.getByText("no-error")).toBeInTheDocument());
     expect(screen.getByText("cash:2500")).toBeInTheDocument();
   });
+
+  it("keeps cached overview figures when manual Refresh GET returns 503", async () => {
+    window.localStorage.setItem(FINANCE_LAST_OVERVIEW_KEY, JSON.stringify(stored));
+    get.mockResolvedValueOnce({
+      ...stored,
+      personal_bank_balance_gbp: 2500,
+      personal_period_flow: null,
+      business_period_flow: null,
+    });
+    post.mockResolvedValue({});
+    render(<Probe />);
+    await waitFor(() => expect(get).toHaveBeenCalled());
+    get.mockRejectedValueOnce(new ApiError("Service Unavailable", 503));
+    await act(async () => {
+      screen.getByRole("button", { name: "Refresh" }).click();
+    });
+    await waitFor(() =>
+      expect(screen.getByText(/showing last saved figures/i)).toBeInTheDocument(),
+    );
+    expect(screen.getByText("cash:2500")).toBeInTheDocument();
+  });
 });

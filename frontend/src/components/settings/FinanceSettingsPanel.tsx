@@ -93,7 +93,7 @@ export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelP
           QuickFile and Lunch Flow are the live connections for this app. TrueLayer
           is only needed if you want a second bank login. The same setup also lives on{" "}
           <Link href="/finance/connect" className="underline underline-offset-2">
-            Connect banks
+            Connections
           </Link>
           . Production health may still show a leftover solar adapter_mode — that does
           not mean your money figures are simulated.

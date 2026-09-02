@@ -182,6 +182,201 @@ async def test_force_quickfile_reports_syncs_even_when_last_sync_fresh(
 
 
 @pytest.mark.asyncio
+async def test_overview_live_query_forces_quickfile_reports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET /overview?live=1 must force QF BS pull (same as POST /live-refresh)."""
+    from app.services.finance.finance_overview_service import FinanceOverviewService
+
+    called = {"force": None}
+
+    async def capture_ensure(_db, **kwargs):
+        called["force"] = kwargs.get("force_quickfile_reports")
+        return {
+            "quickfile_reports_synced": True,
+            "partial_failure": False,
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.finance_live_refresh_service.ensure_fresh",
+        capture_ensure,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_cache_service.finance_overview_cache_service.clear",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_cache_service.finance_overview_cache_service.read",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_cache_service.finance_overview_cache_service.write",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_cache_service.finance_overview_cache_service.fingerprint",
+        AsyncMock(return_value="fp"),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_service.finance_accounts_service.list_accounts",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_service.finance_liabilities_service.list_liabilities",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_overview_service.finance_liabilities_service.ensure_from_accounts",
+        AsyncMock(return_value=0),
+    )
+    monkeypatch.setattr(
+        FinanceOverviewService,
+        "personal_snapshot_for_month",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        FinanceOverviewService,
+        "business_snapshot_for_month",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        FinanceOverviewService,
+        "_open_banking_flow",
+        AsyncMock(return_value=SimpleNamespace(income_gbp=0.0, spending_gbp=0.0)),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_insights_service.finance_insights_service.refresh_for_overview",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_ledger_service.finance_ledger_service.period_flow_totals",
+        AsyncMock(
+            return_value={
+                "period": "1m",
+                "scope": "personal",
+                "label": "1 month",
+                "date_from": "2026-08-01",
+                "date_to": "2026-08-31",
+                "months_requested": 1,
+                "months_with_data": 0,
+                "month_keys": ["2026-08"],
+                "transaction_count": 0,
+                "income_gbp": 0.0,
+                "spending_gbp": 0.0,
+                "surplus_gbp": 0.0,
+                "history_partial": False,
+                "coverage_note": "",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        FinanceOverviewService,
+        "_quickfile_period_totals",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        FinanceOverviewService,
+        "_quickfile_balance_sheet",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        FinanceOverviewService,
+        "_sync_stamp",
+        AsyncMock(return_value=None),
+    )
+
+    class _Db:
+        async def scalars(self, _stmt):
+            return SimpleNamespace(all=lambda: [], one=lambda: (0, 0.0, None), first=lambda: None)
+
+        async def scalar(self, _stmt):
+            return None
+
+        async def execute(self, _stmt):
+            return SimpleNamespace(all=lambda: [], one=lambda: (0, 0.0, None), first=lambda: None)
+
+        async def get(self, *_a, **_k):
+            return None
+
+        async def commit(self):
+            return None
+
+        async def rollback(self):
+            return None
+
+        def add(self, *_a, **_k):
+            return None
+
+    await FinanceOverviewService().get_overview(
+        _Db(),  # type: ignore[arg-type]
+        month="2026-09",
+        refresh_live=True,
+    )
+    assert called["force"] is True
+
+
+@pytest.mark.asyncio
+async def test_force_reports_partial_failure_when_reports_not_synced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Balances OK + reports failed must surface partial_failure, not invent BS."""
+    service = FinanceLiveRefreshService()
+    _patch_live_side_effects(monkeypatch)
+
+    async def recent_status(_db):
+        return SimpleNamespace(
+            configured=True,
+            last_sync_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    async def fake_config(_db):
+        return object()
+
+    async def fake_qf_balances(_db, _config, **kwargs):
+        assert kwargs.get("include_reports") is True
+        return QuickFileSyncResult(
+            accounts_synced=2,
+            debtors_gbp=1,
+            reports_synced=False,
+            message="qf balances only",
+        )
+
+    async def mark_debts(_db):
+        return 0
+
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.quickfile_settings_service.get_status",
+        recent_status,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.lunchflow_settings_service.get_status",
+        recent_status,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.quickfile_settings_service.get_config",
+        fake_config,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.quickfile_settings_service.is_quota_blocked",
+        AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.quickfile_sync_service.sync_balances",
+        fake_qf_balances,
+    )
+    monkeypatch.setattr(
+        "app.services.finance.finance_live_refresh_service.finance_liabilities_service.ensure_from_accounts",
+        mark_debts,
+    )
+
+    status = await service.ensure_fresh(_Db(), force_quickfile_reports=True)
+    assert status["quickfile_reports_synced"] is False
+    assert status["partial_failure"] is True
+    assert any("balance sheet" in w.lower() for w in status["warnings"])
+
+
+@pytest.mark.asyncio
 async def test_ensure_fresh_uses_quickfile_balances_not_full_sync(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

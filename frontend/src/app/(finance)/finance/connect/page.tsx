@@ -1,6 +1,7 @@
 "use client";
 
 import { BankImportCard } from "@/components/finance/BankImportCard";
+import { FinanceHealthPanel } from "@/components/finance/FinanceHealthPanel";
 import { AppShell } from "@/components/shared/AppShell";
 import { AuthLoadingShell } from "@/components/shared/AuthLoadingShell";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -23,10 +24,11 @@ export default function ConnectBanksPage() {
     <AppShell>
       <PageHeader
         eyebrow="Finance"
-        title="Connect banks"
-        description="Link personal banks with TrueLayer or Lunch Flow. QuickFile covers the company. Funding Circle is entered manually."
+        title="Connections"
+        description="Are QuickFile, Lunch Flow, and TrueLayer working? How current is each figure? Fix anything that needs you here."
       />
       <div className="mt-6 space-y-8">
+        <FinanceHealthPanel canEdit={!readOnly} />
         <section aria-labelledby="open-banking-heading">
           <h2 id="open-banking-heading" className="solar-section-title">
             Open Banking

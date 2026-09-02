@@ -1198,6 +1198,33 @@ def _plain_debt_label(debt: LiabilityView) -> str:
     return name or "Debt"
 
 
+_EXPENSIVE_APR_PCT = 15.0
+
+
+def _expensive_apr_hint(debts: Iterable[LiabilityView]) -> str:
+    """Plain-English label for the dearest known APR — never colour-only."""
+    expensive: list[tuple[float, str]] = []
+    for debt in debts:
+        if not debt.is_active or debt.balance_gbp <= 0:
+            continue
+        if not debt.interest_rate_known:
+            continue
+        apr = float(debt.interest_rate_pct or 0)
+        if apr < _EXPENSIVE_APR_PCT:
+            continue
+        expensive.append((apr, debt.name.strip() or "Debt"))
+    if not expensive:
+        return ""
+    expensive.sort(key=lambda item: (-item[0], item[1].lower()))
+    top_apr, top_name = expensive[0]
+    if len(expensive) == 1:
+        return f"Most expensive APR: {top_name} at {top_apr:.1f}%"
+    return (
+        f"Most expensive APR: {top_name} at {top_apr:.1f}% "
+        f"({len(expensive)} costly debts)"
+    )
+
+
 def _sum_line_amounts(lines: list[OverviewLine]) -> float:
     return round(
         sum(float(line.amount_gbp) for line in lines if line.amount_gbp is not None),
@@ -1314,34 +1341,44 @@ def build_overview_side_breakdowns(
             )
         )
     cards_gbp = totals.personal_credit_card_gbp
+    personal_cards = [
+        d
+        for d in debt_list
+        if d.scope == "personal" and d.debt_type == "credit_card" and d.balance_gbp > 0
+    ]
     if cards_gbp <= 0:
-        cards_gbp = round(
-            sum(
-                d.balance_gbp
-                for d in debt_list
-                if d.scope == "personal" and d.debt_type == "credit_card" and d.balance_gbp > 0
-            ),
-            2,
-        )
+        cards_gbp = round(sum(d.balance_gbp for d in personal_cards), 2)
     if cards_gbp > 0:
         personal_owed.append(
-            OverviewLine("personal_cards", "Credit cards", cards_gbp, "debt", "primary")
+            OverviewLine(
+                "personal_cards",
+                "Credit cards",
+                cards_gbp,
+                "debt",
+                "primary",
+                _expensive_apr_hint(personal_cards),
+            )
         )
     loans_gbp = totals.personal_loan_gbp
+    personal_loans = [
+        d
+        for d in debt_list
+        if d.scope == "personal"
+        and d.debt_type in {"loan", "business_loan"}
+        and d.balance_gbp > 0
+    ]
     if loans_gbp <= 0:
-        loans_gbp = round(
-            sum(
-                d.balance_gbp
-                for d in debt_list
-                if d.scope == "personal"
-                and d.debt_type in {"loan", "business_loan"}
-                and d.balance_gbp > 0
-            ),
-            2,
-        )
+        loans_gbp = round(sum(d.balance_gbp for d in personal_loans), 2)
     if loans_gbp > 0:
         personal_owed.append(
-            OverviewLine("personal_loans", "Loans", loans_gbp, "debt", "primary")
+            OverviewLine(
+                "personal_loans",
+                "Loans",
+                loans_gbp,
+                "debt",
+                "primary",
+                _expensive_apr_hint(personal_loans),
+            )
         )
     if totals.personal_overdraft_gbp > 0:
         personal_owed.append(

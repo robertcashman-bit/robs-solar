@@ -93,8 +93,17 @@ class QuickFileSyncService:
                 logger.warning(
                     "QuickFile reports sync failed after balance sync", exc_info=True
                 )
-                if is_quickfile_quota_error(exc):
-                    await quickfile_settings_service.record_error(db, str(exc))
+                # Surface on Connections / health even when balances succeeded —
+                # Overview DLS leftover depends on the stored BS.
+                await quickfile_settings_service.record_error(
+                    db,
+                    (
+                        f"Balance sheet refresh failed after balances OK: {exc}"
+                        if not is_quickfile_quota_error(exc)
+                        else str(exc)
+                    ),
+                )
+                message += "; balance sheet refresh failed (balances kept)"
 
         return QuickFileSyncResult(
             accounts_synced=synced,
@@ -239,8 +248,15 @@ class QuickFileSyncService:
                 logger.warning(
                     "QuickFile reports sync failed after account sync", exc_info=True
                 )
-                if is_quickfile_quota_error(exc):
-                    await quickfile_settings_service.record_error(db, str(exc))
+                await quickfile_settings_service.record_error(
+                    db,
+                    (
+                        f"Balance sheet refresh failed after account sync: {exc}"
+                        if not is_quickfile_quota_error(exc)
+                        else str(exc)
+                    ),
+                )
+                message += "; balance sheet refresh failed (accounts kept)"
 
         if backup:
             await _safe_backup(db, trigger="quickfile_sync")

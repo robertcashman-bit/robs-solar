@@ -385,3 +385,55 @@ async def test_get_overview_refresh_live_false_never_calls_live_qf(
     assert called["qf_refresh"] == 0
     assert called["lf_sync"] == 0
     assert called["ensure"] == 0
+
+
+@pytest.mark.asyncio
+async def test_overview_cache_invalidates_when_quickfile_reports_change(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BS-only recode must bust Overview cache even if accounts are unchanged."""
+    import json
+
+    from app.db.models import AppSettingRow
+    from app.db.session import SessionLocal
+    from app.services.finance.finance_overview_cache_service import CACHE_VERSION
+
+    assert CACHE_VERSION == "15"
+
+    await login(client, "viewer", "viewer-pass")
+    first = await client.get("/finance/overview")
+    assert first.status_code == 200
+    assert first.json().get("cached") is False
+
+    cached = await client.get("/finance/overview")
+    assert cached.json().get("cached") is True
+
+    async with SessionLocal() as db:
+        row = await db.get(AppSettingRow, "quickfile_reports")
+        payload = {
+            "synced_at": "2026-09-01T12:00:00+00:00",
+            "profit_and_loss_month": None,
+            "profit_and_loss_ytd": None,
+            "balance_sheet": {
+                "to_date": "2026-09-01",
+                "fixed_assets_gbp": 37183.24,
+                "current_assets_gbp": 10469.99,
+                "current_liabilities_gbp": 43774.22,
+                "long_term_liabilities_gbp": 0.0,
+                "capital_and_reserves_gbp": 3879.01,
+                "debtors_gbp": 7597.31,
+                "creditors_gbp": 0.0,
+                "vat_reserve_gbp": 0.47,
+                "sections": [],
+            },
+        }
+        encoded = json.dumps(payload)
+        if row is None:
+            db.add(AppSettingRow(key="quickfile_reports", value=encoded))
+        else:
+            row.value = encoded
+        await db.commit()
+
+    after = await client.get("/finance/overview")
+    assert after.status_code == 200
+    assert after.json().get("cached") is False

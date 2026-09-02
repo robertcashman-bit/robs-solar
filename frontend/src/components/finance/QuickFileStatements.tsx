@@ -31,7 +31,7 @@ export function QuickFileStatements({ reports, fallbackPl }: QuickFileStatements
           <p className="mt-1 text-sm text-[var(--muted)]">
             From the latest business snapshot. Sync QuickFile on{" "}
             <Link href="/finance/connect" className="underline underline-offset-2">
-              Connect banks
+              Connections
             </Link>{" "}
             for the live nominal breakdown.
           </p>
@@ -56,7 +56,7 @@ export function QuickFileStatements({ reports, fallbackPl }: QuickFileStatements
       <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface)] p-5 text-sm text-[var(--muted)]">
         No live QuickFile reports yet. Connect QuickFile on{" "}
         <Link href="/finance/connect" className="underline underline-offset-2">
-          Connect banks
+          Connections
         </Link>{" "}
         and run a sync to pull profit &amp; loss and the balance sheet.
       </div>

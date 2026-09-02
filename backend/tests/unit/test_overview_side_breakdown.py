@@ -387,3 +387,54 @@ def test_personal_and_business_lines_stay_unmixed() -> None:
     assert "Loans" in _labels(personal.owed, tier="primary")
     assert "House share" not in _labels(business.owned)
     assert personal.owed_total_gbp == 400.0
+
+
+def test_expensive_apr_hint_on_personal_cards_is_plain_english() -> None:
+    accounts = [AccountView(1, "personal", "current", "Current", 500.0)]
+    debts = [
+        LiabilityView(1, "personal", "Amex", "credit_card", 1200.0, 22.9, 50.0),
+        LiabilityView(2, "personal", "Barclaycard", "credit_card", 400.0, 12.0, 25.0),
+    ]
+    totals = compute_totals(accounts, debts)
+    personal, _ = build_overview_side_breakdowns(
+        totals=totals,
+        accounts=accounts,
+        liabilities=debts,
+        director_owes_company=0.0,
+        company_owes_director=0.0,
+        personal_whats_left=500.0 - totals.personal_debt_gbp,
+        mortgage_configured=False,
+        pension_configured=False,
+    )
+    cards = next(line for line in personal.owed if line.key == "personal_cards")
+    assert "Most expensive APR" in (cards.hint or "")
+    assert "Amex" in (cards.hint or "")
+    assert "22.9%" in (cards.hint or "")
+
+
+def test_capital_on_tap_stays_on_dls_not_personal() -> None:
+    accounts = [
+        AccountView(1, "personal", "current", "Current", 1000.0),
+        AccountView(2, "business", "current", "Biz", 0.0),
+    ]
+    debts = [
+        LiabilityView(
+            1, "business", "Capital on Tap", "business_loan", 11494.13, 0.0, 0.0
+        ),
+        LiabilityView(2, "personal", "Amex", "credit_card", 800.0, 20.0, 40.0),
+    ]
+    totals = compute_totals(accounts, debts)
+    personal, business = build_overview_side_breakdowns(
+        totals=totals,
+        accounts=accounts,
+        liabilities=debts,
+        director_owes_company=0.0,
+        company_owes_director=0.0,
+        personal_whats_left=1000.0 - 800.0,
+        mortgage_configured=False,
+        pension_configured=False,
+        balance_sheet=_BS_0109_POST_RECODE,
+    )
+    assert "Capital on Tap" not in _labels(personal.owed)
+    assert any("Capital on Tap" in label for label in _labels(business.owed))
+    assert personal.owed_total_gbp == 800.0

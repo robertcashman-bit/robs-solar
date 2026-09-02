@@ -131,12 +131,16 @@ class FinanceOverviewService:
         business_period = parse_period(business_period)
 
         # Login / first paint must never wait on QuickFile or Lunch Flow.
+        # Explicit ?live=1 (rare) must still force QuickFile P&L + BS pull —
+        # same as POST /live-refresh — so DLS leftover cannot stay pre-recode.
         if refresh_live:
             from app.services.finance.finance_live_refresh_service import (
                 finance_live_refresh_service,
             )
 
-            await finance_live_refresh_service.ensure_fresh(db)
+            await finance_live_refresh_service.ensure_fresh(
+                db, force_quickfile_reports=True
+            )
             await finance_overview_cache_service.clear(db, month)
 
         overview = None

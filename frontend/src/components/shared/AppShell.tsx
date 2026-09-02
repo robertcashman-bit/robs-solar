@@ -26,7 +26,7 @@ const navItems = [
   { href: "/finance/data-quality", label: "Data quality", icon: ChartIcon },
   { href: "/finance/onboarding", label: "Setup", icon: SettingsIcon },
   { href: "/finance/reports", label: "Reports", icon: ChartIcon },
-  { href: "/finance/connect", label: "Connect banks", icon: WalletIcon },
+  { href: "/finance/connect", label: "Connections", icon: WalletIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 

@@ -1,10 +1,12 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 
 describe("SavedFiguresBanner", () => {
   it("labels cached overview as possibly stale", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-17T12:30:00Z"));
     render(
       <SavedFiguresBanner
         refreshing={false}
@@ -15,8 +17,9 @@ describe("SavedFiguresBanner", () => {
       />,
     );
     expect(screen.getByText(/may be stale until live sync finishes/i)).toBeInTheDocument();
-    expect(screen.getByText(/QuickFile synced/i)).toBeInTheDocument();
-    expect(screen.getByText(/Lunch Flow synced/i)).toBeInTheDocument();
+    expect(screen.getByText(/QuickFile \(Defence Legal books\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Lunch Flow \(personal banks\)/i)).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("labels fresh overview as live", () => {

@@ -164,18 +164,28 @@ async def finance_live_refresh(
     from app.services.finance.finance_live_refresh_service import (
         finance_live_refresh_service,
     )
+    from app.services.finance.finance_overview_cache_service import (
+        finance_overview_cache_service,
+    )
 
     # Always re-pull QuickFile P&L + balance sheet (ignore fresh last_sync_at).
     # Full=True also pulls Lunch Flow txs. Background ensure_fresh stays light.
-    await finance_live_refresh_service.ensure_fresh(
+    result = await finance_live_refresh_service.ensure_fresh(
         db,
         include_transactions=full,
         force_quickfile_reports=True,
     )
+    # Drop month cache so the next Overview GET recomputes from the new BS.
+    await finance_overview_cache_service.clear(db)
     return {
         "ok": True,
         "message": "Live connections refreshed",
         "include_transactions": full,
+        "quickfile_reports_synced": bool(
+            (result or {}).get("quickfile_reports_synced")
+        ),
+        "partial_failure": bool((result or {}).get("partial_failure")),
+        "warnings": list((result or {}).get("warnings") or []),
     }
 
 

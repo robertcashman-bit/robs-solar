@@ -80,7 +80,7 @@ describe("FinanceSettingsPanel", () => {
     expect(await screen.findByText("What's connected")).toBeInTheDocument();
     expect(screen.getByText(/Destinations/)).toBeInTheDocument();
     expect(screen.getByText(/Connect Personal Finance/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Connect banks" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Connections" })).toHaveAttribute(
       "href",
       "/finance/connect",
     );

@@ -444,7 +444,7 @@ export function FinanceOverviewView({ overview }: FinanceOverviewViewProps) {
             ["/finance/cash-flow", "Cash flow"],
             ["/finance/budget", "Budget"],
             ["/finance/reports", "Reports"],
-            ["/finance/connect", "Connect banks"],
+            ["/finance/connect", "Connections"],
           ].map(([href, label]) => (
             <Link key={href} href={href} className="solar-btn-ghost text-sm">
               {label}
