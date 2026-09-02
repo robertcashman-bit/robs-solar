@@ -45,6 +45,21 @@ def _month_iso(today: date, months_ago: int, day: int = 15) -> str:
     return start.replace(day=min(day, 28)).isoformat()
 
 
+def _freeze_history_today(monkeypatch: pytest.MonkeyPatch, today: date) -> date:
+    """Pin history budget 'today' so early-month runs do not scale MTD windows."""
+    from app.services.finance import history_budget_service as hist_mod
+
+    class _DT:
+        timezone = timezone
+
+        @staticmethod
+        def now(tz=None):
+            return datetime(today.year, today.month, today.day, 12, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(hist_mod, "datetime", _DT)
+    return today
+
+
 @pytest.mark.asyncio
 async def test_weighted_windows_and_insufficient() -> None:
     async with SessionLocal() as db:
@@ -89,9 +104,11 @@ async def test_weighted_windows_and_insufficient() -> None:
 
 
 @pytest.mark.asyncio
-async def test_36_month_window_used_from_stored_totals_only() -> None:
+async def test_36_month_window_used_from_stored_totals_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Full 36 months of steady spend → 36m window participates; amount from txs only."""
-    today = datetime.now(timezone.utc).date()
+    today = _freeze_history_today(monkeypatch, date(2026, 8, 18))
     async with SessionLocal() as db:
         for months_ago in range(36):
             db.add(
@@ -130,9 +147,11 @@ async def test_36_month_window_used_from_stored_totals_only() -> None:
 
 
 @pytest.mark.asyncio
-async def test_24_month_history_still_enables_36_month_window() -> None:
+async def test_24_month_history_still_enables_36_month_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """24 months of QuickFile-style history qualifies the 36m window (coverage=24)."""
-    today = datetime.now(timezone.utc).date()
+    today = _freeze_history_today(monkeypatch, date(2026, 8, 18))
     async with SessionLocal() as db:
         for months_ago in range(24):
             db.add(
@@ -155,9 +174,11 @@ async def test_24_month_history_still_enables_36_month_window() -> None:
 
 
 @pytest.mark.asyncio
-async def test_short_history_falls_back_to_3_month_window() -> None:
+async def test_short_history_falls_back_to_3_month_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Only 3 months (Lunch Flow style) → 36/12 dropped; 3m still returns lines."""
-    today = datetime.now(timezone.utc).date()
+    today = _freeze_history_today(monkeypatch, date(2026, 8, 18))
     async with SessionLocal() as db:
         for months_ago in range(3):
             db.add(
@@ -198,8 +219,10 @@ async def test_short_history_falls_back_to_3_month_window() -> None:
 
 
 @pytest.mark.asyncio
-async def test_transfers_and_uncategorised_excluded_from_history_budget() -> None:
-    today = datetime.now(timezone.utc).date()
+async def test_transfers_and_uncategorised_excluded_from_history_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    today = _freeze_history_today(monkeypatch, date(2026, 8, 18))
     async with SessionLocal() as db:
         for months_ago in range(6):
             db.add(
@@ -246,9 +269,11 @@ async def test_transfers_and_uncategorised_excluded_from_history_budget() -> Non
 
 
 @pytest.mark.asyncio
-async def test_exceptional_one_off_txn_excluded_before_monthly_average() -> None:
+async def test_exceptional_one_off_txn_excluded_before_monthly_average(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Nine £50 bills + one £9,000 one-off → ~£50/mo, not dragged by £9k."""
-    today = datetime.now(timezone.utc).date()
+    today = _freeze_history_today(monkeypatch, date(2026, 8, 18))
     async with SessionLocal() as db:
         for months_ago in range(9):
             db.add(
@@ -283,9 +308,11 @@ async def test_exceptional_one_off_txn_excluded_before_monthly_average() -> None
 
 
 @pytest.mark.asyncio
-async def test_clean_series_unchanged_when_no_txn_outliers() -> None:
+async def test_clean_series_unchanged_when_no_txn_outliers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Steady category with no exceptional txs keeps the same recommendation."""
-    today = datetime.now(timezone.utc).date()
+    today = _freeze_history_today(monkeypatch, date(2026, 8, 18))
     async with SessionLocal() as db:
         for months_ago in range(12):
             db.add(

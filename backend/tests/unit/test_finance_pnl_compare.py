@@ -41,6 +41,7 @@ async def test_pnl_compare_last_month_vs_prior(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.services.finance import finance_period as period_mod
+    from app.services.finance import finance_pnl_compare_service as pnl_mod
 
     class _DT:
         timezone = timezone
@@ -49,7 +50,9 @@ async def test_pnl_compare_last_month_vs_prior(
         def now(tz=None):
             return datetime(2026, 8, 18, tzinfo=timezone.utc)
 
+    # P&L compare reads datetime.now itself; period helpers also need the pin.
     monkeypatch.setattr(period_mod, "datetime", _DT)
+    monkeypatch.setattr(pnl_mod, "datetime", _DT)
     async with SessionLocal() as db:
         await db.execute(delete(FinanceTransactionRow))
         db.add_all(
