@@ -81,10 +81,12 @@ export default function LoginPage() {
   const [info, setInfo] = useState<string | null>(null);
   const [devCode, setDevCode] = useState<string | null>(null);
   const [linkSent, setLinkSent] = useState(false);
-  const [codeSectionOpen, setCodeSectionOpen] = useState(false);
+  const [codeSectionUserOpen, setCodeSectionUserOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [sendingLink, setSendingLink] = useState(false);
   const consumedToken = useRef<string | null>(null);
+  // Old Desktop shortcuts still open /login?send=1 — expand the recovery section.
+  const codeSectionOpen = codeSectionUserOpen || sendOnOpen || linkSent;
 
   // Warm the FastAPI service before the user submits so a Vercel
   // Python cold start does not race the session cookie bootstrap.
@@ -97,12 +99,6 @@ export default function LoginPage() {
       router.replace("/");
     }
   }, [loading, user, router]);
-
-  useEffect(() => {
-    if (sendOnOpen && magicCodeEnabled) {
-      setCodeSectionOpen(true);
-    }
-  }, [sendOnOpen, magicCodeEnabled]);
 
   useEffect(() => {
     if (!magicToken || consumedToken.current === magicToken) {
@@ -128,7 +124,7 @@ export default function LoginPage() {
             ),
           );
           setInfo(null);
-          setCodeSectionOpen(true);
+          setCodeSectionUserOpen(true);
         }
       })
       .finally(() => {
@@ -145,7 +141,7 @@ export default function LoginPage() {
     setSendingLink(true);
     setError(null);
     setInfo(null);
-    setCodeSectionOpen(true);
+    setCodeSectionUserOpen(true);
     try {
       const trimmed = email.trim();
       rememberEmail(trimmed);
@@ -308,7 +304,7 @@ export default function LoginPage() {
           <details
             className="mt-6 border-t border-[var(--border)] pt-4"
             open={codeSectionOpen}
-            onToggle={(event) => setCodeSectionOpen(event.currentTarget.open)}
+            onToggle={(event) => setCodeSectionUserOpen(event.currentTarget.open)}
           >
             <summary className="cursor-pointer text-sm font-medium text-[var(--accent)] hover:underline">
               Email me a code instead
