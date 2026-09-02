@@ -1,7 +1,5 @@
 """Unit tests for QuickFile P&L and balance sheet report parsing."""
 
-import pytest
-
 from app.integrations.quickfile_reports import (
     parse_balance_sheet_full,
     parse_profit_and_loss_full,
