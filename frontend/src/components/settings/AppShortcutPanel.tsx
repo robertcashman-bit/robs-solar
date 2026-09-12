@@ -11,7 +11,7 @@ export function AppShortcutPanel() {
         </h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
           Put Rob&apos;s Finance on the Desktop, Dock, or your phone home screen. The shortcut
-          opens sign-in so you can use your password.
+          opens sign-in so you can email yourself a code.
         </p>
       </div>
 

@@ -26,6 +26,14 @@ export async function expectEnergyRemoved(page: Page) {
   await expect(page.getByText("Energy savings")).toHaveCount(0);
 }
 
+/** Expand the optional password path on the magic-code-first login page. */
+async function openPasswordSignIn(page: Page) {
+  const summary = page.getByText("Use password instead");
+  if (await summary.isVisible().catch(() => false)) {
+    await summary.click();
+  }
+}
+
 /** Full login flow — use only when testing sign-in itself. */
 export async function loginAsAdmin(page: Page) {
   const email = process.env.E2E_ADMIN_EMAIL ?? "admin";
@@ -33,8 +41,9 @@ export async function loginAsAdmin(page: Page) {
   await page.goto("/login");
   await expect(page.locator("#login-email")).toBeVisible({ timeout: PAGE_TIMEOUT });
   await page.locator("#login-email").fill(email);
+  await openPasswordSignIn(page);
   await page.locator("#current-password").fill(password);
-  await page.getByRole("button", { name: /Sign in/ }).click();
+  await page.getByRole("button", { name: /Sign in with password|Sign in/ }).click();
   await expectFinanceOverviewAfterLogin(page);
 }
 
@@ -44,8 +53,9 @@ export async function loginAsViewer(page: Page) {
   await page.goto("/login");
   await expect(page.locator("#login-email")).toBeVisible({ timeout: PAGE_TIMEOUT });
   await page.locator("#login-email").fill(email);
+  await openPasswordSignIn(page);
   await page.locator("#current-password").fill(password);
-  await page.getByRole("button", { name: /Sign in/ }).click();
+  await page.getByRole("button", { name: /Sign in with password|Sign in/ }).click();
   await expectFinanceOverviewAfterLogin(page);
 }
 

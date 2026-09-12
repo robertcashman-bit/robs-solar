@@ -87,6 +87,10 @@ async function main() {
   async function uiLoginOnce() {
     await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await page.locator("#login-email").fill(email);
+    const passwordToggle = page.getByText("Use password instead");
+    if (await passwordToggle.isVisible().catch(() => false)) {
+      await passwordToggle.click();
+    }
     await page.locator("#current-password").fill(password);
     const [uiLogin] = await Promise.all([
       page.waitForResponse(

@@ -81,12 +81,10 @@ export default function LoginPage() {
   const [info, setInfo] = useState<string | null>(null);
   const [devCode, setDevCode] = useState<string | null>(null);
   const [linkSent, setLinkSent] = useState(false);
-  const [codeSectionUserOpen, setCodeSectionUserOpen] = useState(false);
+  const [passwordSectionOpen, setPasswordSectionOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [sendingLink, setSendingLink] = useState(false);
   const consumedToken = useRef<string | null>(null);
-  // Old Desktop shortcuts still open /login?send=1 — expand the recovery section.
-  const codeSectionOpen = codeSectionUserOpen || sendOnOpen || linkSent;
 
   // Warm the FastAPI service before the user submits so a Vercel
   // Python cold start does not race the session cookie bootstrap.
@@ -124,7 +122,6 @@ export default function LoginPage() {
             ),
           );
           setInfo(null);
-          setCodeSectionUserOpen(true);
         }
       })
       .finally(() => {
@@ -141,7 +138,6 @@ export default function LoginPage() {
     setSendingLink(true);
     setError(null);
     setInfo(null);
-    setCodeSectionUserOpen(true);
     try {
       const trimmed = email.trim();
       rememberEmail(trimmed);
@@ -237,11 +233,13 @@ export default function LoginPage() {
           </p>
           <h1 className="mt-1 text-2xl font-bold">Sign in</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Enter your email and password. You stay signed in for 30 days.
+            {magicCodeEnabled
+              ? "We email you a one-time code. Stay signed in so you are not asked every visit."
+              : "Enter your email or username and password."}
           </p>
         </div>
 
-        <form onSubmit={(event) => void handleLogin(event)} className="mt-6">
+        <div className="mt-6">
           <label className="block text-sm font-medium" htmlFor="login-email">
             Email or username
             <input
@@ -258,22 +256,7 @@ export default function LoginPage() {
               autoComplete="username"
               required
               placeholder="you@example.com or admin"
-              enterKeyHint="next"
-            />
-          </label>
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="current-password">
-            Password
-            <input
-              id="current-password"
-              name="password"
-              type="password"
-              className="solar-input"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-              enterKeyHint="done"
+              enterKeyHint={magicCodeEnabled ? "send" : "next"}
             />
           </label>
 
@@ -288,35 +271,15 @@ export default function LoginPage() {
             />
             Stay signed in for 30 days
           </label>
-
-          {error && !codeSectionOpen ? (
-            <div className="mt-4">
-              <ErrorBanner message={error} />
-            </div>
-          ) : null}
-
-          <button type="submit" disabled={submitting} className="solar-btn-primary mt-6 w-full">
-            {submitting ? "Signing in..." : "Sign in"}
-          </button>
-        </form>
+        </div>
 
         {magicCodeEnabled ? (
-          <details
-            className="mt-6 border-t border-[var(--border)] pt-4"
-            open={codeSectionOpen}
-            onToggle={(event) => setCodeSectionUserOpen(event.currentTarget.open)}
-          >
-            <summary className="cursor-pointer text-sm font-medium text-[var(--accent)] hover:underline">
-              Email me a code instead
-            </summary>
-            <p className="mt-2 text-sm text-[var(--muted)]">
-              Forgot your password? We will email a 6-digit code you can use once.
-            </p>
+          <>
             <button
               type="button"
               disabled={sendingLink || !email.trim()}
               onClick={() => void handleSendCode()}
-              className="solar-btn-secondary mt-3 w-full"
+              className="solar-btn-primary mt-6 w-full"
             >
               {sendingLink
                 ? "Sending code..."
@@ -334,11 +297,6 @@ export default function LoginPage() {
               <p className="mt-2 rounded-lg bg-[var(--surface)] px-3 py-2 text-sm">
                 Dev code: <span className="font-mono font-semibold tracking-widest">{devCode}</span>
               </p>
-            ) : null}
-            {error && codeSectionOpen ? (
-              <div className="mt-3">
-                <ErrorBanner message={error} />
-              </div>
             ) : null}
 
             {linkSent ? (
@@ -364,14 +322,87 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={submitting || code.trim().length < 4}
-                  className="solar-btn-secondary mt-4 w-full"
+                  className="solar-btn-primary mt-4 w-full"
                 >
                   {submitting ? "Checking..." : "Sign in with code"}
                 </button>
               </form>
             ) : null}
-          </details>
-        ) : null}
+
+            {error && !passwordSectionOpen ? (
+              <div className="mt-4">
+                <ErrorBanner message={error} />
+              </div>
+            ) : null}
+
+            <details
+              className="mt-6 border-t border-[var(--border)] pt-4"
+              open={passwordSectionOpen}
+              onToggle={(event) => setPasswordSectionOpen(event.currentTarget.open)}
+            >
+              <summary className="cursor-pointer text-sm font-medium text-[var(--accent)] hover:underline">
+                Use password instead
+              </summary>
+              <form onSubmit={(event) => void handleLogin(event)} className="mt-3">
+                <label className="block text-sm font-medium" htmlFor="current-password">
+                  Password
+                  <input
+                    id="current-password"
+                    name="password"
+                    type="password"
+                    className="solar-input"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="current-password"
+                    required
+                    enterKeyHint="done"
+                  />
+                </label>
+
+                {error && passwordSectionOpen ? (
+                  <div className="mt-3">
+                    <ErrorBanner message={error} />
+                  </div>
+                ) : null}
+
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="solar-btn-secondary mt-4 w-full"
+                >
+                  {submitting ? "Signing in..." : "Sign in with password"}
+                </button>
+              </form>
+            </details>
+          </>
+        ) : (
+          <form onSubmit={(event) => void handleLogin(event)} className="mt-4">
+            <label className="block text-sm font-medium" htmlFor="current-password">
+              Password
+              <input
+                id="current-password"
+                name="password"
+                type="password"
+                className="solar-input"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+                enterKeyHint="done"
+              />
+            </label>
+
+            {error ? (
+              <div className="mt-4">
+                <ErrorBanner message={error} />
+              </div>
+            ) : null}
+
+            <button type="submit" disabled={submitting} className="solar-btn-primary mt-6 w-full">
+              {submitting ? "Signing in..." : "Sign in"}
+            </button>
+          </form>
+        )}
 
         <ShortcutInstallCard />
       </div>
