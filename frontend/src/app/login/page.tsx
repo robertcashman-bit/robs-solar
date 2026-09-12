@@ -329,7 +329,7 @@ export default function LoginPage() {
               </form>
             ) : null}
 
-            {error && !passwordSectionOpen ? (
+            {error ? (
               <div className="mt-4">
                 <ErrorBanner message={error} />
               </div>
@@ -358,12 +358,6 @@ export default function LoginPage() {
                     enterKeyHint="done"
                   />
                 </label>
-
-                {error && passwordSectionOpen ? (
-                  <div className="mt-3">
-                    <ErrorBanner message={error} />
-                  </div>
-                ) : null}
 
                 <button
                   type="submit"
