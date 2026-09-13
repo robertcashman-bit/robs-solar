@@ -82,43 +82,58 @@ describe("LoginPage", () => {
     expect(screen.getByLabelText("Email or username")).toHaveValue("viewer@example.com");
   });
 
-  it("signs in with password by default and keeps remember-me on", async () => {
+  it("leads with email code and keeps remember-me on", async () => {
+    const user = userEvent.setup();
+    render(<LoginPage />);
+
+    expect(screen.getByRole("button", { name: "Email me a sign-in code" })).toHaveClass(
+      "solar-btn-primary",
+    );
+    expect(screen.getByLabelText("Stay signed in for 30 days")).toBeChecked();
+    expect(screen.queryByLabelText("6-digit sign-in code")).not.toBeInTheDocument();
+    expect(screen.getByText("Use password instead").closest("details")).not.toHaveAttribute("open");
+
+    await user.clear(screen.getByLabelText("Email or username"));
+    await user.type(screen.getByLabelText("Email or username"), "rob@example.com");
+    await user.click(screen.getByRole("button", { name: "Email me a sign-in code" }));
+
+    expect(requestMagicCode).toHaveBeenCalledWith("rob@example.com");
+    expect(await screen.findByText(/Check your email/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("6-digit sign-in code")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in with code" })).toHaveClass(
+      "solar-btn-primary",
+    );
+  });
+
+  it("verifies a code with stay-signed-in still on", async () => {
+    const user = userEvent.setup();
+    verifyMagicCode.mockResolvedValue(undefined);
+    render(<LoginPage />);
+
+    await user.click(screen.getByRole("button", { name: "Email me a sign-in code" }));
+    await user.type(await screen.findByLabelText("6-digit sign-in code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Sign in with code" }));
+
+    expect(verifyMagicCode).toHaveBeenCalledWith(
+      "robertdavidcashman@gmail.com",
+      "123456",
+      true,
+    );
+  });
+
+  it("keeps password optional behind a collapsed link", async () => {
     const user = userEvent.setup();
     login.mockResolvedValue(undefined);
     render(<LoginPage />);
 
-    expect(screen.getByRole("button", { name: "Sign in" })).toHaveClass("solar-btn-primary");
-    expect(screen.getByLabelText("Stay signed in for 30 days")).toBeChecked();
-    expect(screen.queryByLabelText("6-digit sign-in code")).not.toBeInTheDocument();
-    // Code send is behind a collapsed details — not the default CTA.
-    expect(screen.getByText("Email me a code instead").closest("details")).not.toHaveAttribute(
-      "open",
-    );
-
-    await user.clear(screen.getByLabelText("Email or username"));
-    await user.type(screen.getByLabelText("Email or username"), "rob@example.com");
-    await user.type(screen.getByLabelText("Password"), "secret-pass");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-
-    expect(login).toHaveBeenCalledWith("rob@example.com", "secret-pass", true);
-  });
-
-  it("keeps email code optional behind a collapsed link", async () => {
-    const user = userEvent.setup();
-    render(<LoginPage />);
-
-    expect(screen.getByText("Email me a code instead")).toBeInTheDocument();
+    expect(screen.getByText("Use password instead")).toBeInTheDocument();
     expect(requestMagicCode).not.toHaveBeenCalled();
 
-    await user.click(screen.getByText("Email me a code instead"));
-    await user.click(screen.getByRole("button", { name: "Email me a sign-in code" }));
+    await user.click(screen.getByText("Use password instead"));
+    await user.type(screen.getByLabelText("Password"), "secret-pass");
+    await user.click(screen.getByRole("button", { name: "Sign in with password" }));
 
-    expect(requestMagicCode).toHaveBeenCalledWith("robertdavidcashman@gmail.com");
-    expect(await screen.findByText(/Check your email/i)).toBeInTheDocument();
-    expect(screen.getByLabelText("6-digit sign-in code")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign in with code" })).toBeInTheDocument();
-    // Password sign-in remains the primary path.
-    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
+    expect(login).toHaveBeenCalledWith("robertdavidcashman@gmail.com", "secret-pass", true);
   });
 
   it("emails a code automatically when an old Desktop shortcut opens login?send=1", async () => {
