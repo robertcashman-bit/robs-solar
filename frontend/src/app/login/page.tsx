@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useRouter } from "next/navigation";
 
 import { ErrorBanner, SuccessBanner } from "@/components/shared/Banners";
@@ -69,9 +76,21 @@ export default function LoginPage() {
     verifyMagicCode,
     consumeMagicLink,
   } = useAuth();
-  const storedEmail = useSyncExternalStore(subscribeLastEmail, readLastEmail, () => "");
-  const magicToken = useSyncExternalStore(subscribeSearch, readMagicToken, () => "");
-  const sendOnOpen = useSyncExternalStore(subscribeSearch, readSendOnOpen, () => false);
+  const storedEmail = useSyncExternalStore(
+    subscribeLastEmail,
+    readLastEmail,
+    () => "",
+  );
+  const magicToken = useSyncExternalStore(
+    subscribeSearch,
+    readMagicToken,
+    () => "",
+  );
+  const sendOnOpen = useSyncExternalStore(
+    subscribeSearch,
+    readSendOnOpen,
+    () => false,
+  );
   const [emailOverride, setEmailOverride] = useState<string | null>(null);
   const email = emailOverride ?? (storedEmail || ROBS_FINANCE_OWNER_EMAIL);
   const [password, setPassword] = useState("");
@@ -154,7 +173,14 @@ export default function LoginPage() {
   }, [email, requestMagicCode]);
 
   useEffect(() => {
-    if (!sendOnOpen || !magicCodeEnabled || magicToken || sendingLink || loading || user) {
+    if (
+      !sendOnOpen ||
+      !magicCodeEnabled ||
+      magicToken ||
+      sendingLink ||
+      loading ||
+      user
+    ) {
       return;
     }
     const trimmed = email.trim();
@@ -239,54 +265,65 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <div className="mt-6">
-          <label className="block text-sm font-medium" htmlFor="login-email">
-            Email or username
-            <input
-              id="login-email"
-              name="username"
-              type="text"
-              inputMode="email"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              className="solar-input"
-              value={email}
-              onChange={(event) => setEmailOverride(event.target.value)}
-              autoComplete="username"
-              required
-              placeholder="you@example.com or admin"
-              enterKeyHint={magicCodeEnabled ? "send" : "next"}
-            />
-          </label>
-
-          <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm" htmlFor="remember-me">
-            <input
-              id="remember-me"
-              name="remember"
-              type="checkbox"
-              className="h-4 w-4 rounded border-[var(--border)]"
-              checked={rememberMe}
-              onChange={(event) => setRememberMe(event.target.checked)}
-            />
-            Stay signed in for 30 days
-          </label>
-        </div>
-
         {magicCodeEnabled ? (
           <>
-            <button
-              type="button"
-              disabled={sendingLink || !email.trim()}
-              onClick={() => void handleSendCode()}
-              className="solar-btn-primary mt-6 w-full"
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleSendCode();
+              }}
+              className="mt-6"
             >
-              {sendingLink
-                ? "Sending code..."
-                : linkSent
-                  ? "Email me a new code"
-                  : "Email me a sign-in code"}
-            </button>
+              <label
+                className="block text-sm font-medium"
+                htmlFor="login-email"
+              >
+                Email or username
+                <input
+                  id="login-email"
+                  name="username"
+                  type="text"
+                  inputMode="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="solar-input"
+                  value={email}
+                  onChange={(event) => setEmailOverride(event.target.value)}
+                  autoComplete="username"
+                  required
+                  placeholder="you@example.com or admin"
+                  enterKeyHint="send"
+                />
+              </label>
+
+              <label
+                className="mt-4 flex cursor-pointer items-center gap-2 text-sm"
+                htmlFor="remember-me"
+              >
+                <input
+                  id="remember-me"
+                  name="remember"
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-[var(--border)]"
+                  checked={rememberMe}
+                  onChange={(event) => setRememberMe(event.target.checked)}
+                />
+                Stay signed in for 30 days
+              </label>
+
+              <button
+                type="submit"
+                disabled={sendingLink || !email.trim()}
+                className="solar-btn-primary mt-6 w-full"
+              >
+                {sendingLink
+                  ? "Sending code..."
+                  : linkSent
+                    ? "Email me a new code"
+                    : "Email me a sign-in code"}
+              </button>
+            </form>
 
             {info ? (
               <div className="mt-3">
@@ -295,13 +332,22 @@ export default function LoginPage() {
             ) : null}
             {devCode && magicCodeDevDelivery ? (
               <p className="mt-2 rounded-lg bg-[var(--surface)] px-3 py-2 text-sm">
-                Dev code: <span className="font-mono font-semibold tracking-widest">{devCode}</span>
+                Dev code:{" "}
+                <span className="font-mono font-semibold tracking-widest">
+                  {devCode}
+                </span>
               </p>
             ) : null}
 
             {linkSent ? (
-              <form onSubmit={(event) => void handleVerifyCode(event)} className="mt-4">
-                <label className="block text-sm font-medium" htmlFor="login-code">
+              <form
+                onSubmit={(event) => void handleVerifyCode(event)}
+                className="mt-4"
+              >
+                <label
+                  className="block text-sm font-medium"
+                  htmlFor="login-code"
+                >
                   6-digit sign-in code
                   <input
                     id="login-code"
@@ -338,13 +384,21 @@ export default function LoginPage() {
             <details
               className="mt-6 border-t border-[var(--border)] pt-4"
               open={passwordSectionOpen}
-              onToggle={(event) => setPasswordSectionOpen(event.currentTarget.open)}
+              onToggle={(event) =>
+                setPasswordSectionOpen(event.currentTarget.open)
+              }
             >
               <summary className="cursor-pointer text-sm font-medium text-[var(--accent)] hover:underline">
                 Use password instead
               </summary>
-              <form onSubmit={(event) => void handleLogin(event)} className="mt-3">
-                <label className="block text-sm font-medium" htmlFor="current-password">
+              <form
+                onSubmit={(event) => void handleLogin(event)}
+                className="mt-3"
+              >
+                <label
+                  className="block text-sm font-medium"
+                  htmlFor="current-password"
+                >
                   Password
                   <input
                     id="current-password"
@@ -370,8 +424,46 @@ export default function LoginPage() {
             </details>
           </>
         ) : (
-          <form onSubmit={(event) => void handleLogin(event)} className="mt-4">
-            <label className="block text-sm font-medium" htmlFor="current-password">
+          <form onSubmit={(event) => void handleLogin(event)} className="mt-6">
+            <label className="block text-sm font-medium" htmlFor="login-email">
+              Email or username
+              <input
+                id="login-email"
+                name="username"
+                type="text"
+                inputMode="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className="solar-input"
+                value={email}
+                onChange={(event) => setEmailOverride(event.target.value)}
+                autoComplete="username"
+                required
+                placeholder="you@example.com or admin"
+                enterKeyHint="next"
+              />
+            </label>
+
+            <label
+              className="mt-4 flex cursor-pointer items-center gap-2 text-sm"
+              htmlFor="remember-me"
+            >
+              <input
+                id="remember-me"
+                name="remember"
+                type="checkbox"
+                className="h-4 w-4 rounded border-[var(--border)]"
+                checked={rememberMe}
+                onChange={(event) => setRememberMe(event.target.checked)}
+              />
+              Stay signed in for 30 days
+            </label>
+
+            <label
+              className="mt-4 block text-sm font-medium"
+              htmlFor="current-password"
+            >
               Password
               <input
                 id="current-password"
@@ -392,7 +484,11 @@ export default function LoginPage() {
               </div>
             ) : null}
 
-            <button type="submit" disabled={submitting} className="solar-btn-primary mt-6 w-full">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="solar-btn-primary mt-6 w-full"
+            >
               {submitting ? "Signing in..." : "Sign in"}
             </button>
           </form>
