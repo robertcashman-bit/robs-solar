@@ -1844,11 +1844,10 @@ class MonthlyFlow:
 
 
 def pick_open_banking_flow(*sources: MonthlyFlow) -> MonthlyFlow:
-    """Use the newest non-empty Open Banking cache.
+    """Use the newest non-empty bank-feed monthly flow cache.
 
-    Lunch Flow and TrueLayer can describe the same bank, so the figures are
-    not added together. An empty source is ignored so a TrueLayer-only setup
-    still feeds the open-banking fallback.
+    Multiple Lunch Flow snapshots are not added together — only the newest
+    non-empty source is kept.
     """
     nonempty = [item for item in sources if item.has_values()]
     if not nonempty:
@@ -1862,7 +1861,7 @@ def monthly_flow_note(source: str | None) -> str:
     if key == "snapshot":
         return "From the latest personal snapshot"
     if key == "open_banking":
-        return "From live Open Banking sync (last 30 days)"
+        return "From Lunch Flow sync (last 30 days)"
     if key == "cashflow":
         return "From confirmed cash-flow entries"
     if key == "budget":

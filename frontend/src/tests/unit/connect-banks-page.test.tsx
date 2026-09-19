@@ -16,14 +16,6 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/finance/connect",
 }));
 
-vi.mock("@/components/finance/BankImportCard", () => ({
-  BankImportCard: () => <div>Bank import</div>,
-}));
-
-vi.mock("@/components/settings/OpenBankingSettingsPanel", () => ({
-  OpenBankingSettingsPanel: () => <div>TrueLayer panel</div>,
-}));
-
 vi.mock("@/components/settings/LunchFlowSettingsPanel", () => ({
   LunchFlowSettingsPanel: () => <div>Lunch Flow panel</div>,
 }));
@@ -41,14 +33,14 @@ vi.mock("@/components/finance/FinanceHealthPanel", () => ({
 }));
 
 describe("ConnectBanksPage", () => {
-  it("renders the recovered bank connection sections", () => {
+  it("renders Lunch Flow and QuickFile without TrueLayer", () => {
     render(<ConnectBanksPage />);
     expect(screen.getByRole("heading", { name: "Connections" })).toBeInTheDocument();
     expect(screen.getByText("Finance health panel")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Open Banking" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Open Banking" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/TrueLayer/i)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Lunch Flow" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "QuickFile" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Funding Circle" })).toBeInTheDocument();
-    expect(screen.getByText("TrueLayer panel")).toBeInTheDocument();
   });
 });

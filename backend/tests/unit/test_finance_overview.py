@@ -208,18 +208,18 @@ async def test_overview_uses_budget_when_no_snapshot_or_cashflow(
 
 
 @pytest.mark.asyncio
-async def test_overview_uses_truelayer_flow_when_lunchflow_empty(
+async def test_overview_uses_lunchflow_monthly_flow(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.config import settings
     from app.db.session import SessionLocal
-    from app.services.truelayer_settings_service import truelayer_settings_service
+    from app.services.lunchflow_settings_service import lunchflow_settings_service
 
     monkeypatch.setattr(settings, "read_only", False)
     await login(client, "admin", "admin-pass")
     await _clear_monthly_flow_inputs()
     async with SessionLocal() as db:
-        await truelayer_settings_service.set_monthly_flow(db, 2750, 880)
+        await lunchflow_settings_service.set_monthly_flow(db, 2750, 880)
 
     body = (await client.get("/finance/overview")).json()
     assert body["monthly_flow_source"] == "open_banking"

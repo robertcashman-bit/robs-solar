@@ -15,7 +15,7 @@ export function monthlyFlowHint(source: string | undefined): string {
     case "snapshot":
       return "From the latest personal snapshot";
     case "open_banking":
-      return "From live Open Banking sync (last 30 days)";
+      return "From Lunch Flow sync (last 30 days)";
     case "cashflow":
       return "From confirmed cash-flow entries";
     case "budget":

@@ -30,7 +30,6 @@ vi.mock("@/lib/api-client", () => ({
               connected: true,
               last_sync_at: "2026-08-17T10:05:00Z",
             },
-            truelayer: { configured: false, connected: false, last_sync_at: null },
           },
         };
       }
@@ -50,7 +49,7 @@ describe("FinanceHealthPanel", () => {
     expect(screen.getByText(/Data source: finance/i)).toBeInTheDocument();
     expect(screen.getByText(/QuickFile: configured/i)).toBeInTheDocument();
     expect(screen.getByText(/Lunch Flow: connected/i)).toBeInTheDocument();
-    expect(screen.getByText(/TrueLayer: not configured/i)).toBeInTheDocument();
+    expect(screen.queryByText(/TrueLayer/i)).not.toBeInTheDocument();
     expect(screen.getByText(/do not mean bank balances are simulated/i)).toBeInTheDocument();
   });
 });

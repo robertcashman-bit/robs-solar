@@ -1,6 +1,6 @@
 """Funding Circle detection and outstanding reconstruction."""
 
-from app.integrations.truelayer_provider import infer_account_scope
+from app.services.finance.funding_circle import infer_account_scope
 from app.schemas.finance import FinanceScope
 from app.services.finance.funding_circle import (
     drawdown_gbp,
@@ -92,7 +92,7 @@ def test_next_outstanding_reconstructs_from_drawdown_on_first_sync() -> None:
     )
     outstanding, source = next_outstanding(None, activity, first_sync=True)
     assert outstanding == 9550
-    assert source == "open_banking"
+    assert source == "bank_feed"
 
 
 def test_next_outstanding_does_not_invent_balance_from_repayments_only() -> None:
@@ -140,7 +140,7 @@ def test_next_outstanding_subtracts_new_repayments_later() -> None:
     )
     outstanding, source = next_outstanding(8000, activity, first_sync=False)
     assert outstanding == 7550
-    assert source == "open_banking"
+    assert source == "bank_feed"
 
 
 def test_infer_business_scope_from_account_name() -> None:

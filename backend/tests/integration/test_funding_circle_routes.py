@@ -1,4 +1,4 @@
-"""Funding Circle settings and Open Banking import routes."""
+"""Funding Circle settings and bank-feed sync routes."""
 
 from collections.abc import AsyncGenerator
 
@@ -91,7 +91,7 @@ async def test_funding_circle_sync_from_drawdown(
     body = result.json()
     assert body["imported"] is True
     assert body["balance_gbp"] == 9550
-    assert body["source"] == "open_banking"
+    assert body["source"] == "bank_feed"
 
     accounts = (await client.get("/finance/accounts?scope=business")).json()
     assert any(item["name"] == "Funding Circle" for item in accounts)
@@ -152,63 +152,11 @@ async def test_funding_circle_repayments_only_need_outstanding(
 
 
 @pytest.mark.asyncio
-async def test_open_banking_authorize_requires_config(client: AsyncClient) -> None:
+async def test_open_banking_routes_removed(client: AsyncClient) -> None:
     await login(client, "admin", "admin-pass")
-    response = await client.get("/finance/integrations/open-banking/authorize")
-    assert response.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_open_banking_callback_imports_then_redirects(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from app.auth.oidc import create_state
-    from app.config import settings
-    from app.integrations.truelayer_client import TrueLayerClient
-    from app.schemas.finance import TrueLayerSyncResult
-    from app.services.finance.truelayer_sync_service import TrueLayerSyncService
-    from app.services.truelayer_settings_service import truelayer_settings_service
-
-    monkeypatch.setattr(settings, "read_only", False)
-    monkeypatch.setattr(settings, "cors_origins", "http://127.0.0.1:3000")
-
-    async def fake_exchange(self, code: str) -> dict[str, str]:  # noqa: ANN001
-        assert code == "auth-code"
-        return {"access_token": "access", "refresh_token": "refresh"}
-
-    async def fake_sync(self, db, config):  # noqa: ANN001
-        return TrueLayerSyncResult(
-            accounts_synced=2,
-            message="Synced 2 Open Banking account(s)",
-            funding_circle_imported=True,
-            funding_circle_message="Imported from the connected bank login",
-        )
-
-    async def fake_set_tokens(db, tokens):  # noqa: ANN001
-        assert tokens["access_token"] == "access"
-
-    monkeypatch.setattr(TrueLayerClient, "exchange_code", fake_exchange)
-    monkeypatch.setattr(TrueLayerSyncService, "sync", fake_sync)
-    monkeypatch.setattr(truelayer_settings_service, "set_tokens", fake_set_tokens)
-
-    state = create_state()
-    response = await client.get(
-        "/finance/integrations/open-banking/callback",
-        params={"code": "auth-code", "state": state},
-        follow_redirects=False,
-    )
-    assert response.status_code == 303
-    assert response.headers["location"] == "http://127.0.0.1:3000/settings?imported=1"
-
-
-@pytest.mark.asyncio
-async def test_open_banking_callback_bad_state_redirects_error(
-    client: AsyncClient,
-) -> None:
-    response = await client.get(
-        "/finance/integrations/open-banking/callback",
-        params={"code": "auth-code", "state": "not-valid"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 303
-    assert "imported=error" in response.headers["location"]
+    for path in (
+        "/finance/integrations/open-banking/status",
+        "/finance/integrations/open-banking/authorize",
+    ):
+        response = await client.get(path)
+        assert response.status_code == 404

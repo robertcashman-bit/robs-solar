@@ -100,8 +100,8 @@ export function LunchFlowSettingsPanel({ readOnly = false }: LunchFlowSettingsPa
         <h2 className="text-lg font-semibold">Lunch Flow</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
           Live personal and business bank balances via Lunch Flow (the app that already holds
-          your bank connections). TrueLayer Open Banking stays available above. In Lunch Flow:
-          Destinations → API → copy the key, then Save / Test / Sync here.
+          your bank connections). In Lunch Flow: Destinations → API → copy the key, then
+          Save / Test / Sync here.
         </p>
       </div>
       {status ? (

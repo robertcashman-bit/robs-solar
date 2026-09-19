@@ -80,13 +80,5 @@ services:
         sync: false
       - key: QUICKFILE_APPLICATION_ID
         sync: false
-      - key: TRUELAYER_CLIENT_ID
-        sync: false
-      - key: TRUELAYER_CLIENT_SECRET
-        sync: false
-      - key: TRUELAYER_REDIRECT_URI
-        sync: false
-      - key: TRUELAYER_ENVIRONMENT
-        sync: false
       - key: LUNCHFLOW_API_KEY
         sync: false

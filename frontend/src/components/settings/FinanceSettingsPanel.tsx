@@ -3,14 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { BankImportCard } from "@/components/finance/BankImportCard";
 import { CategoryRulesPanel } from "@/components/finance/CategoryRulesPanel";
 import { FinanceExportPanel } from "@/components/finance/FinanceExportPanel";
 import { FinanceHealthPanel } from "@/components/finance/FinanceHealthPanel";
 import { AppShortcutPanel } from "@/components/settings/AppShortcutPanel";
 import { FundingCircleSettingsPanel } from "@/components/settings/FundingCircleSettingsPanel";
 import { LunchFlowSettingsPanel } from "@/components/settings/LunchFlowSettingsPanel";
-import { OpenBankingSettingsPanel } from "@/components/settings/OpenBankingSettingsPanel";
 import { QuickFileSettingsPanel } from "@/components/settings/QuickFileSettingsPanel";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
@@ -53,7 +51,7 @@ export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelP
         const providers = financeIntegrationSchema
           .array()
           .parse(providerData)
-          .filter((item) => !["octopus", "sunsynk", "tesla"].includes(item.id));
+          .filter((item) => !["octopus", "sunsynk", "tesla", "open_banking"].includes(item.id));
         setIntegrations([
           ...providers,
           ...STATIC_INTEGRATIONS.filter((s) => !providers.some((p) => p.id === s.id)),
@@ -66,22 +64,17 @@ export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelP
   }, [user]);
 
   const byId = Object.fromEntries(integrations.map((item) => [item.id, item]));
-  const banksLive = isActive(byId, "lunchflow") || isActive(byId, "open_banking");
   const liveBits = [
     "App login and manual finance accounts",
     isActive(byId, "quickfile") ? "QuickFile" : null,
     isActive(byId, "lunchflow") ? "Lunch Flow" : null,
-    isActive(byId, "open_banking") ? "TrueLayer" : null,
     isActive(byId, "funding_circle") ? "Funding Circle" : null,
   ].filter((item): item is string => Boolean(item));
   const missing = [
     isActive(byId, "quickfile") ? null : "QuickFile",
-    banksLive ? null : "Lunch Flow (or TrueLayer)",
+    isActive(byId, "lunchflow") ? null : "Lunch Flow",
   ].filter((item): item is string => Boolean(item));
   const optionalBits = [
-    banksLive && !isActive(byId, "open_banking")
-      ? "TrueLayer is optional while Lunch Flow is connected"
-      : null,
     isActive(byId, "funding_circle") ? null : "Funding Circle loan figure (optional)",
   ].filter((item): item is string => Boolean(item));
 
@@ -90,8 +83,8 @@ export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelP
       <section className="solar-card space-y-3">
         <h2 className="text-lg font-semibold">What&apos;s connected</h2>
         <p className="text-sm text-[var(--muted)]">
-          QuickFile and Lunch Flow are the live connections for this app. TrueLayer
-          is only needed if you want a second bank login. The same setup also lives on{" "}
+          QuickFile and Lunch Flow are the live connections for this app. The same setup
+          also lives on{" "}
           <Link href="/finance/connect" className="underline underline-offset-2">
             Connections
           </Link>
@@ -129,19 +122,13 @@ export function FinanceSettingsPanel({ readOnly = false }: FinanceSettingsPanelP
             only needs the key.
           </li>
           <li>
-            <span className="font-medium">TrueLayer</span> — one-time Client ID, secret, and
-            redirect URI, then Log in to your bank.
-          </li>
-          <li>
             <span className="font-medium">Funding Circle</span> — enter the outstanding loan
-            below, or pull it after a TrueLayer sync.
+            below, or refresh from Funding Circle payments already imported via Lunch Flow.
           </li>
         </ol>
       </section>
       <FinanceHealthPanel canEdit={!readOnly} />
       <AppShortcutPanel />
-      <BankImportCard readOnly={readOnly} showSettingsLink={false} />
-      <OpenBankingSettingsPanel readOnly={readOnly} />
       <LunchFlowSettingsPanel readOnly={readOnly} />
       <FundingCircleSettingsPanel readOnly={readOnly} />
       <QuickFileSettingsPanel readOnly={readOnly} />

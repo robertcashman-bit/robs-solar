@@ -35,7 +35,6 @@ from app.services.finance.finance_calc import (
     overview_side_to_dict,
     personal_net_worth,
     personal_snapshot_view,
-    pick_open_banking_flow,
     resolve_monthly_flow,
     upcoming_payments,
 )
@@ -762,21 +761,12 @@ class FinanceOverviewService:
             return None
 
     async def _open_banking_flow(self, db: AsyncSession) -> MonthlyFlow:
-        lunchflow = MonthlyFlow()
-        truelayer = MonthlyFlow()
         try:
             from app.services.lunchflow_settings_service import lunchflow_settings_service
 
-            lunchflow = await lunchflow_settings_service.get_monthly_flow(db)
+            return await lunchflow_settings_service.get_monthly_flow(db)
         except Exception:
-            pass
-        try:
-            from app.services.truelayer_settings_service import truelayer_settings_service
-
-            truelayer = await truelayer_settings_service.get_monthly_flow(db)
-        except Exception:
-            pass
-        return pick_open_banking_flow(lunchflow, truelayer)
+            return MonthlyFlow()
 
     async def latest_personal_snapshot(self, db: AsyncSession) -> PersonalFinanceSnapshot | None:
         row = await db.scalar(

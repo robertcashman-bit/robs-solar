@@ -992,33 +992,6 @@ class QuickFileSyncResult(BaseModel):
     message: str
 
 
-class TrueLayerConfig(BaseModel):
-    client_id: str = ""
-    client_secret: str = ""
-    redirect_uri: str = ""
-    environment: str = "sandbox"
-
-
-class TrueLayerConfigStatus(BaseModel):
-    client_id: str = ""
-    client_secret_set: bool = False
-    redirect_uri: str = ""
-    environment: str = "sandbox"
-    configured: bool = False
-    connected: bool = False
-    last_sync_at: str | None = None
-
-
-class TrueLayerSyncResult(BaseModel):
-    accounts_synced: int
-    message: str
-    funding_circle_imported: bool = False
-    funding_circle_message: str = ""
-    imported: int = 0
-    duplicates: int = 0
-    rejected: int = 0
-
-
 class LunchFlowConfig(BaseModel):
     api_key: str = ""
 

@@ -5,7 +5,7 @@ import { monthlyFlowBadge, monthlyFlowHint } from "@/lib/finance-branding";
 describe("monthlyFlowHint", () => {
   it("distinguishes live sources from budget plans", () => {
     expect(monthlyFlowHint("snapshot")).toMatch(/snapshot/i);
-    expect(monthlyFlowHint("open_banking")).toMatch(/live Open Banking/i);
+    expect(monthlyFlowHint("open_banking")).toMatch(/Lunch Flow/i);
     expect(monthlyFlowHint("cashflow")).toMatch(/cash-flow/i);
     expect(monthlyFlowHint("budget")).toMatch(/Budget plan estimate/i);
     expect(monthlyFlowHint("budget")).toMatch(/not live/i);

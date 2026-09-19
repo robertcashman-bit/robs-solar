@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 
-import { BankImportCard } from "@/components/finance/BankImportCard";
 import { FinanceOverviewView } from "@/components/finance/FinanceOverviewView";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
 import { AppShell } from "@/components/shared/AppShell";
@@ -52,17 +51,6 @@ export default function FinanceOverviewPage() {
       />
       {error ? <div className="mt-4"><ErrorBanner message={error} /></div> : null}
       {status ? <div className="mt-4"><SuccessBanner message={status} /></div> : null}
-      <div className="mt-4 space-y-4">
-        <BankImportCard
-          readOnly={!canWrite(user)}
-          autoImport={false}
-          deferMs={2000}
-          onImported={(text) => {
-            setStatus(text);
-            void refresh();
-          }}
-        />
-      </div>
       {loading && !overview ? (
         <p className="mt-8 text-sm text-[var(--muted)]">Loading saved figures…</p>
       ) : overview ? (
