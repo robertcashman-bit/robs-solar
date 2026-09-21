@@ -27,7 +27,7 @@ export function FundingCircleSettingsPanel({
   statusError = null,
   deferOwnStatusLoad = false,
 }: FundingCircleSettingsPanelProps) {
-  const { user, loading: authLoading, authResolved } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [status, setStatus] = useState<FundingCircleConfigStatus | null>(initialStatus);
   const [outstanding, setOutstanding] = useState(
     initialStatus?.outstanding_gbp == null ? "" : String(initialStatus.outstanding_gbp),
@@ -73,10 +73,11 @@ export function FundingCircleSettingsPanel({
 
   useEffect(() => {
     if (deferOwnStatusLoad) return;
-    if (authLoading || authResolved === false || !user) return;
+    // Cached user is enough; do not wait for authResolved (timeout/5xx leave it false).
+    if (authLoading || !user) return;
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [authLoading, authResolved, user, load, deferOwnStatusLoad]);
+  }, [authLoading, user, load, deferOwnStatusLoad]);
 
   async function save() {
     setBusy("save");

@@ -27,7 +27,7 @@ export function LunchFlowSettingsPanel({
   statusError = null,
   deferOwnStatusLoad = false,
 }: LunchFlowSettingsPanelProps) {
-  const { user, loading: authLoading, authResolved } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [status, setStatus] = useState<LunchFlowConfigStatus | null>(initialStatus);
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -56,12 +56,13 @@ export function LunchFlowSettingsPanel({
 
   useEffect(() => {
     if (deferOwnStatusLoad) return;
-    if (authLoading || authResolved === false || !user) return;
+    // Cached user is enough; do not wait for authResolved (timeout/5xx leave it false).
+    if (authLoading || !user) return;
     const timer = window.setTimeout(() => {
       void load();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [authLoading, authResolved, user, load, deferOwnStatusLoad]);
+  }, [authLoading, user, load, deferOwnStatusLoad]);
 
   async function save() {
     if (readOnly || busy) return;

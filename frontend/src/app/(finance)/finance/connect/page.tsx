@@ -7,15 +7,13 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { FundingCircleSettingsPanel } from "@/components/settings/FundingCircleSettingsPanel";
 import { LunchFlowSettingsPanel } from "@/components/settings/LunchFlowSettingsPanel";
 import { QuickFileSettingsPanel } from "@/components/settings/QuickFileSettingsPanel";
-import { useAuth } from "@/lib/auth-context";
 import { useConnectionStatuses } from "@/lib/use-connection-statuses";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import { canWrite } from "@/lib/permissions";
 
 export default function ConnectBanksPage() {
   const { user, gated, redirecting } = useRequireAuth();
-  const { authResolved } = useAuth();
-  const { statuses, error: statusError } = useConnectionStatuses(user, authResolved);
+  const { statuses, error: statusError } = useConnectionStatuses(user);
 
   if (gated) return <AuthLoadingShell redirecting={redirecting} />;
 
