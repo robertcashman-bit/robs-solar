@@ -31,13 +31,23 @@ class FinanceHealthService:
     async def probe(self, db: AsyncSession, *, light: bool = False) -> dict[str, Any]:
         """Return finance health.
 
-        ``light=True`` skips write probes, consistency ledger scans, and health
-        event inserts — used by the Connections page so panel status GETs are
-        not queued behind a heavy probe on a single serverless isolate.
+        ``light=True`` is for the Connections page: one cheap DB ping + env
+        integration flags only. It skips write probes, consistency scans,
+        health-event inserts, Neon account/import/backup lookups, and the
+        sequential QuickFile/Lunch Flow ``get_status`` round-trips that used
+        to queue panel status GETs behind a multi-second probe on a single
+        serverless isolate.
         """
-        now = datetime.now(timezone.utc)
-        writable = True
+        settings = get_settings()
+        effective_url = resolve_database_url()
+        ephemeral = (not is_postgres_url(effective_url)) and (
+            "/tmp/" in effective_url or settings.is_production
+        )
+        backend = "postgres" if is_postgres_url(effective_url) else "sqlite"
+
         if light:
+            from app.services.finance.connection_status_service import light_integration_flags
+
             try:
                 await db.scalar(select(FinanceAccountRow.id).limit(1))
             except Exception as exc:
@@ -47,31 +57,81 @@ class FinanceHealthService:
                     "db_write": False,
                     "error": "Database read probe failed",
                     "detail": str(exc.__class__.__name__),
+                    "data_source": "finance",
+                    "database_backend": backend,
+                    "ephemeral_database": ephemeral,
+                    "web_backup_configured": bool(settings.blob_read_write_token),
+                    "account_count": 0,
+                    "last_import": None,
+                    "last_backup": None,
+                    "last_health_check": None,
+                    "consistency": {"flags": [], "needs_review": False},
+                    "repaired": False,
+                    "needs_review": True,
+                    "integrations": {
+                        "quickfile": {
+                            "configured": False,
+                            "connected": False,
+                            "last_sync_at": None,
+                        },
+                        "lunchflow": {
+                            "configured": False,
+                            "connected": False,
+                            "last_sync_at": None,
+                        },
+                    },
+                    "finance_bank_reads_ready": False,
+                    "light": True,
                 }
-        else:
-            try:
-                db.add(
-                    FinanceHealthEventRow(
-                        created_at=now,
-                        kind="db_probe",
-                        status="ok",
-                        message="write probe",
-                        repaired=False,
-                        needs_review=False,
-                    )
+            flags = light_integration_flags()
+            return {
+                "ok": True,
+                "db_read": True,
+                "db_write": True,
+                "data_source": "finance",
+                "database_backend": backend,
+                "ephemeral_database": ephemeral,
+                "web_backup_configured": bool(settings.blob_read_write_token),
+                "account_count": 0,
+                "last_import": None,
+                "last_backup": None,
+                "last_health_check": None,
+                "consistency": {"flags": [], "needs_review": False},
+                "repaired": False,
+                "needs_review": ephemeral,
+                "integrations": {
+                    "quickfile": flags["quickfile"],
+                    "lunchflow": flags["lunchflow"],
+                },
+                "finance_bank_reads_ready": flags["finance_bank_reads_ready"],
+                "light": True,
+            }
+
+        now = datetime.now(timezone.utc)
+        writable = True
+        try:
+            db.add(
+                FinanceHealthEventRow(
+                    created_at=now,
+                    kind="db_probe",
+                    status="ok",
+                    message="write probe",
+                    repaired=False,
+                    needs_review=False,
                 )
-                await db.flush()
-                await db.commit()
-            except Exception as exc:
-                writable = False
-                await db.rollback()
-                return {
-                    "ok": False,
-                    "db_read": False,
-                    "db_write": False,
-                    "error": "Database write probe failed",
-                    "detail": str(exc.__class__.__name__),
-                }
+            )
+            await db.flush()
+            await db.commit()
+        except Exception as exc:
+            writable = False
+            await db.rollback()
+            return {
+                "ok": False,
+                "db_read": False,
+                "db_write": False,
+                "error": "Database write probe failed",
+                "detail": str(exc.__class__.__name__),
+            }
         account_count = int(
             (await db.execute(select(func.count()).select_from(FinanceAccountRow))).scalar_one()
         )
@@ -89,28 +149,18 @@ class FinanceHealthService:
             .order_by(FinanceHealthEventRow.created_at.desc())
             .limit(1)
         )
-        consistency = (
-            {"flags": [], "needs_review": False}
-            if light
-            else await self.consistency_flags(db)
+        consistency = await self.consistency_flags(db)
+        status = "ok" if writable and not consistency["needs_review"] else "needs_review"
+        event = FinanceHealthEventRow(
+            created_at=datetime.now(timezone.utc),
+            kind="health_check",
+            status=status,
+            message="Health check completed",
+            repaired=False,
+            needs_review=consistency["needs_review"],
         )
-        settings = get_settings()
-        effective_url = resolve_database_url()
-        ephemeral = (not is_postgres_url(effective_url)) and (
-            "/tmp/" in effective_url or settings.is_production
-        )
-        if not light:
-            status = "ok" if writable and not consistency["needs_review"] else "needs_review"
-            event = FinanceHealthEventRow(
-                created_at=datetime.now(timezone.utc),
-                kind="health_check",
-                status=status,
-                message="Health check completed",
-                repaired=False,
-                needs_review=consistency["needs_review"],
-            )
-            db.add(event)
-            await db.commit()
+        db.add(event)
+        await db.commit()
         qf = await quickfile_settings_service.get_status(db)
         lf = await lunchflow_settings_service.get_status(db)
         return {
@@ -118,7 +168,7 @@ class FinanceHealthService:
             "db_read": True,
             "db_write": writable,
             "data_source": "finance",
-            "database_backend": "postgres" if is_postgres_url(effective_url) else "sqlite",
+            "database_backend": backend,
             "ephemeral_database": ephemeral,
             "web_backup_configured": bool(settings.blob_read_write_token),
             "account_count": account_count,

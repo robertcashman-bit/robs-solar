@@ -40,7 +40,14 @@ function formatSync(value?: string | null): string {
   return parsed.toLocaleString("en-GB");
 }
 
-export function FinanceHealthPanel({ canEdit }: { canEdit: boolean }) {
+export function FinanceHealthPanel({
+  canEdit,
+  /** Delay first GET so Connections status can claim the isolate first. */
+  loadDelayMs = 0,
+}: {
+  canEdit: boolean;
+  loadDelayMs?: number;
+}) {
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -56,7 +63,7 @@ export function FinanceHealthPanel({ canEdit }: { canEdit: boolean }) {
     }
   }, []);
 
-  useFinanceReload(load, true);
+  useFinanceReload(load, true, loadDelayMs);
 
   async function selfHeal() {
     if (!canEdit || busy) return;
