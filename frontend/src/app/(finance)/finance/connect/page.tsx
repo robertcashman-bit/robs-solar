@@ -30,8 +30,11 @@ export default function ConnectBanksPage() {
   const { user, gated, redirecting } = useRequireAuth();
   const [clientReady, setClientReady] = useState(false);
 
+  // Defer past hydrate (same setTimeout(0) pattern as other finance pages)
+  // so SSR and the first client paint stay identical — avoids set-state-in-effect.
   useEffect(() => {
-    setClientReady(true);
+    const timer = window.setTimeout(() => setClientReady(true), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   // SSR + hydrate: same shell. After mount, gate on auth as usual.
