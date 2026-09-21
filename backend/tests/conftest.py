@@ -27,8 +27,6 @@ os.environ.setdefault("AI_ENABLED", "false")
 os.environ["QUICKFILE_ACCOUNT_NUMBER"] = ""
 os.environ["QUICKFILE_API_KEY"] = ""
 os.environ["QUICKFILE_APPLICATION_ID"] = ""
-os.environ["TRUELAYER_CLIENT_ID"] = ""
-os.environ["TRUELAYER_CLIENT_SECRET"] = ""
 os.environ["LUNCHFLOW_API_KEY"] = ""
 os.environ["LUNCH_FLOW_API_KEY"] = ""
 os.environ["CRON_SECRET"] = ""

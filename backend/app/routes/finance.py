@@ -15,21 +15,18 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.cron import require_cron_secret
 from app.auth.dependencies import require_admin, require_viewer, validate_csrf
 from app.auth.sessions import SessionData
-from app.config import settings
 from app.db.session import get_db
 from app.integrations.base import IntegrationNotConfiguredError
 from app.integrations.quickfile_client import QuickFileError
 from app.integrations.quickfile_provider import QuickFileProvider
 from app.integrations.registry import integration_registry
 from app.integrations.tesla_provider import TeslaProvider
-from app.integrations.truelayer_client import TrueLayerClient
-from app.integrations.truelayer_provider import TrueLayerProvider
 from app.middleware.rate_limit import enforce_write_rate_limit
 from app.schemas.finance import (
     BudgetCompareResponse,
@@ -83,9 +80,6 @@ from app.schemas.finance import (
     TeslaChargingStatus,
     TeslaConfig,
     TeslaConfigStatus,
-    TrueLayerConfig,
-    TrueLayerConfigStatus,
-    TrueLayerSyncResult,
 )
 from app.services.finance.cashflow_plan_service import (
     cashflow_plan_service,
@@ -110,12 +104,10 @@ from app.services.finance.funding_circle_sync_service import funding_circle_sync
 from app.services.finance.lunchflow_sync_service import lunchflow_sync_service
 from app.services.finance.quickfile_reports_service import quickfile_reports_service
 from app.services.finance.quickfile_sync_service import quickfile_sync_service
-from app.services.finance.truelayer_sync_service import truelayer_sync_service
 from app.services.funding_circle_settings_service import funding_circle_settings_service
 from app.services.lunchflow_settings_service import lunchflow_settings_service
 from app.services.quickfile_settings_service import quickfile_settings_service
 from app.services.tesla_settings_service import tesla_settings_service
-from app.services.truelayer_settings_service import truelayer_settings_service
 
 router = APIRouter(prefix="/finance", tags=["finance"])
 
@@ -784,24 +776,18 @@ async def list_integrations(
 ) -> list[dict[str, str]]:
     providers = integration_registry.list_providers()
     qf_status = await quickfile_settings_service.get_status(db)
-    ob_status = await truelayer_settings_service.get_status(db)
     lf_status = await lunchflow_settings_service.get_status(db)
     fc_status = await funding_circle_settings_service.get_status(db)
     for provider in providers:
         if provider["id"] == "quickfile":
             provider["status"] = "active" if qf_status.configured else "inactive"
-        if provider["id"] == "open_banking":
-            if ob_status.connected or lf_status.connected:
-                provider["status"] = "active"
-            elif ob_status.configured or lf_status.configured:
-                provider["status"] = "inactive"
         if provider["id"] == "lunchflow":
             provider["status"] = "active" if lf_status.connected else "inactive"
         if provider["id"] == "funding_circle":
             provider["status"] = (
-                "active" if fc_status.configured or ob_status.connected else "inactive"
+                "active" if fc_status.configured or lf_status.connected else "inactive"
             )
-    hidden = {"octopus", "sunsynk", "tesla"}
+    hidden = {"octopus", "sunsynk", "tesla", "open_banking"}
     return [provider for provider in providers if provider["id"] not in hidden]
 
 
@@ -912,104 +898,6 @@ async def quickfile_sync(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except QuickFileError as exc:
         await quickfile_settings_service.record_error(db, str(exc))
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.get("/integrations/open-banking/status", response_model=TrueLayerConfigStatus)
-async def open_banking_status(
-    _: SessionData = Depends(require_viewer),
-    db: AsyncSession = Depends(get_db),
-) -> TrueLayerConfigStatus:
-    return await truelayer_settings_service.get_status(db)
-
-
-@router.put("/integrations/open-banking/settings", response_model=TrueLayerConfigStatus)
-async def open_banking_save_settings(
-    request: Request,
-    body: TrueLayerConfig,
-    session: SessionData = Depends(require_admin_csrf),
-    db: AsyncSession = Depends(get_db),
-) -> TrueLayerConfigStatus:
-    await enforce_write_rate_limit(request)
-    return await truelayer_settings_service.set_config(db, body)
-
-
-@router.get("/integrations/open-banking/authorize")
-async def open_banking_authorize(
-    _: SessionData = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, str]:
-    from app.auth.oidc import create_state
-
-    config = await truelayer_settings_service.get_config(db)
-    client = TrueLayerClient(config)
-    if not client.configured:
-        raise HTTPException(status_code=400, detail="Open Banking is not configured")
-    state = create_state()
-    return {"authorize_url": client.build_authorize_url(state=state), "state": state}
-
-
-@router.get("/integrations/open-banking/callback")
-async def open_banking_callback(
-    code: str = Query(...),
-    state: str = Query(...),
-    db: AsyncSession = Depends(get_db),
-) -> RedirectResponse:
-    from app.auth.oidc import OidcAuthError, verify_state
-
-    origins = settings.cors_origin_list
-    frontend = origins[0] if origins else "http://127.0.0.1:3000"
-    try:
-        verify_state(state)
-    except OidcAuthError:
-        return RedirectResponse(f"{frontend}/settings?imported=error", status_code=303)
-    config = await truelayer_settings_service.get_config(db)
-    client = TrueLayerClient(config)
-    try:
-        tokens = await client.exchange_code(code)
-    except Exception:
-        return RedirectResponse(f"{frontend}/settings?imported=error", status_code=303)
-    await truelayer_settings_service.set_tokens(
-        db,
-        {
-            "access_token": str(tokens.get("access_token", "")),
-            "refresh_token": str(tokens.get("refresh_token", "")),
-        },
-    )
-    try:
-        await truelayer_sync_service.sync(db, config)
-    except Exception:
-        return RedirectResponse(f"{frontend}/settings?imported=error", status_code=303)
-    return RedirectResponse(f"{frontend}/settings?imported=1", status_code=303)
-
-
-@router.post("/integrations/open-banking/test")
-async def open_banking_test_connection(
-    request: Request,
-    session: SessionData = Depends(require_admin_csrf),
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, object]:
-    await enforce_write_rate_limit(request)
-    config = await truelayer_settings_service.get_config(db)
-    tokens = await truelayer_settings_service.get_tokens(db)
-    provider = TrueLayerProvider(config, access_token=tokens.get("access_token", ""))
-    try:
-        return await provider.test_connection()
-    except IntegrationNotConfiguredError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post("/integrations/open-banking/sync", response_model=TrueLayerSyncResult)
-async def open_banking_sync(
-    request: Request,
-    session: SessionData = Depends(require_admin_csrf),
-    db: AsyncSession = Depends(get_db),
-) -> TrueLayerSyncResult:
-    await enforce_write_rate_limit(request)
-    config = await truelayer_settings_service.get_config(db)
-    try:
-        return await truelayer_sync_service.sync(db, config)
-    except IntegrationNotConfiguredError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

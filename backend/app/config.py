@@ -152,11 +152,6 @@ class Settings(BaseSettings):
     quickfile_api_key: str = ""
     quickfile_application_id: str = ""
 
-    # Open Banking (TrueLayer — UK)
-    truelayer_client_id: str = ""
-    truelayer_client_secret: str = ""
-    truelayer_redirect_uri: str = ""
-    truelayer_environment: str = "sandbox"
     lunchflow_api_key: str = ""
     # Vercel Cron bearer for /finance/cron/daily-sync
     cron_secret: str = ""
@@ -267,21 +262,7 @@ class Settings(BaseSettings):
         ]
 
 
-    @property
-    def truelayer_auth_base(self) -> str:
-        return (
-            "https://auth.truelayer.com"
-            if self.truelayer_environment.lower() == "live"
-            else "https://auth.truelayer-sandbox.com"
-        )
 
-    @property
-    def truelayer_api_base(self) -> str:
-        return (
-            "https://api.truelayer.com"
-            if self.truelayer_environment.lower() == "live"
-            else "https://api.truelayer-sandbox.com"
-        )
 
     @property
     def cookie_samesite(self) -> str:

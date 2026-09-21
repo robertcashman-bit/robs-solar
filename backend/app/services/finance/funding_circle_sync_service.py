@@ -1,4 +1,4 @@
-"""Import the Funding Circle loan after the user logs in via Open Banking."""
+"""Import the Funding Circle loan from imported bank-feed transactions."""
 
 from __future__ import annotations
 
@@ -7,9 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import FinanceAccountRow, FinanceLiabilityRow
-from app.integrations.base import IntegrationNotConfiguredError
-from app.integrations.truelayer_client import TrueLayerClient, TrueLayerError
+from app.db.models import FinanceAccountRow, FinanceLiabilityRow, FinanceTransactionRow
 from app.schemas.finance import (
     DebtType,
     FinanceAccountSource,
@@ -17,9 +15,12 @@ from app.schemas.finance import (
     FinanceScope,
     FundingCircleSyncResult,
 )
-from app.services.finance.funding_circle import next_outstanding, summarise_activity
+from app.services.finance.funding_circle import (
+    is_funding_circle_text,
+    next_outstanding,
+    summarise_activity,
+)
 from app.services.funding_circle_settings_service import funding_circle_settings_service
-from app.services.truelayer_settings_service import truelayer_settings_service
 
 LOAN_NAME = "Funding Circle"
 _EXTERNAL_ID = "funding-circle"
@@ -43,16 +44,7 @@ class FundingCircleSyncService:
         first_sync = not config.last_txn_on
 
         if transactions is None:
-            try:
-                transactions = await self._load_bank_transactions(db)
-            except IntegrationNotConfiguredError as exc:
-                return FundingCircleSyncResult(
-                    imported=False,
-                    balance_gbp=current or 0.0,
-                    repayments_applied_gbp=0.0,
-                    source="",
-                    message=str(exc),
-                )
+            transactions = await self._load_bank_transactions(db)
 
         activity = summarise_activity(transactions, after_date=config.last_txn_on)
         outstanding, source = next_outstanding(
@@ -75,11 +67,11 @@ class FundingCircleSyncService:
                 source="needs_outstanding",
                 message=(
                     "Found Funding Circle payments on the bank feed. Enter the "
-                    "current outstanding once so later logins can keep it current."
+                    "current outstanding once so later syncs can keep it current."
                 ),
             )
 
-        notes = "Imported from the connected bank login"
+        notes = "Imported from the connected bank feed"
         if activity.repayment_gbp:
             notes += f"; repayments {activity.repayment_gbp:.2f} GBP"
         await self._upsert_records(
@@ -107,15 +99,31 @@ class FundingCircleSyncService:
         )
 
     async def _load_bank_transactions(self, db: AsyncSession) -> list[dict]:
-        from app.services.finance.truelayer_sync_service import truelayer_sync_service
-
-        config = await truelayer_settings_service.get_config(db)
-        token = await truelayer_sync_service._access_token(db, config)
-        client = TrueLayerClient(config, access_token=token)
-        try:
-            return await client.fetch_recent_transactions(days=90)
-        except TrueLayerError as exc:
-            raise IntegrationNotConfiguredError(str(exc)) from exc
+        """Load Funding Circle activity from already-imported ledger rows."""
+        rows = list(
+            (
+                await db.scalars(
+                    select(FinanceTransactionRow).where(
+                        FinanceTransactionRow.is_deleted.is_(False),
+                    )
+                )
+            ).all()
+        )
+        transactions: list[dict] = []
+        for row in rows:
+            if not is_funding_circle_text(row.description):
+                continue
+            amount = (row.amount_pence or 0) / 100.0
+            transactions.append(
+                {
+                    "description": row.description,
+                    "amount": amount,
+                    "transaction_type": "CREDIT" if amount > 0 else "DEBIT",
+                    "timestamp": row.posted_on,
+                    "date": row.posted_on,
+                }
+            )
+        return transactions
 
     async def _existing_liability(self, db: AsyncSession) -> FinanceLiabilityRow | None:
         return await db.scalar(

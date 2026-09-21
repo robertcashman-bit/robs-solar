@@ -87,10 +87,9 @@ Overview stays on manual accounts until a live source is connected. Nothing in g
 
 1. **QuickFile** — if Custody Note already has it, run `bash robs-solar/scripts/connect-personal-finance.sh` on the Mac. Otherwise paste Account number / API key / Application ID in Settings.
 2. **Lunch Flow** — in Lunch Flow open Destinations → API, copy the key, then Settings → Lunch Flow → Save / Test / Sync.
-3. **TrueLayer** — paste Client ID, secret, and redirect URI in Settings → Open Banking, then Log in to your bank.
-4. **Funding Circle** — enter the outstanding loan in Settings, or pull it after a TrueLayer sync.
+3. **Funding Circle** — enter the outstanding loan in Settings, or refresh from Funding Circle payments already imported via Lunch Flow.
 
-Hosted Render/Vercel also need `ADMIN_EMAIL`, `LUNCHFLOW_API_KEY`, and the TrueLayer keys in the dashboard (or `scripts/push-render-secrets.sh` / `scripts/push-vercel-env.sh`). The only stated figure this app seeds itself is the pension pot on a live `robs_solar.db`.
+Hosted Render/Vercel also need `ADMIN_EMAIL` and `LUNCHFLOW_API_KEY` in the dashboard (or `scripts/push-render-secrets.sh` / `scripts/push-vercel-env.sh`). The only stated figure this app seeds itself is the pension pot on a live `robs_solar.db`.
 
 ## Modbus TCP discovery
 

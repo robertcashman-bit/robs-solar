@@ -442,7 +442,7 @@ def test_monthly_flow_note_labels_actual_vs_budget() -> None:
     from app.services.finance.finance_calc import monthly_flow_note
 
     assert "snapshot" in monthly_flow_note("snapshot").lower()
-    assert "open banking" in monthly_flow_note("open_banking").lower()
+    assert "lunch flow" in monthly_flow_note("open_banking").lower()
     assert "budget plan" in monthly_flow_note("budget").lower()
     assert "not live" in monthly_flow_note("budget").lower()
     assert "no live" in monthly_flow_note("none").lower()
@@ -452,11 +452,11 @@ def test_monthly_flow_note_labels_actual_vs_budget() -> None:
 def test_pick_open_banking_flow_uses_newest_nonempty_source() -> None:
     empty = MonthlyFlow()
     lunchflow = MonthlyFlow(income_gbp=1000, spending_gbp=200, as_of="2026-08-01T10:00:00+00:00")
-    truelayer = MonthlyFlow(income_gbp=1800, spending_gbp=400, as_of="2026-08-15T10:00:00+00:00")
+    newer = MonthlyFlow(income_gbp=1800, spending_gbp=400, as_of="2026-08-15T10:00:00+00:00")
     assert pick_open_banking_flow(empty, empty).has_values() is False
     chosen = pick_open_banking_flow(lunchflow, empty)
     assert chosen.income_gbp == 1000
-    chosen = pick_open_banking_flow(lunchflow, truelayer)
+    chosen = pick_open_banking_flow(lunchflow, newer)
     assert chosen.income_gbp == 1800
     assert chosen.spending_gbp == 400
 

@@ -94,18 +94,6 @@ class CsvFinanceProvider(BaseFinanceProvider):
         )
 
 
-class OpenBankingProvider(BaseFinanceProvider):
-    name = "open_banking"
-
-    async def sync_accounts(self) -> list[dict[str, Any]]:
-        raise IntegrationNotConfiguredError(
-            "Open Banking is not configured. Connect a provider in Settings when available."
-        )
-
-    async def sync_transactions(self, *, since: str | None = None) -> list[dict[str, Any]]:
-        raise IntegrationNotConfiguredError("Open Banking is not configured.")
-
-
 class TeslaProvider(BaseFinanceProvider):
     name = "tesla"
 

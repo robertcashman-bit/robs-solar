@@ -25,7 +25,6 @@ from app.services.finance.finance_ledger_service import finance_ledger_service
 from app.services.finance.money import quantize_gbp
 from app.services.lunchflow_settings_service import lunchflow_settings_service
 from app.services.quickfile_settings_service import quickfile_settings_service
-from app.services.truelayer_settings_service import truelayer_settings_service
 
 
 class FinanceHealthService:
@@ -91,7 +90,6 @@ class FinanceHealthService:
         await db.commit()
         qf = await quickfile_settings_service.get_status(db)
         lf = await lunchflow_settings_service.get_status(db)
-        tl = await truelayer_settings_service.get_status(db)
         return {
             "ok": writable,
             "db_read": True,
@@ -118,15 +116,8 @@ class FinanceHealthService:
                     "connected": bool(lf.connected),
                     "last_sync_at": lf.last_sync_at,
                 },
-                "truelayer": {
-                    "configured": bool(tl.configured),
-                    "connected": bool(tl.connected),
-                    "last_sync_at": tl.last_sync_at,
-                },
             },
-            "finance_bank_reads_ready": bool(
-                qf.configured or lf.configured or tl.configured
-            ),
+            "finance_bank_reads_ready": bool(qf.configured or lf.configured),
         }
 
     async def consistency_flags(self, db: AsyncSession) -> dict[str, Any]:
@@ -221,12 +212,6 @@ class FinanceHealthService:
         if income or spending:
             await lunchflow_settings_service.set_monthly_flow(db, income, spending)
             repaired.append("rebuilt_lunchflow_monthly_flow")
-        tl_income, tl_spending = await finance_ledger_service.monthly_flow(
-            db, source="open_banking"
-        )
-        if tl_income or tl_spending:
-            await truelayer_settings_service.set_monthly_flow(db, tl_income, tl_spending)
-            repaired.append("rebuilt_truelayer_monthly_flow")
 
         orphan_lines = list(
             (

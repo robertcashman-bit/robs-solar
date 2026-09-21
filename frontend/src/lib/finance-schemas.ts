@@ -767,16 +767,6 @@ export const financeIntegrationSchema = z.object({
   status: z.string(),
 });
 
-export const trueLayerConfigStatusSchema = z.object({
-  client_id: z.string(),
-  client_secret_set: z.boolean(),
-  redirect_uri: z.string(),
-  environment: z.string(),
-  configured: z.boolean(),
-  connected: z.boolean(),
-  last_sync_at: z.string().nullable().optional(),
-});
-
 export const lunchFlowConfigStatusSchema = z.object({
   api_key_set: z.boolean(),
   configured: z.boolean(),
@@ -788,13 +778,6 @@ export const lunchFlowConfigStatusSchema = z.object({
 export const lunchFlowSyncResultSchema = z.object({
   accounts_synced: z.number(),
   message: z.string(),
-});
-
-export const trueLayerSyncResultSchema = z.object({
-  accounts_synced: z.number(),
-  message: z.string(),
-  funding_circle_imported: z.boolean().optional(),
-  funding_circle_message: z.string().optional(),
 });
 
 export const fundingCircleConfigStatusSchema = z.object({
@@ -851,8 +834,6 @@ export type QuickFileSyncResult = z.infer<typeof quickFileSyncResultSchema>;
 export type FinanceIntegration = z.infer<typeof financeIntegrationSchema>;
 export type LunchFlowConfigStatus = z.infer<typeof lunchFlowConfigStatusSchema>;
 export type LunchFlowSyncResult = z.infer<typeof lunchFlowSyncResultSchema>;
-export type TrueLayerConfigStatus = z.infer<typeof trueLayerConfigStatusSchema>;
-export type TrueLayerSyncResult = z.infer<typeof trueLayerSyncResultSchema>;
 export type FundingCircleConfigStatus = z.infer<typeof fundingCircleConfigStatusSchema>;
 export type FundingCircleSyncResult = z.infer<typeof fundingCircleSyncResultSchema>;
 export type BudgetPlan = z.infer<typeof budgetPlanSchema>;

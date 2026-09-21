@@ -80,6 +80,14 @@ class LunchFlowSyncService:
         if first_sync:
             await lunchflow_settings_service.mark_full_history_imported(db)
         await lunchflow_settings_service.mark_synced(db)
+        try:
+            from app.services.finance.funding_circle_sync_service import (
+                funding_circle_sync_service,
+            )
+
+            await funding_circle_sync_service.sync(db)
+        except Exception:
+            pass
         await _safe_backup(db, trigger="lunchflow_sync")
         window = "730-day first sync" if first_sync else "90-day incremental"
         return LunchFlowSyncResult(

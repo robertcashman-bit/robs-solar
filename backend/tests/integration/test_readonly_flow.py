@@ -16,7 +16,8 @@ async def test_health_endpoint(client: AsyncClient) -> None:
     assert body["solar_control_writes_gated"] is True
     assert "quickfile_env_configured" in body
     assert "lunchflow_env_configured" in body
-    assert "truelayer_env_configured" in body
+    assert "truelayer_env_configured" not in body
+    assert "lunchflow_env_configured" in body
     assert "finance_bank_reads_ready" in body
     assert body.get("plant_id") in (None, "")
 

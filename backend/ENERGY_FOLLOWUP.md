@@ -11,6 +11,6 @@ Still present in-tree (not mounted):
 - Energy unit tests under `tests/unit/`
 - Energy integration tests (skipped via `tests/conftest.py` collection hook)
 
-Finance keeps QuickFile, Lunch Flow, TrueLayer, Tesla finance settings, Neon/Blob
+Finance keeps QuickFile, Lunch Flow, Tesla finance settings, Neon/Blob
 backups, and auth. Delete or quarantine the leftover energy modules in a later
 pass once no external clients depend on them.

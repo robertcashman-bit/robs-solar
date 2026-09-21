@@ -1,14 +1,16 @@
-"""Detect Funding Circle loans and repayments from Open Banking.
+"""Detect Funding Circle loans and repayments from the imported bank feed.
 
 Funding Circle has no borrower balance API and the loan is not in QuickFile.
-The automatic path is the business bank feed: loan drawdowns (credits) and
-monthly repayments (debits) labelled Funding Circle.
+The automatic path is the business bank feed (via Lunch Flow): loan drawdowns
+(credits) and monthly repayments (debits) labelled Funding Circle.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+
+from app.schemas.finance import FinanceScope
 
 _MARKERS = (
     "funding circle",
@@ -18,12 +20,21 @@ _MARKERS = (
     "funding-circle",
 )
 
+_BUSINESS_MARKERS = ("business", "ltd", "limited", "company", "llp", "plc")
+
 
 def is_funding_circle_text(value: str | None) -> bool:
     text = (value or "").strip().lower()
     if not text:
         return False
     return any(marker in text for marker in _MARKERS)
+
+
+def infer_account_scope(display_name: str, provider_name: str = "") -> FinanceScope:
+    text = f"{display_name} {provider_name}".lower()
+    if any(marker in text for marker in _BUSINESS_MARKERS):
+        return FinanceScope.BUSINESS
+    return FinanceScope.PERSONAL
 
 
 def _description(transaction: dict[str, Any]) -> str:
@@ -125,11 +136,11 @@ def next_outstanding(
     """Return (outstanding, source). None means the current balance is unknown."""
     if activity.drawdown_gbp > 0:
         if first_sync:
-            return max(0.0, activity.drawdown_gbp - activity.repayment_gbp), "open_banking"
+            return max(0.0, activity.drawdown_gbp - activity.repayment_gbp), "bank_feed"
         base = current or 0.0
-        return max(0.0, base + activity.drawdown_gbp - activity.repayment_gbp), "open_banking"
+        return max(0.0, base + activity.drawdown_gbp - activity.repayment_gbp), "bank_feed"
     if current is None:
         return None, "needs_outstanding"
     if first_sync:
         return current, "seeded"
-    return max(0.0, current - activity.repayment_gbp), "open_banking"
+    return max(0.0, current - activity.repayment_gbp), "bank_feed"

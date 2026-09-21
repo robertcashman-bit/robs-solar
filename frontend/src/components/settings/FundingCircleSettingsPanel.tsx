@@ -6,12 +6,11 @@ import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import {
   fundingCircleConfigStatusSchema,
-  trueLayerConfigStatusSchema,
-  trueLayerSyncResultSchema,
+  fundingCircleSyncResultSchema,
   type FundingCircleConfigStatus,
-  type TrueLayerConfigStatus,
 } from "@/lib/finance-schemas";
 import { formatGbp } from "@/lib/money";
+import { notifyFinanceChanged } from "@/lib/finance-events";
 
 type FundingCircleSettingsPanelProps = {
   readOnly?: boolean;
@@ -20,25 +19,19 @@ type FundingCircleSettingsPanelProps = {
 export function FundingCircleSettingsPanel({ readOnly = false }: FundingCircleSettingsPanelProps) {
   const { user, loading: authLoading } = useAuth();
   const [status, setStatus] = useState<FundingCircleConfigStatus | null>(null);
-  const [banking, setBanking] = useState<TrueLayerConfigStatus | null>(null);
   const [outstanding, setOutstanding] = useState("");
   const [apr, setApr] = useState("");
   const [minimum, setMinimum] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"save" | "login" | "import" | null>(null);
+  const [busy, setBusy] = useState<"save" | "import" | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
     try {
-      const [fcData, bankData] = await Promise.all([
-        apiClient.get<unknown>("/finance/integrations/funding-circle/status"),
-        apiClient.get<unknown>("/finance/integrations/open-banking/status"),
-      ]);
+      const fcData = await apiClient.get<unknown>("/finance/integrations/funding-circle/status");
       const fc = fundingCircleConfigStatusSchema.parse(fcData);
-      const bank = trueLayerConfigStatusSchema.parse(bankData);
       setStatus(fc);
-      setBanking(bank);
       setOutstanding(fc.outstanding_gbp == null ? "" : String(fc.outstanding_gbp));
       setApr(fc.apr_pct ? String(fc.apr_pct) : "");
       setMinimum(fc.minimum_payment_gbp ? String(fc.minimum_payment_gbp) : "");
@@ -74,24 +67,19 @@ export function FundingCircleSettingsPanel({ readOnly = false }: FundingCircleSe
     }
   }
 
-  async function loginAndImport() {
-    setBusy("login");
+  async function refreshFromBankFeed() {
+    setBusy("import");
     setError(null);
+    setMessage(null);
     try {
-      if (banking?.connected) {
-        setBusy("import");
-        const data = await apiClient.post<unknown>("/finance/integrations/open-banking/sync");
-        const parsed = trueLayerSyncResultSchema.parse(data);
-        setMessage(parsed.message);
-        await load();
-        return;
-      }
-      const data = await apiClient.get<{ authorize_url: string }>(
-        "/finance/integrations/open-banking/authorize",
-      );
-      window.location.href = data.authorize_url;
+      const data = await apiClient.post<unknown>("/finance/integrations/funding-circle/sync");
+      const parsed = fundingCircleSyncResultSchema.parse(data);
+      setMessage(parsed.message);
+      notifyFinanceChanged();
+      await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start bank login");
+      setError(err instanceof Error ? err.message : "Could not refresh Funding Circle");
+    } finally {
       setBusy(null);
     }
   }
@@ -106,8 +94,8 @@ export function FundingCircleSettingsPanel({ readOnly = false }: FundingCircleSe
         <h2 className="text-lg font-semibold">Funding Circle</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
           The loan is not in QuickFile, and Funding Circle has no borrower login API.
-          Use Log in to your bank and import above. We reconstruct the loan from
-          drawdowns and repayments on that feed.
+          Enter the outstanding balance here, or refresh from Funding Circle payments
+          already imported via Lunch Flow.
         </p>
       </div>
       {error ? <p className="text-sm text-red-500">{error}</p> : null}
@@ -157,24 +145,15 @@ export function FundingCircleSettingsPanel({ readOnly = false }: FundingCircleSe
           <button
             type="button"
             className="solar-btn-primary"
-            onClick={() => void loginAndImport()}
-            disabled={busy != null || !banking?.configured}
+            onClick={() => void refreshFromBankFeed()}
+            disabled={busy != null}
           >
-            {busy === "login" || busy === "import"
-              ? "Importing…"
-              : banking?.connected
-                ? "Pull Funding Circle from bank login"
-                : "Log in and pull everything in"}
+            {busy === "import" ? "Refreshing…" : "Refresh from bank feed"}
           </button>
           <button type="button" className="solar-btn-ghost" onClick={() => void save()} disabled={busy != null}>
             {busy === "save" ? "Saving…" : "Save details"}
           </button>
         </div>
-      ) : null}
-      {!banking?.configured ? (
-        <p className="text-sm text-[var(--muted)]">
-          Save Open Banking credentials above first, then use Log in and pull everything in.
-        </p>
       ) : null}
     </section>
   );

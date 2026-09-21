@@ -40,12 +40,10 @@ from app.services.finance.finance_calc import (
     business_snapshot_view,
     liabilities_from_schema,
     personal_snapshot_view,
-    pick_open_banking_flow,
 )
 from app.services.finance.finance_liabilities_service import finance_liabilities_service
 from app.services.finance.finance_overview_service import finance_overview_service
 from app.services.lunchflow_settings_service import lunchflow_settings_service
-from app.services.truelayer_settings_service import truelayer_settings_service
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +94,7 @@ def _plan_schema(row: FinanceBudgetPlanRow, lines: list[BudgetPlanLine]) -> Budg
 
 class FinanceBudgetPlanService:
     async def _open_banking_flow(self, db: AsyncSession):
-        lunchflow = await lunchflow_settings_service.get_monthly_flow(db)
-        truelayer = await truelayer_settings_service.get_monthly_flow(db)
-        return pick_open_banking_flow(lunchflow, truelayer)
+        return await lunchflow_settings_service.get_monthly_flow(db)
 
     async def _personal_view(self, db: AsyncSession) -> SnapshotView | None:
         personal = personal_snapshot_view(

@@ -30,7 +30,6 @@ type HealthPayload = {
   integrations?: {
     quickfile?: IntegrationStatus;
     lunchflow?: IntegrationStatus;
-    truelayer?: IntegrationStatus;
   };
 };
 
@@ -101,7 +100,7 @@ export function FinanceHealthPanel({ canEdit }: { canEdit: boolean }) {
     <section className="solar-card space-y-3">
       <h2 className="text-lg font-semibold">Finance health</h2>
       <p className="text-sm text-[var(--muted)]">
-        Live finance status for QuickFile, Lunch Flow, and TrueLayer — plus database checks.
+        Live finance status for QuickFile and Lunch Flow — plus database checks.
         Leftover solar adapter_mode / READ_ONLY flags do not mean bank balances are simulated.
       </p>
       {error ? <ErrorBanner message={error} /> : null}
@@ -129,16 +128,6 @@ export function FinanceHealthPanel({ canEdit }: { canEdit: boolean }) {
                 : "not configured"}
             {" · last sync "}
             {formatSync(integrations?.lunchflow?.last_sync_at)}
-          </li>
-          <li>
-            TrueLayer:{" "}
-            {integrations?.truelayer?.connected
-              ? "connected"
-              : integrations?.truelayer?.configured
-                ? "configured"
-                : "not configured"}
-            {" · last sync "}
-            {formatSync(integrations?.truelayer?.last_sync_at)}
           </li>
           <li>Database: {health.database_backend} {health.db_write ? "read/write ok" : "write failed"}</li>
           <li>

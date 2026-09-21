@@ -3,7 +3,6 @@
 import { Fragment, useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 
-import { BankImportCard } from "@/components/finance/BankImportCard";
 import { DebtReductionPlanPanel } from "@/components/finance/DebtReductionPlanPanel";
 import { FinanceDataGapsBanner } from "@/components/finance/FinanceDataGapsBanner";
 import { SavedFiguresBanner } from "@/components/finance/SavedFiguresBanner";
@@ -342,11 +341,11 @@ export default function DebtsPage() {
           <div className="rounded-2xl border border-[var(--border)] px-4 py-3">
             <p className="font-medium">No debts recorded yet</p>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Credit cards and loans from a bank login appear here. You can also add
-              one below. Funding Circle is pulled from the same bank feed.
+              Credit cards and loans from Lunch Flow appear here. You can also add
+              one below. Funding Circle can be refreshed from bank-feed payments on
+              Connections.
             </p>
           </div>
-          <BankImportCard readOnly={!canWrite(user)} showSettingsLink />
         </div>
       ) : null}
 
