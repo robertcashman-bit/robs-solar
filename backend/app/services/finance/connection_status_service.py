@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -167,6 +168,25 @@ def _env_only_bundle() -> FinanceConnectionStatuses:
     )
 
 
+# Hard ceiling for the Connections bundle SELECT. Neon cold compute + pooler
+# stalls must not sit until the browser's 45s abort — return env-only instead.
+_BUNDLE_DB_TIMEOUT_S = 4.0
+
+
+async def _load_connection_statuses_from_db(
+    db: AsyncSession,
+) -> FinanceConnectionStatuses:
+    result = await db.execute(
+        select(AppSettingRow).where(AppSettingRow.key.in_(_BUNDLE_KEYS))
+    )
+    rows = {row.key: row.value for row in result.scalars().all()}
+    return FinanceConnectionStatuses(
+        lunchflow=_lunchflow_from_rows(rows),
+        quickfile=_quickfile_from_rows(rows),
+        funding_circle=_funding_circle_from_rows(rows),
+    )
+
+
 async def load_connection_statuses(db: AsyncSession) -> FinanceConnectionStatuses:
     """Return LF + QF + FC status from one app_settings SELECT.
 
@@ -174,15 +194,16 @@ async def load_connection_statuses(db: AsyncSession) -> FinanceConnectionStatuse
     is slow or the isolate is still warming.
     """
     try:
-        result = await db.execute(
-            select(AppSettingRow).where(AppSettingRow.key.in_(_BUNDLE_KEYS))
+        return await asyncio.wait_for(
+            _load_connection_statuses_from_db(db),
+            timeout=_BUNDLE_DB_TIMEOUT_S,
         )
-        rows = {row.key: row.value for row in result.scalars().all()}
-        return FinanceConnectionStatuses(
-            lunchflow=_lunchflow_from_rows(rows),
-            quickfile=_quickfile_from_rows(rows),
-            funding_circle=_funding_circle_from_rows(rows),
+    except asyncio.TimeoutError:
+        logger.warning(
+            "connection-status bundle timed out after %.1fs — env-only partial",
+            _BUNDLE_DB_TIMEOUT_S,
         )
+        return _env_only_bundle()
     except Exception:
         logger.warning(
             "connection-status bundle failed — returning env-only partial status",

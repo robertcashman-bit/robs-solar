@@ -50,12 +50,21 @@ def normalise_database_url(database_url: str) -> str:
 
 
 def postgres_connect_args(database_url: str) -> dict[str, object]:
+    """asyncpg connect kwargs — keep Neon cold connects from hanging forever.
+
+    ``timeout`` is the TCP/handshake budget (seconds). ``command_timeout`` caps
+    individual statements so Connections light probes can fail soft.
+    """
     if not is_postgres_url(database_url):
         return {}
+    args: dict[str, object] = {
+        "timeout": 10,
+        "command_timeout": 8,
+    }
     lowered = database_url.lower()
     if "sslmode=" in lowered or "channel_binding=" in lowered or "neon.tech" in lowered:
-        return {"ssl": True}
-    return {}
+        args["ssl"] = True
+    return args
 
 
 def _truthy(name: str) -> bool:
