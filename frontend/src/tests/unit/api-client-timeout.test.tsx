@@ -49,6 +49,17 @@ describe("apiClient timeouts", () => {
     expect(resolveTimeoutMs("/auth/me")).toBe(COLD_START_GET_TIMEOUT_MS);
     expect(resolveTimeoutMs("/health")).toBe(COLD_START_GET_TIMEOUT_MS);
     expect(resolveTimeoutMs("/auth/magic-code/status")).toBe(COLD_START_GET_TIMEOUT_MS);
+    expect(resolveTimeoutMs("/finance/health")).toBe(COLD_START_GET_TIMEOUT_MS);
+    expect(resolveTimeoutMs("/finance/health?light=1")).toBe(COLD_START_GET_TIMEOUT_MS);
+    expect(resolveTimeoutMs("/finance/integrations/connection-status")).toBe(
+      COLD_START_GET_TIMEOUT_MS,
+    );
+    expect(resolveTimeoutMs("/finance/integrations/lunchflow/status")).toBe(
+      COLD_START_GET_TIMEOUT_MS,
+    );
+    expect(resolveTimeoutMs("/finance/integrations/quickfile/status")).toBe(
+      COLD_START_GET_TIMEOUT_MS,
+    );
     expect(resolveTimeoutMs("/finance/overview")).toBe(DEFAULT_GET_TIMEOUT_MS);
   });
 

@@ -6,7 +6,7 @@ import { FinanceHealthPanel } from "@/components/finance/FinanceHealthPanel";
 vi.mock("@/lib/api-client", () => ({
   apiClient: {
     get: vi.fn(async (path: string) => {
-      if (path === "/finance/health") {
+      if (path === "/finance/health" || path.startsWith("/finance/health?")) {
         return {
           ok: true,
           db_read: true,

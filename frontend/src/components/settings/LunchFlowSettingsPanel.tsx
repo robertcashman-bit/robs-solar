@@ -14,15 +14,34 @@ import {
 
 type LunchFlowSettingsPanelProps = {
   readOnly?: boolean;
+  /** When provided by Connections, skip a duplicate status GET. */
+  initialStatus?: LunchFlowConfigStatus | null;
+  statusError?: string | null;
+  /** Parent owns status loading (Connections page). */
+  deferOwnStatusLoad?: boolean;
 };
 
-export function LunchFlowSettingsPanel({ readOnly = false }: LunchFlowSettingsPanelProps) {
-  const { user } = useAuth();
-  const [status, setStatus] = useState<LunchFlowConfigStatus | null>(null);
+export function LunchFlowSettingsPanel({
+  readOnly = false,
+  initialStatus = null,
+  statusError = null,
+  deferOwnStatusLoad = false,
+}: LunchFlowSettingsPanelProps) {
+  const { user, loading: authLoading, authResolved } = useAuth();
+  const [status, setStatus] = useState<LunchFlowConfigStatus | null>(initialStatus);
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(statusError);
   const [busy, setBusy] = useState<"save" | "test" | "sync" | null>(null);
+
+  useEffect(() => {
+    if (initialStatus) {
+      setStatus(initialStatus);
+      setError(null);
+    } else if (statusError) {
+      setError(statusError);
+    }
+  }, [initialStatus, statusError]);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -36,11 +55,13 @@ export function LunchFlowSettingsPanel({ readOnly = false }: LunchFlowSettingsPa
   }, [user]);
 
   useEffect(() => {
+    if (deferOwnStatusLoad) return;
+    if (authLoading || authResolved === false || !user) return;
     const timer = window.setTimeout(() => {
       void load();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [authLoading, authResolved, user, load, deferOwnStatusLoad]);
 
   async function save() {
     if (readOnly || busy) return;

@@ -14,17 +14,47 @@ import { notifyFinanceChanged } from "@/lib/finance-events";
 
 type FundingCircleSettingsPanelProps = {
   readOnly?: boolean;
+  /** When provided by Connections, skip a duplicate status GET. */
+  initialStatus?: FundingCircleConfigStatus | null;
+  statusError?: string | null;
+  /** Parent owns status loading (Connections page). */
+  deferOwnStatusLoad?: boolean;
 };
 
-export function FundingCircleSettingsPanel({ readOnly = false }: FundingCircleSettingsPanelProps) {
-  const { user, loading: authLoading } = useAuth();
-  const [status, setStatus] = useState<FundingCircleConfigStatus | null>(null);
-  const [outstanding, setOutstanding] = useState("");
-  const [apr, setApr] = useState("");
-  const [minimum, setMinimum] = useState("");
+export function FundingCircleSettingsPanel({
+  readOnly = false,
+  initialStatus = null,
+  statusError = null,
+  deferOwnStatusLoad = false,
+}: FundingCircleSettingsPanelProps) {
+  const { user, loading: authLoading, authResolved } = useAuth();
+  const [status, setStatus] = useState<FundingCircleConfigStatus | null>(initialStatus);
+  const [outstanding, setOutstanding] = useState(
+    initialStatus?.outstanding_gbp == null ? "" : String(initialStatus.outstanding_gbp),
+  );
+  const [apr, setApr] = useState(initialStatus?.apr_pct ? String(initialStatus.apr_pct) : "");
+  const [minimum, setMinimum] = useState(
+    initialStatus?.minimum_payment_gbp ? String(initialStatus.minimum_payment_gbp) : "",
+  );
   const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(statusError);
   const [busy, setBusy] = useState<"save" | "import" | null>(null);
+
+  useEffect(() => {
+    if (initialStatus) {
+      setStatus(initialStatus);
+      setOutstanding(
+        initialStatus.outstanding_gbp == null ? "" : String(initialStatus.outstanding_gbp),
+      );
+      setApr(initialStatus.apr_pct ? String(initialStatus.apr_pct) : "");
+      setMinimum(
+        initialStatus.minimum_payment_gbp ? String(initialStatus.minimum_payment_gbp) : "",
+      );
+      setError(null);
+    } else if (statusError) {
+      setError(statusError);
+    }
+  }, [initialStatus, statusError]);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -42,10 +72,11 @@ export function FundingCircleSettingsPanel({ readOnly = false }: FundingCircleSe
   }, [user]);
 
   useEffect(() => {
-    if (authLoading || !user) return;
+    if (deferOwnStatusLoad) return;
+    if (authLoading || authResolved === false || !user) return;
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [authLoading, user, load]);
+  }, [authLoading, authResolved, user, load, deferOwnStatusLoad]);
 
   async function save() {
     setBusy("save");
@@ -84,7 +115,7 @@ export function FundingCircleSettingsPanel({ readOnly = false }: FundingCircleSe
     }
   }
 
-  if (authLoading) {
+  if (authLoading && initialStatus == null) {
     return <p className="text-sm text-[var(--muted)]">Loading Funding Circle…</p>;
   }
 

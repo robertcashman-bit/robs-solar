@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 const DISMISS_KEY = "robs-finance-install-dismissed";
+const DISMISS_EVENT = "robs-finance-install-dismiss";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -34,28 +35,56 @@ function isStandalone(): boolean {
   );
 }
 
+const HIDDEN_ELIGIBILITY = { eligible: false, iosHint: false } as const;
+const IOS_ELIGIBILITY = { eligible: true, iosHint: true } as const;
+const ANDROID_ELIGIBILITY = { eligible: true, iosHint: false } as const;
+
 function readInstallEligibility(): { eligible: boolean; iosHint: boolean } {
   if (typeof window === "undefined") {
-    return { eligible: false, iosHint: false };
+    return HIDDEN_ELIGIBILITY;
   }
   if (isStandalone() || localStorage.getItem(DISMISS_KEY) === "1") {
-    return { eligible: false, iosHint: false };
+    return HIDDEN_ELIGIBILITY;
   }
   if (isIosSafari()) {
-    return { eligible: true, iosHint: true };
+    return IOS_ELIGIBILITY;
   }
-  return { eligible: true, iosHint: false };
+  return ANDROID_ELIGIBILITY;
+}
+
+function readDismissed(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return localStorage.getItem(DISMISS_KEY) === "1";
+}
+
+function subscribeDismiss(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+  const handler = () => onStoreChange();
+  window.addEventListener("storage", handler);
+  window.addEventListener(DISMISS_EVENT, handler);
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener(DISMISS_EVENT, handler);
+  };
+}
+
+function subscribeEligibility(onStoreChange: () => void): () => void {
+  return subscribeDismiss(onStoreChange);
 }
 
 export function InstallAppBanner() {
-  const [initial] = useState(readInstallEligibility);
+  // Hydration-safe: server snapshots hide the banner; client may reveal after hydrate.
+  const initial = useSyncExternalStore(
+    subscribeEligibility,
+    readInstallEligibility,
+    () => HIDDEN_ELIGIBILITY,
+  );
+  const dismissed = useSyncExternalStore(subscribeDismiss, readDismissed, () => false);
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
-  const [dismissed, setDismissed] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-    return localStorage.getItem(DISMISS_KEY) === "1";
-  });
   const [androidEligible, setAndroidEligible] = useState(false);
 
   useEffect(() => {
@@ -77,7 +106,7 @@ export function InstallAppBanner() {
 
   const dismiss = () => {
     localStorage.setItem(DISMISS_KEY, "1");
-    setDismissed(true);
+    window.dispatchEvent(new Event(DISMISS_EVENT));
   };
 
   const install = async () => {
@@ -88,7 +117,8 @@ export function InstallAppBanner() {
     await installEvent.userChoice;
     setInstallEvent(null);
     setAndroidEligible(false);
-    setDismissed(true);
+    localStorage.setItem(DISMISS_KEY, "1");
+    window.dispatchEvent(new Event(DISMISS_EVENT));
   };
 
   if (!visible) {

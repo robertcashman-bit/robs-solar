@@ -51,6 +51,7 @@ from app.schemas.finance import (
     FinanceAccount,
     FinanceAccountCreate,
     FinanceAccountUpdate,
+    FinanceConnectionStatuses,
     FinanceDailySyncResult,
     FinanceLiability,
     FinanceLiabilityCreate,
@@ -789,6 +790,22 @@ async def list_integrations(
             )
     hidden = {"octopus", "sunsynk", "tesla", "open_banking"}
     return [provider for provider in providers if provider["id"] not in hidden]
+
+
+@router.get("/integrations/connection-status", response_model=FinanceConnectionStatuses)
+async def connection_statuses(
+    _: SessionData = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+) -> FinanceConnectionStatuses:
+    """Single read for Connections panels — Lunch Flow + QuickFile + Funding Circle."""
+    lunchflow = await lunchflow_settings_service.get_status(db)
+    quickfile = await quickfile_settings_service.get_status(db)
+    funding_circle = await funding_circle_settings_service.get_status(db)
+    return FinanceConnectionStatuses(
+        lunchflow=lunchflow,
+        quickfile=quickfile,
+        funding_circle=funding_circle,
+    )
 
 
 @router.get("/cron/daily-sync", response_model=FinanceDailySyncResult)
@@ -1796,12 +1813,19 @@ async def finance_reconciliation(
 
 @router.get("/health")
 async def finance_health(
+    light: bool = Query(
+        default=False,
+        description=(
+            "Skip write probes and ledger consistency scans. Connections uses "
+            "light=1 so panel status requests are not queued behind a heavy probe."
+        ),
+    ),
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     from app.services.finance.finance_health_service import finance_health_service
 
-    return await finance_health_service.probe(db)
+    return await finance_health_service.probe(db, light=light)
 
 
 @router.post("/health/self-heal")

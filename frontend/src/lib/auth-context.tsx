@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -56,6 +57,12 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const COOKIE_NOT_STORED_MESSAGE =
   "Sign-in cookie was not stored by the browser. Allow cookies for this site and try again.";
 
+const SESSION_CACHE_EVENT = "robs-finance-session-cache";
+
+/** Stable getSnapshot cache — new object identity every read would loop. */
+let _sessionCacheRaw: string | null | undefined = undefined;
+let _sessionCacheUser: UserInfo | null = null;
+
 function isUnauthenticatedError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
@@ -65,18 +72,34 @@ function readCachedSessionUser(): UserInfo | null {
   try {
     // Prefer localStorage so a returning logged-in user paints on a cold
     // first tab/entry (sessionStorage is empty after the tab is closed).
-    const raw =
-      window.localStorage.getItem(FINANCE_LAST_SESSION_USER_KEY) ??
-      window.sessionStorage.getItem(FINANCE_LAST_SESSION_USER_KEY);
-    if (!raw) return null;
-    const parsed = userInfoSchema.parse(JSON.parse(raw));
-    // Migrate any leftover sessionStorage entry into localStorage once.
-    if (!window.localStorage.getItem(FINANCE_LAST_SESSION_USER_KEY)) {
-      window.localStorage.setItem(FINANCE_LAST_SESSION_USER_KEY, raw);
-      window.sessionStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
+    const fromLocal = window.localStorage.getItem(FINANCE_LAST_SESSION_USER_KEY);
+    const fromSession = window.sessionStorage.getItem(FINANCE_LAST_SESSION_USER_KEY);
+    const raw = fromLocal ?? fromSession;
+    if (!raw) {
+      _sessionCacheRaw = null;
+      _sessionCacheUser = null;
+      return null;
     }
+    // Migrate legacy sessionStorage → localStorage before the cache hit so a
+    // stale module cache from a prior test/session cannot skip migration.
+    if (!fromLocal && fromSession) {
+      try {
+        window.localStorage.setItem(FINANCE_LAST_SESSION_USER_KEY, fromSession);
+        window.sessionStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
+      } catch {
+        // ignore private mode
+      }
+    }
+    if (raw === _sessionCacheRaw) {
+      return _sessionCacheUser;
+    }
+    const parsed = userInfoSchema.parse(JSON.parse(raw));
+    _sessionCacheRaw = raw;
+    _sessionCacheUser = parsed;
     return parsed;
   } catch {
+    _sessionCacheRaw = null;
+    _sessionCacheUser = null;
     return null;
   }
 }
@@ -87,19 +110,49 @@ function writeCachedSessionUser(user: UserInfo | null): void {
     if (user == null) {
       window.localStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
       window.sessionStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
+      _sessionCacheRaw = null;
+      _sessionCacheUser = null;
     } else {
-      window.localStorage.setItem(FINANCE_LAST_SESSION_USER_KEY, JSON.stringify(user));
+      const raw = JSON.stringify(user);
+      window.localStorage.setItem(FINANCE_LAST_SESSION_USER_KEY, raw);
       window.sessionStorage.removeItem(FINANCE_LAST_SESSION_USER_KEY);
+      _sessionCacheRaw = raw;
+      _sessionCacheUser = user;
     }
+    window.dispatchEvent(new Event(SESSION_CACHE_EVENT));
   } catch {
     // ignore private mode
   }
 }
 
+function subscribeSessionCache(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+  const handler = () => onStoreChange();
+  window.addEventListener("storage", handler);
+  window.addEventListener(SESSION_CACHE_EVENT, handler);
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener(SESSION_CACHE_EVENT, handler);
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserInfo | null>(() => readCachedSessionUser());
+  // Hydration-safe cache read: server snapshot is always null; client snapshot
+  // reads localStorage after hydrate — avoids React #418 while still painting
+  // a cached session immediately on client-only renders (and right after hydrate).
+  const cachedUser = useSyncExternalStore(
+    subscribeSessionCache,
+    readCachedSessionUser,
+    () => null,
+  );
+  /** undefined = defer to cache; null = logged out; UserInfo = live session. */
+  const [liveUser, setLiveUser] = useState<UserInfo | null | undefined>(undefined);
+  const user = liveUser !== undefined ? liveUser : cachedUser;
+  const [bootstrapPending, setBootstrapPending] = useState(true);
   // Cached session user → do not block first paint on cold /auth/me.
-  const [loading, setLoading] = useState(() => readCachedSessionUser() == null);
+  const loading = user != null ? false : bootstrapPending;
   // Cached session user lets pages paint immediately; /auth/me still confirms.
   const [authResolved, setAuthResolved] = useState(false);
   const [magicCodeEnabled, setMagicCodeEnabled] = useState(true);
@@ -110,10 +163,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const applySessionUser = useCallback((next: UserInfo, csrf: string) => {
     authGenerationRef.current += 1;
     setCsrfToken(csrf);
-    setUser(next);
+    setLiveUser(next);
     writeCachedSessionUser(next);
     setAuthResolved(true);
-    setLoading(false);
+    setBootstrapPending(false);
   }, []);
 
   /**
@@ -129,11 +182,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         applySessionUser(session.user, session.csrf_token);
       } catch (error) {
         if (isUnauthenticatedError(error)) {
-          setUser(null);
+          setLiveUser(null);
           writeCachedSessionUser(null);
           setCsrfToken(null);
           setAuthResolved(true);
-          setLoading(false);
+          setBootstrapPending(false);
           throw new ApiError(COOKIE_NOT_STORED_MESSAGE, 401);
         }
         // Timeout / network after Set-Cookie: keep the login payload so a warm
@@ -149,14 +202,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const data = sessionResponseSchema.parse(await apiClient.get("/auth/me"));
       if (generation !== authGenerationRef.current) return;
-      setUser(data.user);
+      setLiveUser(data.user);
       writeCachedSessionUser(data.user);
       setCsrfToken(data.csrf_token);
       setAuthResolved(true);
     } catch (error) {
       if (generation !== authGenerationRef.current) return;
       if (isUnauthenticatedError(error)) {
-        setUser(null);
+        setLiveUser(null);
         writeCachedSessionUser(null);
         setCsrfToken(null);
         setAuthResolved(true);
@@ -164,7 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Timeout / network: leave any existing user alone; do not mark resolved.
     } finally {
       if (generation === authGenerationRef.current) {
-        setLoading(false);
+        setBootstrapPending(false);
       }
     }
   }, []);
@@ -176,7 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // bootstrap as logout — that was kicking valid sessions to /login.
     const failSafe = window.setTimeout(() => {
       if (!active) return;
-      setLoading(false);
+      setBootstrapPending(false);
     }, 10000);
     (async () => {
       try {
@@ -196,12 +249,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         if (sessionResult.ok) {
           const data = sessionResponseSchema.parse(sessionResult.body);
-          setUser(data.user);
+          setLiveUser(data.user);
           writeCachedSessionUser(data.user);
           setCsrfToken(data.csrf_token);
           setAuthResolved(true);
         } else if (isUnauthenticatedError(sessionResult.error)) {
-          setUser(null);
+          setLiveUser(null);
           writeCachedSessionUser(null);
           setCsrfToken(null);
           setAuthResolved(true);
@@ -217,7 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // parse errors etc. — do not clear a user set by login/verify
       } finally {
         if (active) {
-          setLoading(false);
+          setBootstrapPending(false);
         }
       }
     })();
@@ -275,10 +328,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // hooks stop starting new fetches while logout is still awaiting.
     authGenerationRef.current += 1;
     clearFinanceLocalCaches();
-    setUser(null);
+    setLiveUser(null);
+    writeCachedSessionUser(null);
     setCsrfToken(null);
     setAuthResolved(true);
-    setLoading(false);
+    setBootstrapPending(false);
     try {
       await apiClient.post("/auth/logout");
     } catch {
