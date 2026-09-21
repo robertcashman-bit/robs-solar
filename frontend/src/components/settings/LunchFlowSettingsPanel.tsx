@@ -33,37 +33,52 @@ export function LunchFlowSettingsPanel({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(statusError);
   const [busy, setBusy] = useState<"save" | "test" | "sync" | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(
+    !deferOwnStatusLoad && initialStatus == null && statusError == null,
+  );
 
   useEffect(() => {
-    if (!initialStatus && !statusError) {
+    if (!initialStatus && !statusError && !deferOwnStatusLoad) {
       return;
     }
     const timer = window.setTimeout(() => {
       if (initialStatus) {
         setStatus(initialStatus);
         setError(null);
+        setLoadingStatus(false);
       } else if (statusError) {
         setError(statusError);
+        setLoadingStatus(false);
+      } else if (deferOwnStatusLoad) {
+        setLoadingStatus(true);
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [initialStatus, statusError]);
+  }, [initialStatus, statusError, deferOwnStatusLoad]);
 
   const load = useCallback(async () => {
     if (!user) return;
+    setLoadingStatus(true);
     try {
       const data = await apiClient.get<unknown>("/finance/integrations/lunchflow/status");
       setStatus(lunchFlowConfigStatusSchema.parse(data));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Lunch Flow status");
+    } finally {
+      setLoadingStatus(false);
     }
   }, [user]);
 
   useEffect(() => {
     if (deferOwnStatusLoad) return;
     // Cached user is enough; do not wait for authResolved (timeout/5xx leave it false).
-    if (authLoading || !user) return;
+    if (authLoading || !user) {
+      if (!authLoading && !user) {
+        queueMicrotask(() => setLoadingStatus(false));
+      }
+      return;
+    }
     const timer = window.setTimeout(() => {
       void load();
     }, 0);
@@ -122,24 +137,39 @@ export function LunchFlowSettingsPanel({
     }
   }
 
+  const statusLabel = loadingStatus
+    ? "Loading status…"
+    : status
+      ? `${status.connected ? "Connected" : status.configured ? "Key saved" : "Not configured"}${
+          status.last_sync_at ? ` · last sync ${formatUkDateTime(status.last_sync_at)}` : ""
+        }`
+      : error
+        ? "Status unavailable"
+        : "Not configured";
+
   return (
     <section className="solar-card space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold">Lunch Flow</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Live personal and business bank balances via Lunch Flow (the app that already holds
-          your bank connections). In Lunch Flow: Destinations → API → copy the key, then
-          Save / Test / Sync here.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-semibold">Lunch Flow</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            Live personal and business bank balances via Lunch Flow (the app that already holds
+            your bank connections). In Lunch Flow: Destinations → API → copy the key, then
+            Save / Test / Sync here.
+          </p>
+        </div>
+        {error || (!loadingStatus && !status) ? (
+          <button
+            type="button"
+            className="solar-btn-ghost text-xs"
+            onClick={() => void load()}
+            disabled={loadingStatus || busy != null || !user}
+          >
+            {loadingStatus ? "Retrying…" : "Retry status"}
+          </button>
+        ) : null}
       </div>
-      {status ? (
-        <p className="text-sm text-[var(--muted)]">
-          {status.connected ? "Connected" : status.configured ? "Key saved" : "Not configured"}
-          {status.last_sync_at
-            ? ` · last sync ${formatUkDateTime(status.last_sync_at)}`
-            : ""}
-        </p>
-      ) : null}
+      <p className="text-sm text-[var(--muted)]">{statusLabel}</p>
       {message ? <p className="text-sm text-emerald-700 dark:text-emerald-400">{message}</p> : null}
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
       <label className="block space-y-1 text-sm">

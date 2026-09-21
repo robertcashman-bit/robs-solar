@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiClient, ApiError } from "@/lib/api-client";
 import { notifyFinanceChanged } from "@/lib/finance-events";
+import { formatUkDateTime } from "@/lib/finance-labels";
 import { useAuth } from "@/lib/auth-context";
 import {
   quickFileConfigStatusSchema,
@@ -305,7 +306,7 @@ export function QuickFileSettingsPanel({
 
       {connected && status?.last_sync_at ? (
         <p className="text-xs text-[var(--muted)]">
-          Last sync: {new Date(status.last_sync_at).toLocaleString("en-GB")}
+          Last sync: {formatUkDateTime(status.last_sync_at)}
         </p>
       ) : connected ? (
         <p className="text-xs text-[var(--muted)]">Connected — no sync recorded yet.</p>

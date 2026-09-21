@@ -1815,16 +1815,23 @@ async def finance_health(
     light: bool = Query(
         default=False,
         description=(
-            "Skip write probes and ledger consistency scans. Connections uses "
-            "light=1 so panel status requests are not queued behind a heavy probe."
+            "Env-only Connections probe: no Neon session, no write probe. "
+            "Full health (light=0) still opens get_db."
         ),
     ),
     _: SessionData = Depends(require_viewer),
-    db: AsyncSession = Depends(get_db),
 ) -> dict:
     from app.services.finance.finance_health_service import finance_health_service
 
-    return await finance_health_service.probe(db, light=light)
+    # light=1 must not Depends(get_db) — prod timed ~9.5s on the Neon session
+    # open alone while connection-status (also DB) was already warm at ~0.9s.
+    if light:
+        return finance_health_service.probe_light()
+
+    from app.db.session import SessionLocal
+
+    async with SessionLocal() as db:
+        return await finance_health_service.probe(db, light=False)
 
 
 @router.post("/health/self-heal")

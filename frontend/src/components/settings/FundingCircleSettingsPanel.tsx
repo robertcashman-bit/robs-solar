@@ -122,19 +122,31 @@ export function FundingCircleSettingsPanel({
     }
   }
 
-  if (authLoading && initialStatus == null) {
+  if (authLoading && !user && initialStatus == null) {
     return <p className="text-sm text-[var(--muted)]">Loading Funding Circle…</p>;
   }
 
   return (
     <section className="solar-card space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold">Funding Circle</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          The loan is not in QuickFile, and Funding Circle has no borrower login API.
-          Enter the outstanding balance here, or refresh from Funding Circle payments
-          already imported via Lunch Flow.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-semibold">Funding Circle</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            The loan is not in QuickFile, and Funding Circle has no borrower login API.
+            Enter the outstanding balance here, or refresh from Funding Circle payments
+            already imported via Lunch Flow.
+          </p>
+        </div>
+        {error ? (
+          <button
+            type="button"
+            className="solar-btn-ghost text-xs"
+            onClick={() => void load()}
+            disabled={busy != null || !user}
+          >
+            Retry status
+          </button>
+        ) : null}
       </div>
       {error ? <p className="text-sm text-red-500">{error}</p> : null}
       {message ? <p className="text-sm text-emerald-500">{message}</p> : null}

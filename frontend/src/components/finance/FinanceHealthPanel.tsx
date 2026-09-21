@@ -15,13 +15,14 @@ type IntegrationStatus = {
 
 type HealthPayload = {
   ok?: boolean;
-  db_read?: boolean;
-  db_write?: boolean;
+  db_read?: boolean | null;
+  db_write?: boolean | null;
   data_source?: string;
   database_backend?: string;
   ephemeral_database?: boolean;
   web_backup_configured?: boolean;
   finance_bank_reads_ready?: boolean;
+  light?: boolean;
   last_import?: { source?: string; imported?: number; created_at?: string } | null;
   last_backup?: { location?: string; created_at?: string } | null;
   last_health_check?: string | null;
@@ -35,35 +36,43 @@ type HealthPayload = {
 
 function formatSync(value?: string | null): string {
   if (!value) return "never";
+  // Fixed en-GB parts — avoid SSR/client locale drift (React #418).
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("en-GB");
+  const day = String(parsed.getUTCDate()).padStart(2, "0");
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  const year = parsed.getUTCFullYear();
+  const hours = String(parsed.getUTCHours()).padStart(2, "0");
+  const minutes = String(parsed.getUTCMinutes()).padStart(2, "0");
+  return `${day}/${month}/${year}, ${hours}:${minutes} UTC`;
 }
 
 export function FinanceHealthPanel({
   canEdit,
-  /** Delay first GET so Connections status can claim the isolate first. */
-  loadDelayMs = 0,
 }: {
   canEdit: boolean;
-  loadDelayMs?: number;
 }) {
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await apiClient.get<HealthPayload>("/finance/health?light=1");
       setHealth(data);
       setError(null);
     } catch (err) {
+      // Soft-fail: leave Loading, keep any prior health, show the error.
       setError(err instanceof Error ? err.message : "Failed to load finance health");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  useFinanceReload(load, true, loadDelayMs);
+  useFinanceReload(load, true, 0);
 
   async function selfHeal() {
     if (!canEdit || busy) return;
@@ -105,7 +114,19 @@ export function FinanceHealthPanel({
 
   return (
     <section className="solar-card space-y-3">
-      <h2 className="text-lg font-semibold">Finance health</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">Finance health</h2>
+        {error || (!loading && !health) ? (
+          <button
+            type="button"
+            className="solar-btn-ghost text-xs"
+            onClick={() => void load()}
+            disabled={loading || busy}
+          >
+            {loading ? "Retrying…" : "Retry"}
+          </button>
+        ) : null}
+      </div>
       <p className="text-sm text-[var(--muted)]">
         Live finance status for QuickFile and Lunch Flow — plus database checks.
         Leftover solar adapter_mode / READ_ONLY flags do not mean bank balances are simulated.
@@ -136,7 +157,14 @@ export function FinanceHealthPanel({
             {" · last sync "}
             {formatSync(integrations?.lunchflow?.last_sync_at)}
           </li>
-          <li>Database: {health.database_backend} {health.db_write ? "read/write ok" : "write failed"}</li>
+          <li>
+            Database: {health.database_backend}
+            {health.db_write == null
+              ? " · not probed (light)"
+              : health.db_write
+                ? " read/write ok"
+                : " write failed"}
+          </li>
           <li>
             Persistence:{" "}
             {health.ephemeral_database
@@ -153,13 +181,17 @@ export function FinanceHealthPanel({
           <li>
             Last backup:{" "}
             {health.last_backup
-              ? `${health.last_backup.location} · ${new Date(health.last_backup.created_at || "").toLocaleString("en-GB")}`
+              ? `${health.last_backup.location} · ${formatSync(health.last_backup.created_at)}`
               : "none yet — tap Backup now"}
           </li>
           <li>Needs review: {health.needs_review ? "yes" : "no"}</li>
         </ul>
-      ) : (
+      ) : loading ? (
         <p className="text-sm text-[var(--muted)]">Loading health…</p>
+      ) : (
+        <p className="text-sm text-[var(--muted)]">
+          Health unavailable. Use Retry, or check Lunch Flow / QuickFile below.
+        </p>
       )}
       {canEdit ? (
         <div className="flex flex-wrap gap-2">

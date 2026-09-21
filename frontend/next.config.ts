@@ -57,6 +57,8 @@ const nextConfig: NextConfig = {
       { source: "/alerts", destination: "/", permanent: false },
       { source: "/audit", destination: "/", permanent: false },
       { source: "/finance/setup", destination: "/finance/onboarding", permanent: false },
+      // Canonical Connections route is /finance/connect (prod /finance/connections → 404).
+      { source: "/finance/connections", destination: "/finance/connect", permanent: false },
     ];
   },
   async rewrites() {

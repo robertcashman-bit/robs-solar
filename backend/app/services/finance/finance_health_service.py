@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -26,86 +27,60 @@ from app.services.finance.money import quantize_gbp
 from app.services.lunchflow_settings_service import lunchflow_settings_service
 from app.services.quickfile_settings_service import quickfile_settings_service
 
+logger = logging.getLogger(__name__)
+
 
 class FinanceHealthService:
-    async def probe(self, db: AsyncSession, *, light: bool = False) -> dict[str, Any]:
-        """Return finance health.
+    def probe_light(self) -> dict[str, Any]:
+        """Connections-only health: env flags, zero Neon / write probes.
 
-        ``light=True`` is for the Connections page: one cheap DB ping + env
-        integration flags only. It skips write probes, consistency scans,
-        health-event inserts, Neon account/import/backup lookups, and the
-        sequential QuickFile/Lunch Flow ``get_status`` round-trips that used
-        to queue panel status GETs behind a multi-second probe on a single
-        serverless isolate.
+        Prod (dpl_3DyAZh5) measured auth'd ``?light=1`` at ~9.5s while still
+        reporting ``db_write: true`` because the route opened ``get_db`` and
+        lied about write probes. This path must stay sub-second and honest.
         """
+        from app.services.finance.connection_status_service import light_integration_flags
+
         settings = get_settings()
         effective_url = resolve_database_url()
         ephemeral = (not is_postgres_url(effective_url)) and (
             "/tmp/" in effective_url or settings.is_production
         )
         backend = "postgres" if is_postgres_url(effective_url) else "sqlite"
+        flags = light_integration_flags()
+        return {
+            "ok": True,
+            "db_read": None,
+            "db_write": None,
+            "data_source": "finance",
+            "database_backend": backend,
+            "ephemeral_database": ephemeral,
+            "web_backup_configured": bool(settings.blob_read_write_token),
+            "account_count": 0,
+            "last_import": None,
+            "last_backup": None,
+            "last_health_check": None,
+            "consistency": {"flags": [], "needs_review": False},
+            "repaired": False,
+            "needs_review": ephemeral,
+            "integrations": {
+                "quickfile": flags["quickfile"],
+                "lunchflow": flags["lunchflow"],
+            },
+            "finance_bank_reads_ready": flags["finance_bank_reads_ready"],
+            "light": True,
+        }
 
+    async def probe(self, db: AsyncSession, *, light: bool = False) -> dict[str, Any]:
+        """Return finance health (full probe unless ``light`` delegates to probe_light)."""
         if light:
-            from app.services.finance.connection_status_service import light_integration_flags
+            return self.probe_light()
 
-            try:
-                await db.scalar(select(FinanceAccountRow.id).limit(1))
-            except Exception as exc:
-                return {
-                    "ok": False,
-                    "db_read": False,
-                    "db_write": False,
-                    "error": "Database read probe failed",
-                    "detail": str(exc.__class__.__name__),
-                    "data_source": "finance",
-                    "database_backend": backend,
-                    "ephemeral_database": ephemeral,
-                    "web_backup_configured": bool(settings.blob_read_write_token),
-                    "account_count": 0,
-                    "last_import": None,
-                    "last_backup": None,
-                    "last_health_check": None,
-                    "consistency": {"flags": [], "needs_review": False},
-                    "repaired": False,
-                    "needs_review": True,
-                    "integrations": {
-                        "quickfile": {
-                            "configured": False,
-                            "connected": False,
-                            "last_sync_at": None,
-                        },
-                        "lunchflow": {
-                            "configured": False,
-                            "connected": False,
-                            "last_sync_at": None,
-                        },
-                    },
-                    "finance_bank_reads_ready": False,
-                    "light": True,
-                }
-            flags = light_integration_flags()
-            return {
-                "ok": True,
-                "db_read": True,
-                "db_write": True,
-                "data_source": "finance",
-                "database_backend": backend,
-                "ephemeral_database": ephemeral,
-                "web_backup_configured": bool(settings.blob_read_write_token),
-                "account_count": 0,
-                "last_import": None,
-                "last_backup": None,
-                "last_health_check": None,
-                "consistency": {"flags": [], "needs_review": False},
-                "repaired": False,
-                "needs_review": ephemeral,
-                "integrations": {
-                    "quickfile": flags["quickfile"],
-                    "lunchflow": flags["lunchflow"],
-                },
-                "finance_bank_reads_ready": flags["finance_bank_reads_ready"],
-                "light": True,
-            }
+        settings = get_settings()
+        effective_url = resolve_database_url()
+        ephemeral = (not is_postgres_url(effective_url)) and (
+            "/tmp/" in effective_url or settings.is_production
+        )
+        backend = "postgres" if is_postgres_url(effective_url) else "sqlite"
 
         now = datetime.now(timezone.utc)
         writable = True

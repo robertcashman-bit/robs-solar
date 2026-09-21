@@ -1,6 +1,8 @@
 import logging
 from contextlib import asynccontextmanager
 
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,6 +19,11 @@ from app.routes import auth, finance, health
 
 logger = logging.getLogger(__name__)
 
+# Cold Vercel Python + Neon must not sit in lifespan until the browser aborts
+# Connections status GETs (~45s). Prefer a degraded start over a hung isolate.
+_INIT_DB_TIMEOUT_S = 20.0
+_POST_INIT_TIMEOUT_S = 15.0
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -27,9 +34,27 @@ async def lifespan(_: FastAPI):
             "APP_ENV=production with ADAPTER_MODE=simulator — "
             "solar adapter unused; finance uses Neon/local data"
         )
-    await init_db()
-    await _restore_finance_if_empty()
-    await _seed_stated_finance()
+    try:
+        await asyncio.wait_for(init_db(), timeout=_INIT_DB_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        logger.error(
+            "init_db timed out after %.0fs — serving with schema possibly incomplete",
+            _INIT_DB_TIMEOUT_S,
+        )
+    except Exception:
+        logger.exception("init_db failed — serving anyway so health/auth can answer")
+    try:
+        await asyncio.wait_for(_restore_finance_if_empty(), timeout=_POST_INIT_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        logger.warning("finance web-backup restore timed out — skipping")
+    except Exception:
+        logger.exception("Finance web-backup restore skipped")
+    try:
+        await asyncio.wait_for(_seed_stated_finance(), timeout=_POST_INIT_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        logger.warning("stated finance seed timed out — skipping")
+    except Exception:
+        logger.exception("stated finance seed skipped")
     yield
 
 
@@ -37,13 +62,10 @@ async def _restore_finance_if_empty() -> None:
     from app.db.session import SessionLocal
     from app.services.finance.finance_backup_service import restore_latest_web_backup_if_empty
 
-    try:
-        async with SessionLocal() as db:
-            restored = await restore_latest_web_backup_if_empty(db)
-        if restored:
-            logger.info("Restored finance books from web backup")
-    except Exception:
-        logger.exception("Finance web-backup restore skipped")
+    async with SessionLocal() as db:
+        restored = await restore_latest_web_backup_if_empty(db)
+    if restored:
+        logger.info("Restored finance books from web backup")
 
 
 async def _seed_stated_finance() -> None:

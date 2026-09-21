@@ -17,7 +17,11 @@ def test_normalise_postgres_urls() -> None:
     assert cleaned.startswith("postgresql+asyncpg://")
     assert "sslmode" not in cleaned
     assert "channel_binding" not in cleaned
-    assert postgres_connect_args(neon) == {"ssl": True}
+    assert postgres_connect_args(neon) == {
+        "timeout": 10,
+        "command_timeout": 8,
+        "ssl": True,
+    }
 
 
 def test_ephemeral_sqlite_detection() -> None:
