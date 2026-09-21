@@ -41,19 +41,25 @@ export function FundingCircleSettingsPanel({
   const [busy, setBusy] = useState<"save" | "import" | null>(null);
 
   useEffect(() => {
-    if (initialStatus) {
-      setStatus(initialStatus);
-      setOutstanding(
-        initialStatus.outstanding_gbp == null ? "" : String(initialStatus.outstanding_gbp),
-      );
-      setApr(initialStatus.apr_pct ? String(initialStatus.apr_pct) : "");
-      setMinimum(
-        initialStatus.minimum_payment_gbp ? String(initialStatus.minimum_payment_gbp) : "",
-      );
-      setError(null);
-    } else if (statusError) {
-      setError(statusError);
+    if (!initialStatus && !statusError) {
+      return;
     }
+    const timer = window.setTimeout(() => {
+      if (initialStatus) {
+        setStatus(initialStatus);
+        setOutstanding(
+          initialStatus.outstanding_gbp == null ? "" : String(initialStatus.outstanding_gbp),
+        );
+        setApr(initialStatus.apr_pct ? String(initialStatus.apr_pct) : "");
+        setMinimum(
+          initialStatus.minimum_payment_gbp ? String(initialStatus.minimum_payment_gbp) : "",
+        );
+        setError(null);
+      } else if (statusError) {
+        setError(statusError);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [initialStatus, statusError]);
 
   const load = useCallback(async () => {

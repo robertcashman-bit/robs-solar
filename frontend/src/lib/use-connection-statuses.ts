@@ -65,7 +65,10 @@ export function useConnectionStatuses(
     if (!authResolved || !user) {
       return;
     }
-    void reload();
+    const timer = window.setTimeout(() => {
+      void reload();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [authResolved, user, reload]);
 
   return { statuses, error, loading, reload };

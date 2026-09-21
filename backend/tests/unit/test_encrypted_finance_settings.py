@@ -171,7 +171,8 @@ async def test_quickfile_missing_neon_row_falls_back_to_env(
     status = await quickfile_settings_service.get_status(None)
     assert status.configured is True
     assert status.connected is True
-    persist.assert_awaited()
+    # Status polls use allow_seed=False so Connections GETs never write Neon.
+    persist.assert_not_awaited()
 
 
 @pytest.mark.asyncio

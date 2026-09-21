@@ -35,12 +35,18 @@ export function LunchFlowSettingsPanel({
   const [busy, setBusy] = useState<"save" | "test" | "sync" | null>(null);
 
   useEffect(() => {
-    if (initialStatus) {
-      setStatus(initialStatus);
-      setError(null);
-    } else if (statusError) {
-      setError(statusError);
+    if (!initialStatus && !statusError) {
+      return;
     }
+    const timer = window.setTimeout(() => {
+      if (initialStatus) {
+        setStatus(initialStatus);
+        setError(null);
+      } else if (statusError) {
+        setError(statusError);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [initialStatus, statusError]);
 
   const load = useCallback(async () => {

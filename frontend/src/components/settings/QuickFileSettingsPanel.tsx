@@ -49,24 +49,30 @@ export function QuickFileSettingsPanel({
   }, []);
 
   useEffect(() => {
-    if (initialStatus) {
-      applyStatus(initialStatus);
-      setLoadingStatus(false);
-      setError(null);
-      if (
-        !didInitialStatusLoad.current
-        && (initialStatus.configured || initialStatus.connected)
-      ) {
-        setShowKeyForm(false);
-      }
-      didInitialStatusLoad.current = true;
-    } else if (statusError) {
-      setStatus(null);
-      setError(statusError);
-      setLoadingStatus(false);
-    } else if (deferOwnStatusLoad) {
-      setLoadingStatus(true);
+    if (!initialStatus && !statusError && !deferOwnStatusLoad) {
+      return;
     }
+    const timer = window.setTimeout(() => {
+      if (initialStatus) {
+        applyStatus(initialStatus);
+        setLoadingStatus(false);
+        setError(null);
+        if (
+          !didInitialStatusLoad.current
+          && (initialStatus.configured || initialStatus.connected)
+        ) {
+          setShowKeyForm(false);
+        }
+        didInitialStatusLoad.current = true;
+      } else if (statusError) {
+        setStatus(null);
+        setError(statusError);
+        setLoadingStatus(false);
+      } else if (deferOwnStatusLoad) {
+        setLoadingStatus(true);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [initialStatus, statusError, applyStatus, deferOwnStatusLoad]);
 
   const load = useCallback(async () => {
