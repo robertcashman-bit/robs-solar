@@ -99,7 +99,13 @@ class FundingCircleSyncService:
         )
 
     async def _load_bank_transactions(self, db: AsyncSession) -> list[dict]:
-        """Load Funding Circle activity from already-imported ledger rows."""
+        """Load Funding Circle activity from already-imported ledger rows.
+
+        Import fingerprints include ``source``, so the same bank payment can
+        exist once as TrueLayer ``open_banking`` and again as Lunch Flow /
+        CSV. Deduplicate on posted date + amount + description so first sync
+        does not double-count repayments.
+        """
         rows = list(
             (
                 await db.scalars(
@@ -110,10 +116,20 @@ class FundingCircleSyncService:
             ).all()
         )
         transactions: list[dict] = []
+        seen: set[tuple[str, int, str]] = set()
         for row in rows:
             if not is_funding_circle_text(row.description):
                 continue
-            amount = (row.amount_pence or 0) / 100.0
+            amount_pence = row.amount_pence or 0
+            key = (
+                row.posted_on or "",
+                amount_pence,
+                (row.description or "").strip().lower(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            amount = amount_pence / 100.0
             transactions.append(
                 {
                     "description": row.description,

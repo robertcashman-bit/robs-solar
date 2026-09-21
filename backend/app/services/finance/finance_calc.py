@@ -273,13 +273,33 @@ def is_sandbox_account(account: AccountView) -> bool:
     return account.source == "open_banking" and "sandbox" in provider
 
 
-def _sum_cash(accounts: list[AccountView], scope: str) -> tuple[float, float]:
+def is_excluded_from_totals(
+    account: AccountView,
+    *,
+    lunchflow_present: bool = False,
+) -> bool:
+    """Sandbox mocks and retired TrueLayer rows must not inflate net worth.
+
+    TrueLayer sync was removed. When Lunch Flow is also present, leftover
+    ``open_banking`` balances freeze and would double-count the same bank.
+    """
+    if is_sandbox_account(account):
+        return True
+    return lunchflow_present and account.source == "open_banking"
+
+
+def _sum_cash(
+    accounts: list[AccountView],
+    scope: str,
+    *,
+    lunchflow_present: bool = False,
+) -> tuple[float, float]:
     positive = 0.0
     overdraft = 0.0
     for account in accounts:
         if account.scope != scope or account.account_type not in CASH_ACCOUNT_TYPES:
             continue
-        if is_sandbox_account(account):
+        if is_excluded_from_totals(account, lunchflow_present=lunchflow_present):
             continue
         if account.balance_gbp >= 0:
             positive += account.balance_gbp
@@ -346,17 +366,25 @@ def compute_totals(
     personal: SnapshotView | None = None,
     business: SnapshotView | None = None,
 ) -> FinanceTotals:
+    active = list(_active_accounts(accounts))
+    lunchflow_present = any(
+        (account.source or "") in {"lunchflow", "lunch_flow"} for account in active
+    )
     accounts_list = [
         account
-        for account in _active_accounts(accounts)
-        if not is_sandbox_account(account)
+        for account in active
+        if not is_excluded_from_totals(account, lunchflow_present=lunchflow_present)
     ]
     debts = _active_debts(liabilities)
     personal = personal or SnapshotView()
     business = business or SnapshotView()
 
-    personal_cash, personal_od = _sum_cash(accounts_list, "personal")
-    business_cash, business_od = _sum_cash(accounts_list, "business")
+    personal_cash, personal_od = _sum_cash(
+        accounts_list, "personal", lunchflow_present=lunchflow_present
+    )
+    business_cash, business_od = _sum_cash(
+        accounts_list, "business", lunchflow_present=lunchflow_present
+    )
     available_cash = round(personal_cash + business_cash, 2)
 
     pension = _sum_type(accounts_list, "pension")

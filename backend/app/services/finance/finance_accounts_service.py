@@ -118,6 +118,7 @@ class FinanceAccountsService:
         else:
             # One-shot cleanup so production Lunch Flow triples disappear on reads.
             await self.dedupe_active_lunchflow_accounts(db)
+            await self.archive_legacy_open_banking_accounts(db)
         stmt = select(FinanceAccountRow).order_by(FinanceAccountRow.name)
         if scope is not None:
             stmt = stmt.where(FinanceAccountRow.scope == scope.value)
@@ -254,6 +255,72 @@ class FinanceAccountsService:
         if remaps:
             await self._repoint_liabilities(db, remaps)
         if touched or archived:
+            await db.commit()
+        return archived
+
+    async def archive_legacy_open_banking_accounts(self, db: AsyncSession) -> int:
+        """Soft-archive retired TrueLayer rows after Lunch Flow is the live feed.
+
+        Never hard-deletes. Liabilities linked to archived rows are re-pointed
+        at an active Lunch Flow account with the same scope, type, and name
+        when one exists so credit-card tiles do not double-count.
+        """
+        legacy = list(
+            (
+                await db.scalars(
+                    select(FinanceAccountRow).where(
+                        FinanceAccountRow.is_active.is_(True),
+                        FinanceAccountRow.source
+                        == FinanceAccountSource.OPEN_BANKING.value,
+                    )
+                )
+            ).all()
+        )
+        if not legacy:
+            return 0
+
+        lunchflow = list(
+            (
+                await db.scalars(
+                    select(FinanceAccountRow).where(
+                        FinanceAccountRow.is_active.is_(True),
+                        FinanceAccountRow.source.in_(tuple(LUNCHFLOW_SOURCES)),
+                    )
+                )
+            ).all()
+        )
+        # Only retire TrueLayer once Lunch Flow has at least one live row.
+        if not lunchflow:
+            return 0
+
+        by_identity: dict[tuple[str, str, str], FinanceAccountRow] = {}
+        for row in lunchflow:
+            key = (
+                (row.scope or "").strip().lower(),
+                (row.account_type or "").strip().lower(),
+                (row.name or "").strip().lower(),
+            )
+            by_identity.setdefault(key, row)
+
+        now = datetime.now(timezone.utc)
+        remaps: list[tuple[int, int]] = []
+        archived = 0
+        for row in legacy:
+            key = (
+                (row.scope or "").strip().lower(),
+                (row.account_type or "").strip().lower(),
+                (row.name or "").strip().lower(),
+            )
+            keeper = by_identity.get(key)
+            if keeper is not None and row.id is not None and keeper.id is not None:
+                remaps.append((row.id, keeper.id))
+            row.is_active = False
+            row.updated_at = now
+            archived += 1
+
+        if remaps:
+            await self._repoint_liabilities(db, remaps)
+        if archived:
             await db.commit()
         return archived
 

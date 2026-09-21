@@ -36,6 +36,7 @@ class LunchFlowSyncService:
             for item in records:
                 await self._upsert_account(db, item)
             await finance_accounts_service.dedupe_active_lunchflow_accounts(db)
+            await finance_accounts_service.archive_legacy_open_banking_accounts(db)
             await db.flush()
         except Exception:
             await db.rollback()
@@ -58,6 +59,7 @@ class LunchFlowSyncService:
             for item in records:
                 await self._upsert_account(db, item)
             await finance_accounts_service.dedupe_active_lunchflow_accounts(db)
+            await finance_accounts_service.archive_legacy_open_banking_accounts(db)
             await db.flush()
             # First successful full import pulls ~730 days. Later syncs stay
             # incremental (~90 days); fingerprints dedupe.
