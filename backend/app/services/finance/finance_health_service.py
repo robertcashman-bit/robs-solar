@@ -54,48 +54,32 @@ class FinanceHealthService:
                 return {
                     "ok": False,
                     "db_read": False,
-                    "db_write": False,
                     "error": "Database read probe failed",
                     "detail": str(exc.__class__.__name__),
                     "data_source": "finance",
                     "database_backend": backend,
                     "ephemeral_database": ephemeral,
                     "web_backup_configured": bool(settings.blob_read_write_token),
-                    "account_count": 0,
-                    "last_import": None,
-                    "last_backup": None,
-                    "last_health_check": None,
                     "consistency": {"flags": [], "needs_review": False},
                     "repaired": False,
                     "needs_review": True,
                     "integrations": {
-                        "quickfile": {
-                            "configured": False,
-                            "connected": False,
-                            "last_sync_at": None,
-                        },
-                        "lunchflow": {
-                            "configured": False,
-                            "connected": False,
-                            "last_sync_at": None,
-                        },
+                        "quickfile": {"configured": False},
+                        "lunchflow": {"configured": False},
                     },
                     "finance_bank_reads_ready": False,
                     "light": True,
                 }
             flags = light_integration_flags()
+            # Omit last_import / last_backup / last_sync / db_write — light does
+            # not probe them; fabricating null/false makes the panel lie.
             return {
                 "ok": True,
                 "db_read": True,
-                "db_write": True,
                 "data_source": "finance",
                 "database_backend": backend,
                 "ephemeral_database": ephemeral,
                 "web_backup_configured": bool(settings.blob_read_write_token),
-                "account_count": 0,
-                "last_import": None,
-                "last_backup": None,
-                "last_health_check": None,
                 "consistency": {"flags": [], "needs_review": False},
                 "repaired": False,
                 "needs_review": ephemeral,
@@ -264,9 +248,9 @@ class FinanceHealthService:
         tx_count_before = int(
             (
                 await db.execute(
-                    select(func.count()).select_from(FinanceTransactionRow).where(
-                        FinanceTransactionRow.is_deleted.is_(False)
-                    )
+                    select(func.count())
+                    .select_from(FinanceTransactionRow)
+                    .where(FinanceTransactionRow.is_deleted.is_(False))
                 )
             ).scalar_one()
         )
@@ -323,9 +307,9 @@ class FinanceHealthService:
         tx_count_after = int(
             (
                 await db.execute(
-                    select(func.count()).select_from(FinanceTransactionRow).where(
-                        FinanceTransactionRow.is_deleted.is_(False)
-                    )
+                    select(func.count())
+                    .select_from(FinanceTransactionRow)
+                    .where(FinanceTransactionRow.is_deleted.is_(False))
                 )
             ).scalar_one()
         )

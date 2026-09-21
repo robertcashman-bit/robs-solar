@@ -11,7 +11,6 @@ from app.services.finance.connection_status_service import (
     _env_only_bundle,
     light_integration_flags,
 )
-from app.services.finance.finance_health_service import finance_health_service
 from tests.conftest import login
 
 
@@ -25,8 +24,13 @@ async def test_light_health_skips_heavy_lookups(client: AsyncClient) -> None:
     body = response.json()
     assert body["ok"] is True
     assert body.get("light") is True
+    assert "db_write" not in body
+    assert "last_import" not in body
+    assert "last_backup" not in body
     assert "quickfile" in body["integrations"]
     assert "lunchflow" in body["integrations"]
+    assert "connected" not in body["integrations"]["lunchflow"]
+    assert "last_sync_at" not in body["integrations"]["lunchflow"]
     assert "truelayer" not in body.get("integrations", {})
     # Local ASGI should be well under a second; keep a soft ceiling for CI.
     assert elapsed_ms < 2000, f"light health too slow: {elapsed_ms:.1f}ms"

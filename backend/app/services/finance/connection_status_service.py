@@ -174,9 +174,7 @@ async def load_connection_statuses(db: AsyncSession) -> FinanceConnectionStatuse
     is slow or the isolate is still warming.
     """
     try:
-        result = await db.execute(
-            select(AppSettingRow).where(AppSettingRow.key.in_(_BUNDLE_KEYS))
-        )
+        result = await db.execute(select(AppSettingRow).where(AppSettingRow.key.in_(_BUNDLE_KEYS)))
         rows = {row.key: row.value for row in result.scalars().all()}
         return FinanceConnectionStatuses(
             lunchflow=_lunchflow_from_rows(rows),
@@ -192,19 +190,19 @@ async def load_connection_statuses(db: AsyncSession) -> FinanceConnectionStatuse
 
 
 def light_integration_flags() -> dict[str, Any]:
-    """Env-only integration hints for ``/finance/health?light=1`` (no Neon reads)."""
+    """Env-only integration hints for ``/finance/health?light=1`` (no Neon reads).
+
+    Only returns what env can truthfully say. Omits ``connected`` /
+    ``last_sync_at`` so callers do not treat unknowns as empty/disconnected.
+    """
     qf = quickfile_settings_service.env_configured()
     lf = lunchflow_settings_service.env_configured()
     return {
         "quickfile": {
             "configured": qf,
-            "connected": qf,
-            "last_sync_at": None,
         },
         "lunchflow": {
             "configured": lf,
-            "connected": False,
-            "last_sync_at": None,
         },
         "finance_bank_reads_ready": bool(qf or lf),
     }
