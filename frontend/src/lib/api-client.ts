@@ -23,6 +23,13 @@ const COLD_START_GET_PATHS = new Set([
   "/auth/me",
   "/health",
   "/auth/magic-code/status",
+  // Connections page: status GETs often queue behind cold start / health on a
+  // single Vercel Python isolate and previously aborted at the 12s default.
+  "/finance/health",
+  "/finance/integrations/connection-status",
+  "/finance/integrations/lunchflow/status",
+  "/finance/integrations/quickfile/status",
+  "/finance/integrations/funding-circle/status",
 ]);
 
 /** Auth mutations must not enter the CSRF re-bootstrap retry loop. */

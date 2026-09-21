@@ -13,21 +13,33 @@ import {
 
 type QuickFileSettingsPanelProps = {
   readOnly?: boolean;
+  /** When provided by Connections, skip a duplicate status GET. */
+  initialStatus?: QuickFileConfigStatus | null;
+  statusError?: string | null;
+  /** Parent owns status loading (Connections page). */
+  deferOwnStatusLoad?: boolean;
 };
 
-export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPanelProps) {
-  const { user, loading: authLoading } = useAuth();
-  const [status, setStatus] = useState<QuickFileConfigStatus | null>(null);
-  const [accountNumber, setAccountNumber] = useState("");
+export function QuickFileSettingsPanel({
+  readOnly = false,
+  initialStatus = null,
+  statusError = null,
+  deferOwnStatusLoad = false,
+}: QuickFileSettingsPanelProps) {
+  const { user, loading: authLoading, authResolved } = useAuth();
+  const [status, setStatus] = useState<QuickFileConfigStatus | null>(initialStatus);
+  const [accountNumber, setAccountNumber] = useState(initialStatus?.account_number ?? "");
   const [apiKey, setApiKey] = useState("");
-  const [applicationId, setApplicationId] = useState("");
-  const [keyAlreadySet, setKeyAlreadySet] = useState(false);
+  const [applicationId, setApplicationId] = useState(initialStatus?.application_id ?? "");
+  const [keyAlreadySet, setKeyAlreadySet] = useState(Boolean(initialStatus?.api_key_set));
   const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(statusError);
   const [busy, setBusy] = useState<"save" | "test" | "sync" | "sync_full" | null>(null);
-  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [loadingStatus, setLoadingStatus] = useState(
+    !deferOwnStatusLoad && initialStatus == null && statusError == null,
+  );
   const [showKeyForm, setShowKeyForm] = useState(false);
-  const didInitialStatusLoad = useRef(false);
+  const didInitialStatusLoad = useRef(Boolean(initialStatus));
 
   const applyStatus = useCallback((parsed: QuickFileConfigStatus) => {
     setStatus(parsed);
@@ -35,6 +47,27 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
     setApplicationId(parsed.application_id);
     setKeyAlreadySet(parsed.api_key_set);
   }, []);
+
+  useEffect(() => {
+    if (initialStatus) {
+      applyStatus(initialStatus);
+      setLoadingStatus(false);
+      setError(null);
+      if (
+        !didInitialStatusLoad.current
+        && (initialStatus.configured || initialStatus.connected)
+      ) {
+        setShowKeyForm(false);
+      }
+      didInitialStatusLoad.current = true;
+    } else if (statusError) {
+      setStatus(null);
+      setError(statusError);
+      setLoadingStatus(false);
+    } else if (deferOwnStatusLoad) {
+      setLoadingStatus(true);
+    }
+  }, [initialStatus, statusError, applyStatus, deferOwnStatusLoad]);
 
   const load = useCallback(async () => {
     if (!user) {
@@ -64,7 +97,10 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
   }, [applyStatus, user]);
 
   useEffect(() => {
-    if (authLoading) {
+    if (deferOwnStatusLoad) {
+      return;
+    }
+    if (authLoading || authResolved === false) {
       return;
     }
     if (!user) {
@@ -111,7 +147,7 @@ export function QuickFileSettingsPanel({ readOnly = false }: QuickFileSettingsPa
     return () => {
       active = false;
     };
-  }, [applyStatus, authLoading, user]);
+  }, [applyStatus, authLoading, authResolved, user, deferOwnStatusLoad]);
 
   async function saveSettings() {
     setError(null);

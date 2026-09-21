@@ -28,32 +28,50 @@ from app.services.quickfile_settings_service import quickfile_settings_service
 
 
 class FinanceHealthService:
-    async def probe(self, db: AsyncSession) -> dict[str, Any]:
+    async def probe(self, db: AsyncSession, *, light: bool = False) -> dict[str, Any]:
+        """Return finance health.
+
+        ``light=True`` skips write probes, consistency ledger scans, and health
+        event inserts — used by the Connections page so panel status GETs are
+        not queued behind a heavy probe on a single serverless isolate.
+        """
         now = datetime.now(timezone.utc)
         writable = True
-        try:
-            db.add(
-                FinanceHealthEventRow(
-                    created_at=now,
-                    kind="db_probe",
-                    status="ok",
-                    message="write probe",
-                    repaired=False,
-                    needs_review=False,
+        if light:
+            try:
+                await db.scalar(select(FinanceAccountRow.id).limit(1))
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "db_read": False,
+                    "db_write": False,
+                    "error": "Database read probe failed",
+                    "detail": str(exc.__class__.__name__),
+                }
+        else:
+            try:
+                db.add(
+                    FinanceHealthEventRow(
+                        created_at=now,
+                        kind="db_probe",
+                        status="ok",
+                        message="write probe",
+                        repaired=False,
+                        needs_review=False,
+                    )
                 )
-            )
-            await db.flush()
-            await db.commit()
-        except Exception as exc:
-            writable = False
-            await db.rollback()
-            return {
-                "ok": False,
-                "db_read": False,
-                "db_write": False,
-                "error": "Database write probe failed",
-                "detail": str(exc.__class__.__name__),
-            }
+                await db.flush()
+                await db.commit()
+            except Exception as exc:
+                writable = False
+                await db.rollback()
+                return {
+                    "ok": False,
+                    "db_read": False,
+                    "db_write": False,
+                    "error": "Database write probe failed",
+                    "detail": str(exc.__class__.__name__),
+                }
         account_count = int(
             (await db.execute(select(func.count()).select_from(FinanceAccountRow))).scalar_one()
         )
@@ -71,23 +89,28 @@ class FinanceHealthService:
             .order_by(FinanceHealthEventRow.created_at.desc())
             .limit(1)
         )
-        consistency = await self.consistency_flags(db)
+        consistency = (
+            {"flags": [], "needs_review": False}
+            if light
+            else await self.consistency_flags(db)
+        )
         settings = get_settings()
         effective_url = resolve_database_url()
         ephemeral = (not is_postgres_url(effective_url)) and (
             "/tmp/" in effective_url or settings.is_production
         )
-        status = "ok" if writable and not consistency["needs_review"] else "needs_review"
-        event = FinanceHealthEventRow(
-            created_at=datetime.now(timezone.utc),
-            kind="health_check",
-            status=status,
-            message="Health check completed",
-            repaired=False,
-            needs_review=consistency["needs_review"],
-        )
-        db.add(event)
-        await db.commit()
+        if not light:
+            status = "ok" if writable and not consistency["needs_review"] else "needs_review"
+            event = FinanceHealthEventRow(
+                created_at=datetime.now(timezone.utc),
+                kind="health_check",
+                status=status,
+                message="Health check completed",
+                repaired=False,
+                needs_review=consistency["needs_review"],
+            )
+            db.add(event)
+            await db.commit()
         qf = await quickfile_settings_service.get_status(db)
         lf = await lunchflow_settings_service.get_status(db)
         return {

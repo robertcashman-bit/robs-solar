@@ -19,6 +19,20 @@ async def test_lunchflow_status_starts_inactive(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_connection_status_bundle(client: AsyncClient) -> None:
+    await login(client, "admin", "admin-pass")
+    response = await client.get("/finance/integrations/connection-status")
+    assert response.status_code == 200
+    body = response.json()
+    assert "lunchflow" in body
+    assert "quickfile" in body
+    assert "funding_circle" in body
+    assert body["lunchflow"]["provider"] == "lunchflow"
+    assert "configured" in body["quickfile"]
+    assert "outstanding_gbp" in body["funding_circle"]
+
+
+@pytest.mark.asyncio
 async def test_save_and_test_lunchflow(client: AsyncClient, monkeypatch) -> None:
     data = await login(client, "admin", "admin-pass")
 

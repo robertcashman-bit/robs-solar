@@ -48,7 +48,7 @@ export function FinanceHealthPanel({ canEdit }: { canEdit: boolean }) {
 
   const load = useCallback(async () => {
     try {
-      const data = await apiClient.get<HealthPayload>("/finance/health");
+      const data = await apiClient.get<HealthPayload>("/finance/health?light=1");
       setHealth(data);
       setError(null);
     } catch (err) {

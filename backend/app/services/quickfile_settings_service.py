@@ -108,12 +108,16 @@ class QuickFileSettingsService:
                 exc_info=True,
             )
 
-    async def get_config(self, db: AsyncSession) -> QuickFileConfig:
+    async def get_config(
+        self, db: AsyncSession, *, allow_seed: bool = True
+    ) -> QuickFileConfig:
         """Return merged QuickFile credentials (Neon preferred, env fills gaps).
 
         Never raises because of a corrupt sealed blob — falls back to env.
-        When the resolved config is complete and Neon is missing/unreadable/
-        incomplete, persists a sealed copy so later requests survive brief env gaps.
+        When ``allow_seed`` is True and the resolved config is complete while
+        Neon is missing/unreadable/incomplete, persists a sealed copy so later
+        requests survive brief env gaps. Status polls pass ``allow_seed=False``
+        so Connections cannot stall on a write under concurrent GETs.
         """
         env = self._env_config()
         row = await self._get_row(db, _QUICKFILE_KEY)
@@ -121,7 +125,7 @@ class QuickFileSettingsService:
 
         if stored is None:
             merged = env
-            if _config_complete(merged):
+            if allow_seed and _config_complete(merged):
                 await self._persist_config(db, merged)
             return merged
 
@@ -130,7 +134,11 @@ class QuickFileSettingsService:
             api_key=stored.api_key or env.api_key,
             application_id=stored.application_id or env.application_id,
         )
-        if _config_complete(merged) and not _config_complete(stored):
+        if (
+            allow_seed
+            and _config_complete(merged)
+            and not _config_complete(stored)
+        ):
             await self._persist_config(db, merged)
         return merged
 
@@ -211,7 +219,7 @@ class QuickFileSettingsService:
         )
 
     async def get_status(self, db: AsyncSession) -> QuickFileConfigStatus:
-        config = await self.get_config(db)
+        config = await self.get_config(db, allow_seed=False)
         sync_row = await self._get_row(db, _LAST_SYNC_KEY)
         last_sync = sync_row.value if sync_row else None
         error_row = await self._get_row(db, _LAST_ERROR_KEY)

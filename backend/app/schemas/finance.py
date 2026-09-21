@@ -1071,6 +1071,14 @@ class FundingCircleSyncResult(BaseModel):
     message: str
 
 
+class FinanceConnectionStatuses(BaseModel):
+    """One-shot Connections panel payload — avoids N parallel status GETs."""
+
+    lunchflow: LunchFlowConfigStatus
+    quickfile: QuickFileConfigStatus
+    funding_circle: FundingCircleConfigStatus
+
+
 class TeslaChargingStatus(BaseModel):
     connected: bool
     vehicle_name: str = ""

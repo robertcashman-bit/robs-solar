@@ -16,6 +16,15 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/finance/connect",
 }));
 
+vi.mock("@/lib/use-connection-statuses", () => ({
+  useConnectionStatuses: () => ({
+    statuses: null,
+    error: null,
+    loading: false,
+    reload: async () => undefined,
+  }),
+}));
+
 vi.mock("@/components/settings/LunchFlowSettingsPanel", () => ({
   LunchFlowSettingsPanel: () => <div>Lunch Flow panel</div>,
 }));

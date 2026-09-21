@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import {
   ChartIcon,
@@ -30,12 +30,27 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
+const THEME_EVENT = "robs-finance-theme";
+
 function readStoredTheme(): "dark" | "light" {
   if (typeof window === "undefined") {
     return "dark";
   }
   const stored = window.localStorage.getItem("theme");
   return stored === "light" ? "light" : "dark";
+}
+
+function subscribeTheme(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+  const handler = () => onStoreChange();
+  window.addEventListener("storage", handler);
+  window.addEventListener(THEME_EVENT, handler);
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener(THEME_EVENT, handler);
+  };
 }
 
 function isNavActive(pathname: string, href: string): boolean {
@@ -48,7 +63,10 @@ function isNavActive(pathname: string, href: string): boolean {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { user, logout, loading } = useAuth();
-  const [theme, setTheme] = useState<"dark" | "light">(readStoredTheme);
+  // Hydration-safe: server snapshot is always dark (matches <html data-theme="dark">).
+  const storedTheme = useSyncExternalStore(subscribeTheme, readStoredTheme, () => "dark" as const);
+  const [themeOverride, setThemeOverride] = useState<"dark" | "light" | null>(null);
+  const theme = themeOverride ?? storedTheme;
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -56,9 +74,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
+    setThemeOverride(next);
     document.documentElement.setAttribute("data-theme", next);
     window.localStorage.setItem("theme", next);
+    window.dispatchEvent(new Event(THEME_EVENT));
   };
 
   // Pages already gate with useRequireAuth. If we have a (cached) user,
