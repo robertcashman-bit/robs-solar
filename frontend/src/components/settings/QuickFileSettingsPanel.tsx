@@ -26,7 +26,7 @@ export function QuickFileSettingsPanel({
   statusError = null,
   deferOwnStatusLoad = false,
 }: QuickFileSettingsPanelProps) {
-  const { user, loading: authLoading, authResolved } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [status, setStatus] = useState<QuickFileConfigStatus | null>(initialStatus);
   const [accountNumber, setAccountNumber] = useState(initialStatus?.account_number ?? "");
   const [apiKey, setApiKey] = useState("");
@@ -106,7 +106,8 @@ export function QuickFileSettingsPanel({
     if (deferOwnStatusLoad) {
       return;
     }
-    if (authLoading || authResolved === false) {
+    // Cached user is enough; do not wait for authResolved (timeout/5xx leave it false).
+    if (authLoading) {
       return;
     }
     if (!user) {
@@ -153,7 +154,7 @@ export function QuickFileSettingsPanel({
     return () => {
       active = false;
     };
-  }, [applyStatus, authLoading, authResolved, user, deferOwnStatusLoad]);
+  }, [applyStatus, authLoading, user, deferOwnStatusLoad]);
 
   async function saveSettings() {
     setError(null);

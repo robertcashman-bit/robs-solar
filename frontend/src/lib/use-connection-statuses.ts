@@ -23,10 +23,7 @@ export type ConnectionStatuses = {
  * One GET for all Connections panels. Avoids three parallel status calls that
  * queue on a single serverless isolate and trip the client abort window.
  */
-export function useConnectionStatuses(
-  user: UserInfo | null | undefined,
-  authResolved: boolean,
-): {
+export function useConnectionStatuses(user: UserInfo | null | undefined): {
   statuses: ConnectionStatuses | null;
   error: string | null;
   loading: boolean;
@@ -61,15 +58,18 @@ export function useConnectionStatuses(
     }
   }, [user]);
 
+  // Cached session user is enough — do not wait for authResolved. /auth/me
+  // timeout or 5xx intentionally leaves auth unresolved so Connections can
+  // still paint; status GET does not need CSRF.
   useEffect(() => {
-    if (!authResolved || !user) {
+    if (!user) {
       return;
     }
     const timer = window.setTimeout(() => {
       void reload();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [authResolved, user, reload]);
+  }, [user, reload]);
 
   return { statuses, error, loading, reload };
 }
