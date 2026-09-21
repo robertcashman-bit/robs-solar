@@ -250,7 +250,7 @@ def test_safe_to_spend_uses_resolved_open_banking_flow() -> None:
     )
     assert result["personal"]["flow_source"] == "open_banking"
     assert result["personal"]["safe_to_spend_gbp"] == 1600.0  # 3000 - 900 - 0 - 500
-    assert "open banking" in result["personal"]["flow_note"].lower()
+    assert "lunch flow" in result["personal"]["flow_note"].lower()
 
 
 def test_safe_to_spend_budget_is_plan_not_cash() -> None:
