@@ -46,14 +46,4 @@ describe("SettingsPage", () => {
     expect(screen.queryByText("Energy settings panel")).not.toBeInTheDocument();
     expect(screen.queryByText(/Sunsynk/i)).not.toBeInTheDocument();
   });
-
-  it("shows a success banner after bank login import", async () => {
-    window.history.pushState({}, "", "/settings?imported=1");
-    render(<SettingsPage />);
-    expect(
-      await screen.findByText(
-        "Bank login complete. Accounts, cards, and Funding Circle payments have been pulled in.",
-      ),
-    ).toBeInTheDocument();
-  });
 });

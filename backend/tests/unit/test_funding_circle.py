@@ -1,9 +1,9 @@
 """Funding Circle detection and outstanding reconstruction."""
 
-from app.services.finance.funding_circle import infer_account_scope
 from app.schemas.finance import FinanceScope
 from app.services.finance.funding_circle import (
     drawdown_gbp,
+    infer_account_scope,
     is_funding_circle_text,
     next_outstanding,
     repayment_gbp,
