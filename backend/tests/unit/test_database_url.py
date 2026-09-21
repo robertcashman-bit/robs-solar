@@ -19,7 +19,6 @@ def test_normalise_postgres_urls() -> None:
     assert "channel_binding" not in cleaned
     assert postgres_connect_args(neon) == {
         "timeout": 10,
-        "command_timeout": 8,
         "ssl": True,
     }
 
