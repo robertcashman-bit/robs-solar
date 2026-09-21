@@ -797,15 +797,14 @@ async def connection_statuses(
     _: SessionData = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> FinanceConnectionStatuses:
-    """Single read for Connections panels — Lunch Flow + QuickFile + Funding Circle."""
-    lunchflow = await lunchflow_settings_service.get_status(db)
-    quickfile = await quickfile_settings_service.get_status(db)
-    funding_circle = await funding_circle_settings_service.get_status(db)
-    return FinanceConnectionStatuses(
-        lunchflow=lunchflow,
-        quickfile=quickfile,
-        funding_circle=funding_circle,
-    )
+    """Single app_settings IN() read for Connections — LF + QF + Funding Circle.
+
+    Prefer a fast/partial payload over sequential per-provider status awaits that
+    stack Neon round-trips on a cold Vercel Python isolate.
+    """
+    from app.services.finance.connection_status_service import load_connection_statuses
+
+    return await load_connection_statuses(db)
 
 
 @router.get("/cron/daily-sync", response_model=FinanceDailySyncResult)
