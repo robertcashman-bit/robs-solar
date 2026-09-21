@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 # Cold Vercel Python + Neon must not sit in lifespan until the browser aborts
 # Connections status GETs (~45s). Prefer a degraded start over a hung isolate.
+# Caps stay under that budget even when sequential: 20 + 10 + 10 = 40s.
 _INIT_DB_TIMEOUT_S = 20.0
-_POST_INIT_TIMEOUT_S = 15.0
+_POST_INIT_TIMEOUT_S = 10.0
 
 
 @asynccontextmanager
@@ -33,8 +34,10 @@ async def lifespan(_: FastAPI):
             "APP_ENV=production with ADAPTER_MODE=simulator — "
             "solar adapter unused; finance uses Neon/local data"
         )
+    init_ok = False
     try:
         await asyncio.wait_for(init_db(), timeout=_INIT_DB_TIMEOUT_S)
+        init_ok = True
     except asyncio.TimeoutError:
         logger.error(
             "init_db timed out after %.0fs — serving with schema possibly incomplete",
@@ -42,18 +45,21 @@ async def lifespan(_: FastAPI):
         )
     except Exception:
         logger.exception("init_db failed — serving anyway so health/auth can answer")
-    try:
-        await asyncio.wait_for(_restore_finance_if_empty(), timeout=_POST_INIT_TIMEOUT_S)
-    except asyncio.TimeoutError:
-        logger.warning("finance web-backup restore timed out — skipping")
-    except Exception:
-        logger.exception("Finance web-backup restore skipped")
-    try:
-        await asyncio.wait_for(_seed_stated_finance(), timeout=_POST_INIT_TIMEOUT_S)
-    except asyncio.TimeoutError:
-        logger.warning("stated finance seed timed out — skipping")
-    except Exception:
-        logger.exception("stated finance seed skipped")
+    # Restore/seed need a working schema + the same Neon. After init_db fails they
+    # almost always time out too — skip them so the DB-free light path can serve.
+    if init_ok:
+        try:
+            await asyncio.wait_for(_restore_finance_if_empty(), timeout=_POST_INIT_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            logger.warning("finance web-backup restore timed out — skipping")
+        except Exception:
+            logger.exception("Finance web-backup restore skipped")
+        try:
+            await asyncio.wait_for(_seed_stated_finance(), timeout=_POST_INIT_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            logger.warning("stated finance seed timed out — skipping")
+        except Exception:
+            logger.exception("stated finance seed skipped")
     yield
 
 
