@@ -11,7 +11,6 @@ from app.services.finance.connection_status_service import (
     _env_only_bundle,
     light_integration_flags,
 )
-from app.services.finance.finance_health_service import finance_health_service
 from tests.conftest import login
 
 
