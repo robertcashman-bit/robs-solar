@@ -26,7 +26,8 @@ test("debt create, total, edit, archive", async ({ page }) => {
   await page.getByPlaceholder("Balance", { exact: true }).fill("850");
   await page.getByRole("button", { name: "Update debt" }).click();
   await expect(page.getByText("Debt updated")).toBeVisible();
-  await expect(row.getByText("£850.00")).toBeVisible();
+  // Balance is the second column; min payment / interest can share the same formatted amount.
+  await expect(row.getByRole("cell").nth(1)).toHaveText("£850.00");
 
   await row.getByRole("button", { name: "Archive" }).click();
   await page.getByRole("button", { name: "Archive" }).last().click();
