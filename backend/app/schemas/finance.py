@@ -999,6 +999,8 @@ class QuickFileSyncResult(BaseModel):
 class LunchFlowConfig(BaseModel):
     api_key: str = ""
     business_connection_ids: list[str] = Field(default_factory=list)
+    # Lunch Flow external account id → finance_accounts id (QuickFile mirror).
+    quickfile_shadow_map: dict[str, int] = Field(default_factory=dict)
 
 
 class LunchFlowConfigStatus(BaseModel):

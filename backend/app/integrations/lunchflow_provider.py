@@ -213,7 +213,11 @@ class LunchFlowProvider(BaseFinanceProvider):
                     "balance_gbp": round(balance, 2),
                     "credit_limit_gbp": credit_limit,
                     "external_id": account_id,
-                    "connection_id": str(record.get("connectionId") or record.get("connection_id") or ""),
+                    "connection_id": str(
+                        record.get("connectionId") or record.get("connection_id") or ""
+                    ),
+                    "balance_current": current,
+                    "balance_available": available,
                     "notes": "Synced via Lunch Flow Open Banking",
                 }
             )
@@ -240,7 +244,10 @@ class LunchFlowProvider(BaseFinanceProvider):
                 or "Lunch Flow"
             )
             display_name = str(
-                record.get("name") or record.get("displayName") or record.get("institutionName") or ""
+                record.get("name")
+                or record.get("displayName")
+                or record.get("institutionName")
+                or ""
             )
             account_scopes[account_id] = infer_lunchflow_scope(
                 record,

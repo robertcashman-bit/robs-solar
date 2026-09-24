@@ -208,7 +208,7 @@ async def test_upsert_is_idempotent_across_alias_forms(setup_db: None) -> None:
         assert len(active) == 1
         assert active[0].external_id == "28085"
         assert active[0].source == "lunchflow"
-        assert active[0].balance_gbp == -8974.94
+        assert active[0].balance_gbp == 8974.94
         assert active[0].name == "Lloyds Personal Current"
 
         all_rows = (await db.scalars(select(FinanceAccountRow))).all()

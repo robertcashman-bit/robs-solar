@@ -25,6 +25,8 @@ from app.services.finance.finance_calc import (
 from app.services.finance.lunchflow_scope import (
     credit_card_balance_gbp,
     infer_lunchflow_scope,
+    parse_quickfile_shadow_map,
+    quickfile_strong_match,
 )
 from app.services.finance.lunchflow_sync_service import LunchFlowSyncService
 
@@ -122,6 +124,8 @@ async def test_sync_preserves_manual_scope_type_name_and_active(setup_db: None) 
                 "name": "Account 1",
                 "provider": "Lloyds Business",
                 "balance_gbp": 537.03,
+                "balance_current": 537.03,
+                "balance_available": 537.03,
                 "credit_limit_gbp": 4000.0,
                 "external_id": "38150",
                 "notes": "Synced via Lunch Flow Open Banking",
@@ -135,7 +139,7 @@ async def test_sync_preserves_manual_scope_type_name_and_active(setup_db: None) 
         assert row.name == "Defence Legal — Lloyds card 5393"
         assert row.is_active is False
         assert row.exclude_from_totals is True
-        assert row.balance_gbp == pytest.approx(537.03)
+        assert row.balance_gbp == pytest.approx(3462.97)
 
 
 @pytest.mark.asyncio
@@ -294,9 +298,49 @@ async def test_quickfile_shadow_excluded_from_company_totals(setup_db: None) -> 
 
 
 @pytest.mark.asyncio
-async def test_new_business_lunchflow_account_auto_shadows_quickfile(
-    setup_db: None,
-) -> None:
+async def test_explicit_shadow_map_links_lunchflow_to_quickfile(setup_db: None) -> None:
+    async with SessionLocal() as db:
+        stamp = _now()
+        qf = FinanceAccountRow(
+            scope=FinanceScope.BUSINESS.value,
+            account_type=FinanceAccountType.CURRENT.value,
+            name="Lloyds Bank Business Account",
+            provider="QuickFile",
+            balance_gbp=100.0,
+            source="quickfile",
+            external_id="qf-1207",
+            is_active=True,
+            created_at=stamp,
+            updated_at=stamp,
+        )
+        db.add(qf)
+        await db.commit()
+
+        service = LunchFlowSyncService()
+        await service._upsert_account(
+            db,
+            {
+                "scope": FinanceScope.BUSINESS.value,
+                "account_type": FinanceAccountType.CURRENT.value,
+                "name": "Lloyds Business — Account 3",
+                "provider": "Lloyds Business",
+                "balance_gbp": 999.0,
+                "external_id": "38151",
+                "notes": "Synced via Lunch Flow Open Banking",
+            },
+            quickfile_shadow_map={"38151": qf.id},
+        )
+        await db.commit()
+        lf = await db.scalar(
+            select(FinanceAccountRow).where(FinanceAccountRow.external_id == "38151")
+        )
+        assert lf is not None
+        assert lf.exclude_from_totals is True
+        assert lf.mirrors_account_id == qf.id
+
+
+@pytest.mark.asyncio
+async def test_type_only_match_does_not_shadow_lunchflow_account(setup_db: None) -> None:
     async with SessionLocal() as db:
         stamp = _now()
         qf = FinanceAccountRow(
@@ -320,20 +364,57 @@ async def test_new_business_lunchflow_account_auto_shadows_quickfile(
             {
                 "scope": FinanceScope.BUSINESS.value,
                 "account_type": FinanceAccountType.CURRENT.value,
-                "name": "Lloyds Business — Account 3",
+                "name": "Small Lloyds Business savings",
                 "provider": "Lloyds Business",
-                "balance_gbp": 999.0,
+                "balance_gbp": 42.0,
                 "external_id": "38152",
                 "notes": "Synced via Lunch Flow Open Banking",
             },
+            quickfile_shadow_map={},
         )
         await db.commit()
         lf = await db.scalar(
             select(FinanceAccountRow).where(FinanceAccountRow.external_id == "38152")
         )
         assert lf is not None
-        assert lf.exclude_from_totals is True
-        assert lf.mirrors_account_id == qf.id
+        assert lf.exclude_from_totals is False
+        assert lf.mirrors_account_id is None
+
+
+def test_parse_quickfile_shadow_map_and_strong_match() -> None:
+    assert parse_quickfile_shadow_map("38150:10,38151:3") == {
+        "38150": 10,
+        "38151": 3,
+    }
+    lf = FinanceAccountRow(
+        scope=FinanceScope.BUSINESS.value,
+        account_type=FinanceAccountType.CREDIT_CARD.value,
+        name="Defence Legal — Lloyds card 5393",
+        provider="Lloyds Business",
+        balance_gbp=0.0,
+        source="lunchflow",
+        external_id="38150",
+        is_active=True,
+        created_at=_now(),
+        updated_at=_now(),
+    )
+    qf = FinanceAccountRow(
+        scope=FinanceScope.BUSINESS.value,
+        account_type=FinanceAccountType.CREDIT_CARD.value,
+        name="Lloyds Bank Business Credit Card",
+        provider="QuickFile",
+        balance_gbp=0.0,
+        source="quickfile",
+        external_id="1258",
+        notes="nominal 1258",
+        is_active=True,
+        created_at=_now(),
+        updated_at=_now(),
+    )
+    assert quickfile_strong_match(lf, qf) is False
+    lf.name = "Business card ending 5393"
+    qf.name = "Lloyds card 5393"
+    assert quickfile_strong_match(lf, qf) is True
 
 
 @pytest.mark.asyncio
