@@ -101,9 +101,15 @@ def credit_card_balance_gbp(
         return round(fallback, 2)
     limit = credit_limit_gbp
     if limit is None or limit <= 0:
-        return round(max(fallback, 0.0), 2)
+        return round(fallback, 2)
 
-    if available is not None and 0 <= available <= limit:
+    provider = current if current is not None else fallback
+    if (
+        available is not None
+        and 0 <= available <= limit
+        and provider > 0
+        and provider <= limit
+    ):
         return round(limit - available, 2)
 
     if current is not None:

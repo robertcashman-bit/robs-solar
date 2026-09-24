@@ -27,12 +27,49 @@ from app.services.finance.lunchflow_scope import (
     infer_lunchflow_scope,
     parse_quickfile_shadow_map,
     quickfile_strong_match,
+    sync_balance_gbp,
 )
 from app.services.finance.lunchflow_sync_service import LunchFlowSyncService
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@pytest.mark.parametrize(
+    ("fallback", "expected"),
+    [
+        (-8842.18, -8842.18),
+        (-6868.18, -6868.18),
+    ],
+)
+def test_personal_credit_card_without_limit_keeps_provider_balance(
+    fallback: float, expected: float
+) -> None:
+    """Regression: LF personal Lloyds cards (28085/28088) must not clamp debt to zero."""
+    item = {
+        "balance_gbp": fallback,
+        "balance_current": fallback,
+        "balance_available": None,
+    }
+    assert (
+        credit_card_balance_gbp(
+            account_type=FinanceAccountType.CREDIT_CARD,
+            credit_limit_gbp=None,
+            current=fallback,
+            available=None,
+            fallback=fallback,
+        )
+        == pytest.approx(expected)
+    )
+    assert (
+        sync_balance_gbp(
+            account_type=FinanceAccountType.CREDIT_CARD.value,
+            credit_limit_gbp=None,
+            item=item,
+        )
+        == pytest.approx(expected)
+    )
 
 
 @pytest.mark.parametrize(
