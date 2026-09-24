@@ -34,6 +34,14 @@ def _month_start(today: datetime) -> str:
 
 
 def _year_start(today: datetime) -> str:
+    """Calendar 1 Jan of ``today`` (UTC date).
+
+    Reports YTD is ``Report_ProfitAndLoss`` FromDate=this date, ToDate=today.
+    Defence Legal's statutory year-end is 31 December (CH 09900871), so this
+    window *is* current FY YTD — not last-completed FY and not a rolling 12m.
+    The stored ``from_date``/``to_date`` are the dates we sent, not a period
+    echoed by QuickFile. Do not substitute a hardcoded turnover figure.
+    """
     return today.date().replace(month=1, day=1).isoformat()
 
 

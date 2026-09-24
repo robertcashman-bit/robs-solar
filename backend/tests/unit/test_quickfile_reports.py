@@ -379,6 +379,168 @@ def test_normalize_handles_zero_padded_nominal_codes() -> None:
 
 
 
+def test_parse_keeps_official_current_assets_when_2201_2204_rehomed() -> None:
+    """Live 23 Sep 2026: QF CA total includes debit 2201+2204 even if listed under creditors.
+
+    Gap vs printed CA lines is exactly 330.27 + 0.16 = 330.43. Recalculating the
+    Current assets subtotal from remaining lines reproduced the Reports shortfall.
+    """
+    body = {
+        "Totals": {
+            "FixedAssets": 38119.54,
+            "CurrentAssets": 10041.01,
+            "CurrentLiabilities": -43768.02,
+            "LongTermLiabilities": -9675.10,
+            "CapitalAndReserves": -5282.57,
+        },
+        "Breakdown": {
+            "FixedAssets": {
+                "Balances": {
+                    "Balance": {
+                        "NominalCode": 30,
+                        "NominalAccountName": "Office Equipment",
+                        "Amount": 38119.54,
+                    }
+                }
+            },
+            "CurrentAssets": {
+                "Balances": {
+                    "Balance": [
+                        {
+                            "NominalCode": 1100,
+                            "NominalAccountName": "Debtors Control Account",
+                            "Amount": 8214.60,
+                        },
+                        {
+                            "NominalCode": 1200,
+                            "NominalAccountName": "Current Account",
+                            "Amount": 0.11,
+                        },
+                        {
+                            "NominalCode": 1210,
+                            "NominalAccountName": "Vat Account",
+                            "Amount": 0.47,
+                        },
+                        {
+                            "NominalCode": 2100,
+                            "NominalAccountName": "Creditors Control Account",
+                            "Amount": 1495.40,
+                        },
+                        {
+                            "NominalCode": 2201,
+                            "NominalAccountName": "Purchase Tax Control Account",
+                            "Amount": 0.16,
+                        },
+                        {
+                            "NominalCode": 2204,
+                            "NominalAccountName": "Manual Adjustments",
+                            "Amount": 330.27,
+                        },
+                    ]
+                }
+            },
+            "CurrentLiabilities": {
+                "Balances": {
+                    "Balance": [
+                        {
+                            "NominalCode": 50,
+                            "NominalAccountName": "HP Finance",
+                            "Amount": -9192.00,
+                        },
+                    ]
+                }
+            },
+            "LongTermLiabilities": {"Balances": {"Balance": []}},
+            "CapitalAndReserves": {
+                "Balances": {
+                    "Balance": {
+                        "NominalCode": 3000,
+                        "NominalAccountName": "P&L Account",
+                        "Amount": -5282.57,
+                    }
+                }
+            },
+        },
+    }
+    result = parse_balance_sheet_full(body, to_date="2026-09-23")
+    by_key = {section["key"]: section for section in result["sections"]}
+    asset_codes = [line["nominal_code"] for line in by_key["CurrentAssets"]["lines"]]
+    liability_codes = [line["nominal_code"] for line in by_key["CurrentLiabilities"]["lines"]]
+    assert "2100" in asset_codes
+    assert "2201" in liability_codes
+    assert "2204" in liability_codes
+    assert result["current_assets_gbp"] == 10041.01
+    assert by_key["CurrentAssets"]["subtotal_gbp"] == 10041.01
+    assert result["current_liabilities_gbp"] == 43768.02
+    assert by_key["CurrentLiabilities"]["subtotal_gbp"] == 43768.02
+    assert result["capital_and_reserves_gbp"] == -5282.57
+
+
+def test_normalize_restores_official_ca_total_after_stale_line_sum() -> None:
+    """Stored reports that already rewrote CA subtotal from remaining lines get QF totals back."""
+    from app.integrations.quickfile_reports import normalize_parsed_balance_sheet
+
+    stored = {
+        "to_date": "2026-09-23",
+        "fixed_assets_gbp": 38119.54,
+        "current_assets_gbp": 10041.01,
+        "current_liabilities_gbp": 43768.02,
+        "long_term_liabilities_gbp": 9675.10,
+        "capital_and_reserves_gbp": -5282.57,
+        "debtors_gbp": 8214.60,
+        "creditors_gbp": 1495.40,
+        "vat_reserve_gbp": 0.47,
+        "vat_liability_gbp": 623.37,
+        "sections": [
+            {
+                "key": "CurrentAssets",
+                "label": "Current assets",
+                "lines": [
+                    {
+                        "nominal_code": "1100",
+                        "label": "Debtors Control Account",
+                        "amount_gbp": 8214.60,
+                    },
+                    {"nominal_code": "1200", "label": "Current Account", "amount_gbp": 0.11},
+                    {"nominal_code": "1210", "label": "VAT Account", "amount_gbp": 0.47},
+                    {
+                        "nominal_code": "2100",
+                        "label": "Creditors Control Account",
+                        "amount_gbp": 1495.40,
+                    },
+                ],
+                "subtotal_gbp": 9710.58,
+            },
+            {
+                "key": "CurrentLiabilities",
+                "label": "Creditors: amounts falling due within one year",
+                "lines": [
+                    {"nominal_code": "50", "label": "HP Finance", "amount_gbp": 9192.00},
+                    {
+                        "nominal_code": "2201",
+                        "label": "Purchase Tax Control Account",
+                        "amount_gbp": 0.16,
+                    },
+                    {
+                        "nominal_code": "2204",
+                        "label": "Manual Adjustments",
+                        "amount_gbp": 330.27,
+                    },
+                ],
+                "subtotal_gbp": 44098.45,
+            },
+        ],
+    }
+    result = normalize_parsed_balance_sheet(stored)
+    by_key = {section["key"]: section for section in result["sections"]}
+    assert result["current_assets_gbp"] == 10041.01
+    assert by_key["CurrentAssets"]["subtotal_gbp"] == 10041.01
+    assert by_key["CurrentLiabilities"]["subtotal_gbp"] == 43768.02
+    liab_codes = [line["nominal_code"] for line in by_key["CurrentLiabilities"]["lines"]]
+    assert "2201" in liab_codes
+    assert "2204" in liab_codes
+
+
 def test_parse_profit_and_loss_full_handles_empty_breakdown() -> None:
     result = parse_profit_and_loss_full(
         {

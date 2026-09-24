@@ -156,12 +156,45 @@ def _liability_bucket_for_line(line: dict[str, Any]) -> str | None:
     return None
 
 
-def _section_lines_total(lines: list[dict[str, Any]]) -> float:
-    return round(sum(abs(float(line.get("amount_gbp") or 0)) for line in lines), 2)
+# Official QuickFile Totals keys → parsed top-level fields. Reports must display
+# these as labelled section subtotals. Printed-sheet line placement can differ
+# (debit 2201/2204 sit under creditors) while QF still nets them into CA.
+_OFFICIAL_SECTION_TOTAL_FIELDS: dict[str, str] = {
+    "FixedAssets": "fixed_assets_gbp",
+    "CurrentAssets": "current_assets_gbp",
+    "CurrentLiabilities": "current_liabilities_gbp",
+    "LongTermLiabilities": "long_term_liabilities_gbp",
+    "CapitalAndReserves": "capital_and_reserves_gbp",
+}
+
+
+def apply_official_section_subtotals(bs: dict[str, Any]) -> dict[str, Any]:
+    """Stamp each BS section subtotal from official QuickFile Totals.
+
+    Rehoming 22xx debit controls for printed-sheet placement must not replace
+    QF's CurrentAssets / CurrentLiabilities totals with a remaining-line sum.
+    Live Defence Legal (23 Sep 2026): CA lines 1100+1200+1210+2100 = 9710.58,
+    but official CurrentAssets is 10041.01 because 2204 (330.27) + 2201 (0.16)
+    are netted into that total even when listed under creditors.
+    """
+    sections = bs.get("sections") or []
+    if not sections:
+        return bs
+    for section in sections:
+        field = _OFFICIAL_SECTION_TOTAL_FIELDS.get(str(section.get("key") or ""))
+        if not field or field not in bs or bs[field] is None:
+            continue
+        section["subtotal_gbp"] = round(float(bs[field] or 0), 2)
+    return bs
 
 
 def _rehome_misfiled_liability_lines(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Move 2xxx liability nominals out of Current assets into liability sections."""
+    """Move 2xxx liability nominals out of Current assets into liability sections.
+
+    Line placement only. Official section totals stay on the parsed payload and
+    are re-applied by ``apply_official_section_subtotals`` — never rewrite them
+    from the remaining lines (that dropped 2201/2204 from Current assets).
+    """
     by_key = {section["key"]: section for section in sections}
     current_assets = by_key.get("CurrentAssets")
     if not current_assets:
@@ -181,21 +214,15 @@ def _rehome_misfiled_liability_lines(sections: list[dict[str, Any]]) -> list[dic
         return sections
 
     current_assets["lines"] = kept
-    # Recalculate from remaining lines only when we actually moved liability nominals.
-    current_assets["subtotal_gbp"] = round(
-        sum(float(line.get("amount_gbp") or 0) for line in kept), 2
-    )
 
     if moved_current:
         target = by_key.get("CurrentLiabilities")
         if target is not None:
             target["lines"] = list(target.get("lines") or []) + moved_current
-            target["subtotal_gbp"] = _section_lines_total(target["lines"])
     if moved_long:
         target = by_key.get("LongTermLiabilities")
         if target is not None:
             target["lines"] = list(target.get("lines") or []) + moved_long
-            target["subtotal_gbp"] = _section_lines_total(target["lines"])
     return sections
 
 
@@ -222,8 +249,8 @@ def normalize_parsed_balance_sheet(bs: dict[str, Any]) -> dict[str, Any]:
     sections = list(bs.get("sections") or [])
     if not sections:
         return bs
-    # Still run the mover for any future narrow rules; today it is a no-op for
-    # 2100/2300 so stored live sheets stay intact.
+    # Still run the mover for printed-sheet line placement (2201/2204 debit
+    # controls). Official Totals always win for labelled subtotals.
     current_assets = next((s for s in sections if s.get("key") == "CurrentAssets"), None)
     if current_assets and any(
         _liability_bucket_for_line(line) for line in (current_assets.get("lines") or [])
@@ -233,6 +260,7 @@ def normalize_parsed_balance_sheet(bs: dict[str, Any]) -> dict[str, Any]:
         creditors = _creditors_control_from_sections(sections)
         if creditors > 0:
             bs["creditors_gbp"] = creditors
+    apply_official_section_subtotals(bs)
     return bs
 
 

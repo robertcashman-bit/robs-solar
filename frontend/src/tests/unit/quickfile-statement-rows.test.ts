@@ -187,4 +187,57 @@ describe("quickfile-statement-rows", () => {
     expect(items.some((item) => item.label === "Bank loan")).toBe(true);
     expect(items.filter((item) => item.sectionHeader).length).toBeGreaterThanOrEqual(5);
   });
+
+  it("uses official current-assets subtotal even when 2201/2204 sit under creditors", () => {
+    const reports: QuickFileReports = {
+      ...fullReports,
+      profit_and_loss_month: null,
+      profit_and_loss_ytd: null,
+      balance_sheet: {
+        to_date: "2026-09-23",
+        fixed_assets_gbp: 38119.54,
+        current_assets_gbp: 10041.01,
+        current_liabilities_gbp: 43768.02,
+        long_term_liabilities_gbp: 9675.1,
+        capital_and_reserves_gbp: -5282.57,
+        debtors_gbp: 8214.6,
+        creditors_gbp: 1495.4,
+        vat_reserve_gbp: 0.47,
+        vat_liability_gbp: 623.37,
+        sections: [
+          {
+            key: "CurrentAssets",
+            label: "Current assets",
+            lines: [
+              { nominal_code: "1100", label: "Debtors Control Account", amount_gbp: 8214.6 },
+              { nominal_code: "1200", label: "Current Account", amount_gbp: 0.11 },
+              { nominal_code: "1210", label: "VAT Account", amount_gbp: 0.47 },
+              { nominal_code: "2100", label: "Creditors Control Account", amount_gbp: 1495.4 },
+            ],
+            subtotal_gbp: 10041.01,
+            is_total: false,
+          },
+          {
+            key: "CurrentLiabilities",
+            label: "Creditors: amounts falling due within one year",
+            lines: [
+              { nominal_code: "50", label: "HP Finance", amount_gbp: 9192 },
+              { nominal_code: "2201", label: "Purchase Tax Control Account", amount_gbp: 0.16 },
+              { nominal_code: "2204", label: "Manual Adjustments", amount_gbp: 330.27 },
+            ],
+            subtotal_gbp: 43768.02,
+            is_total: false,
+          },
+        ],
+      },
+    };
+
+    const { items } = buildQuickFileBalanceSheetItems(reports);
+    const caTotal = items.find((item) => item.label === "Current assets" && item.total);
+    const lineSum = 8214.6 + 0.11 + 0.47 + 1495.4;
+    expect(caTotal?.amount).toBe(10041.01);
+    expect(caTotal?.amount).not.toBe(lineSum);
+    expect(items.some((item) => item.nominalCode === "2204" && item.indent)).toBe(true);
+    expect(items.some((item) => item.nominalCode === "2201" && item.indent)).toBe(true);
+  });
 });
