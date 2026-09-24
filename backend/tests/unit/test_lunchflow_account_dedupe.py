@@ -209,7 +209,7 @@ async def test_upsert_is_idempotent_across_alias_forms(setup_db: None) -> None:
         assert active[0].external_id == "28085"
         assert active[0].source == "lunchflow"
         assert active[0].balance_gbp == -8974.94
-        assert active[0].name == "Lloyds Personal — 6754"
+        assert active[0].name == "Lloyds Personal Current"
 
         all_rows = (await db.scalars(select(FinanceAccountRow))).all()
         assert len(all_rows) == 1
@@ -389,4 +389,4 @@ async def test_sync_balances_upsert_collapses_aliases(
         assert len(active) == 1
         assert active[0].external_id == "99"
         assert active[0].balance_gbp == 42.5
-        assert active[0].name == "Lloyds Personal — Current Account"
+        assert active[0].name == "Legacy"

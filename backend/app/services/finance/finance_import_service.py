@@ -198,6 +198,8 @@ class FinanceImportService:
                     if item["scope"] in {"personal", "business"}
                     else "personal"
                 )
+                if account is not None and str(account.scope) in {"personal", "business"}:
+                    scope = str(account.scope)
                 category = item.get("category") or ""
                 confidence = ""
                 is_transfer = bool(item["is_transfer"])

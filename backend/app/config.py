@@ -153,6 +153,8 @@ class Settings(BaseSettings):
     quickfile_application_id: str = ""
 
     lunchflow_api_key: str = ""
+    # Comma-separated Lunch Flow connection ids (e.g. Lloyds Business) → scope=business.
+    lunchflow_business_connection_ids: str = ""
     # Vercel Cron bearer for /finance/cron/daily-sync
     cron_secret: str = ""
     # Automatic web backup (Vercel Blob). Never required for local/tests.

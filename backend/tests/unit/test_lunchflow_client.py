@@ -59,8 +59,12 @@ async def test_provider_sync_accounts(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_balance(_account_id: str) -> float:
         return 99.0
 
+    async def fake_detail(_account_id: str) -> dict[str, float | None]:
+        return {"current": 99.0, "available": None, "fallback": 99.0}
+
     monkeypatch.setattr(provider._client, "fetch_accounts", fake_accounts)
     monkeypatch.setattr(provider._client, "fetch_balance", fake_balance)
+    monkeypatch.setattr(provider._client, "fetch_balance_detail", fake_detail)
     rows = await provider.sync_accounts()
     assert len(rows) == 1
     assert rows[0]["external_id"] == "acc-1"

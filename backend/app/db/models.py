@@ -144,6 +144,8 @@ class FinanceAccountRow(Base):
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
     external_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     dla_direction: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    exclude_from_totals: Mapped[bool] = mapped_column(default=False, nullable=False)
+    mirrors_account_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

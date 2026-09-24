@@ -21,6 +21,7 @@ from app.services.finance.lunchflow_account_ids import (
     lunchflow_external_id_aliases,
     normalize_lunchflow_external_id,
 )
+from app.services.finance.lunchflow_scope import mark_quickfile_shadow_if_needed
 from app.services.finance.sync_lookback import lookback_since
 from app.services.lunchflow_settings_service import lunchflow_settings_service
 
@@ -138,6 +139,8 @@ class LunchFlowSyncService:
                 updated_at=now,
             )
             db.add(row)
+            await db.flush()
+            await mark_quickfile_shadow_if_needed(db, row)
             return
 
         # Prefer an already-active row when choosing which duplicate to update.
@@ -147,17 +150,14 @@ class LunchFlowSyncService:
         for candidate in pool[1:]:
             keeper = _prefer_lunchflow_account(keeper, candidate)
 
-        keeper.name = item["name"]
         keeper.balance_gbp = item.get("balance_gbp", 0.0)
         if item.get("credit_limit_gbp") is not None:
             keeper.credit_limit_gbp = item.get("credit_limit_gbp")
-        keeper.account_type = item["account_type"]
         keeper.provider = item.get("provider", keeper.provider)
-        keeper.notes = item.get("notes", keeper.notes)
         keeper.source = FinanceAccountSource.LUNCHFLOW.value
         keeper.external_id = canonical
-        keeper.is_active = True
         keeper.updated_at = now
+        await mark_quickfile_shadow_if_needed(db, keeper)
         # Extra alias rows stay until dedupe_active_lunchflow_accounts archives them
         # and re-points any liabilities that still link to those ids.
 

@@ -13,6 +13,7 @@ from app.config import settings
 from app.db.models import AppSettingRow
 from app.schemas.finance import LunchFlowConfig, LunchFlowConfigStatus
 from app.services.finance.finance_calc import MonthlyFlow
+from app.services.finance.lunchflow_scope import parse_business_connection_ids
 from app.services.settings_crypto import open_json, seal_json
 
 _CONFIG_KEY = "lunchflow"
@@ -32,7 +33,12 @@ class LunchFlowSettingsService:
             or os.environ.get("LUNCHFLOW_API_KEY", "")
             or os.environ.get("LUNCH_FLOW_API_KEY", "")
         )
-        return LunchFlowConfig(api_key=key.strip())
+        return LunchFlowConfig(
+            api_key=key.strip(),
+            business_connection_ids=sorted(
+                parse_business_connection_ids(settings.lunchflow_business_connection_ids)
+            ),
+        )
 
     def env_configured(self) -> bool:
         return bool(self._env_config().api_key)
@@ -53,7 +59,11 @@ class LunchFlowSettingsService:
         if row is None or not (row.value or "").strip():
             return env
         stored = LunchFlowConfig.model_validate(open_json(row.value))
-        return LunchFlowConfig(api_key=stored.api_key or env.api_key)
+        connection_ids = stored.business_connection_ids or env.business_connection_ids
+        return LunchFlowConfig(
+            api_key=stored.api_key or env.api_key,
+            business_connection_ids=connection_ids,
+        )
 
     async def get_status(self, db: AsyncSession) -> LunchFlowConfigStatus:
         config = await self.get_config(db)

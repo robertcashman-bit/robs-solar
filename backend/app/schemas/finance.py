@@ -95,6 +95,8 @@ class FinanceAccount(BaseModel):
     source: FinanceAccountSource = FinanceAccountSource.MANUAL
     external_id: str | None = None
     dla_direction: DirectorsLoanDirection | None = None
+    exclude_from_totals: bool = False
+    mirrors_account_id: int | None = None
     is_active: bool = True
     created_at: datetime
     updated_at: datetime
@@ -124,6 +126,8 @@ class FinanceAccountUpdate(BaseModel):
     minimum_payment_gbp: float | None = None
     notes: str | None = None
     dla_direction: DirectorsLoanDirection | None = None
+    exclude_from_totals: bool | None = None
+    mirrors_account_id: int | None = None
     is_active: bool | None = None
 
 
@@ -994,6 +998,7 @@ class QuickFileSyncResult(BaseModel):
 
 class LunchFlowConfig(BaseModel):
     api_key: str = ""
+    business_connection_ids: list[str] = Field(default_factory=list)
 
 
 class LunchFlowConfigStatus(BaseModel):
