@@ -65,6 +65,7 @@ class AccountView:
     is_active: bool = True
     source: str = "manual"
     provider: str = ""
+    exclude_from_totals: bool = False
 
 
 @dataclass(frozen=True)
@@ -148,6 +149,14 @@ def _active_accounts(accounts: Iterable[AccountView]) -> list[AccountView]:
     return [item for item in accounts if item.is_active]
 
 
+def _accounts_for_totals(accounts: Iterable[AccountView]) -> list[AccountView]:
+    return [
+        item
+        for item in _active_accounts(accounts)
+        if not item.exclude_from_totals and not is_sandbox_account(item)
+    ]
+
+
 def _active_debts(liabilities: Iterable[LiabilityView]) -> list[LiabilityView]:
     return [item for item in liabilities if item.is_active]
 
@@ -200,7 +209,7 @@ def monthly_interest_gbp(balance: float, annual_rate_pct: float) -> float:
 def _revolving_accounts(accounts: Iterable[AccountView]) -> list[AccountView]:
     return [
         account
-        for account in _active_accounts(accounts)
+        for account in _accounts_for_totals(accounts)
         if account.account_type in {"credit_card", "capital_on_tap"}
         and account.credit_limit_gbp is not None
     ]
@@ -346,11 +355,7 @@ def compute_totals(
     personal: SnapshotView | None = None,
     business: SnapshotView | None = None,
 ) -> FinanceTotals:
-    accounts_list = [
-        account
-        for account in _active_accounts(accounts)
-        if not is_sandbox_account(account)
-    ]
+    accounts_list = _accounts_for_totals(accounts)
     debts = _active_debts(liabilities)
     personal = personal or SnapshotView()
     business = business or SnapshotView()
@@ -523,6 +528,7 @@ def accounts_from_schema(accounts: Iterable[object]) -> list[AccountView]:
                 is_active=bool(getattr(item, "is_active", True)),
                 source=_enum_value(getattr(item, "source", "manual")) or "manual",
                 provider=str(getattr(item, "provider", "") or ""),
+                exclude_from_totals=bool(getattr(item, "exclude_from_totals", False)),
             )
         )
     return views

@@ -21,6 +21,11 @@ from app.services.finance.lunchflow_account_ids import (
     lunchflow_external_id_aliases,
     normalize_lunchflow_external_id,
 )
+from app.services.finance.lunchflow_scope import (
+    mark_quickfile_shadow_if_needed,
+    parse_quickfile_shadow_map,
+    sync_balance_gbp,
+)
 from app.services.finance.sync_lookback import lookback_since
 from app.services.lunchflow_settings_service import lunchflow_settings_service
 
@@ -32,9 +37,10 @@ class LunchFlowSyncService:
         """Update account balances only — no year-long transaction import."""
         provider = LunchFlowProvider(config)
         records = await provider.sync_accounts()
+        shadow_map = parse_quickfile_shadow_map(config.quickfile_shadow_map)
         try:
             for item in records:
-                await self._upsert_account(db, item)
+                await self._upsert_account(db, item, quickfile_shadow_map=shadow_map)
             await finance_accounts_service.dedupe_active_lunchflow_accounts(db)
             await db.flush()
         except Exception:
@@ -52,11 +58,12 @@ class LunchFlowSyncService:
     async def sync(self, db: AsyncSession, config: LunchFlowConfig) -> LunchFlowSyncResult:
         provider = LunchFlowProvider(config)
         records = await provider.sync_accounts()
+        shadow_map = parse_quickfile_shadow_map(config.quickfile_shadow_map)
         first_sync = await lunchflow_settings_service.needs_full_history_import(db)
         since = lookback_since(first_sync=first_sync)
         try:
             for item in records:
-                await self._upsert_account(db, item)
+                await self._upsert_account(db, item, quickfile_shadow_map=shadow_map)
             await finance_accounts_service.dedupe_active_lunchflow_accounts(db)
             await db.flush()
             # First successful full import pulls ~730 days. Later syncs stay
@@ -102,7 +109,13 @@ class LunchFlowSyncService:
             ),
         )
 
-    async def _upsert_account(self, db: AsyncSession, item: dict) -> None:
+    async def _upsert_account(
+        self,
+        db: AsyncSession,
+        item: dict,
+        *,
+        quickfile_shadow_map: dict[str, int] | None = None,
+    ) -> None:
         external_id = str(item.get("external_id") or "")
         canonical = normalize_lunchflow_external_id(external_id)
         if not canonical:
@@ -122,13 +135,18 @@ class LunchFlowSyncService:
         )
 
         now = datetime.now(timezone.utc)
+        balance = sync_balance_gbp(
+            account_type=str(item["account_type"]),
+            credit_limit_gbp=item.get("credit_limit_gbp"),
+            item=item,
+        )
         if not matches:
             row = FinanceAccountRow(
                 scope=item["scope"],
                 account_type=item["account_type"],
                 name=item["name"],
                 provider=item.get("provider", "Lunch Flow"),
-                balance_gbp=item.get("balance_gbp", 0.0),
+                balance_gbp=balance,
                 credit_limit_gbp=item.get("credit_limit_gbp"),
                 notes=item.get("notes", ""),
                 source=FinanceAccountSource.LUNCHFLOW.value,
@@ -138,6 +156,10 @@ class LunchFlowSyncService:
                 updated_at=now,
             )
             db.add(row)
+            await db.flush()
+            await mark_quickfile_shadow_if_needed(
+                db, row, quickfile_shadow_map=quickfile_shadow_map
+            )
             return
 
         # Prefer an already-active row when choosing which duplicate to update.
@@ -147,17 +169,20 @@ class LunchFlowSyncService:
         for candidate in pool[1:]:
             keeper = _prefer_lunchflow_account(keeper, candidate)
 
-        keeper.name = item["name"]
-        keeper.balance_gbp = item.get("balance_gbp", 0.0)
         if item.get("credit_limit_gbp") is not None:
             keeper.credit_limit_gbp = item.get("credit_limit_gbp")
-        keeper.account_type = item["account_type"]
+        keeper.balance_gbp = sync_balance_gbp(
+            account_type=str(keeper.account_type),
+            credit_limit_gbp=keeper.credit_limit_gbp,
+            item=item,
+        )
         keeper.provider = item.get("provider", keeper.provider)
-        keeper.notes = item.get("notes", keeper.notes)
         keeper.source = FinanceAccountSource.LUNCHFLOW.value
         keeper.external_id = canonical
-        keeper.is_active = True
         keeper.updated_at = now
+        await mark_quickfile_shadow_if_needed(
+            db, keeper, quickfile_shadow_map=quickfile_shadow_map
+        )
         # Extra alias rows stay until dedupe_active_lunchflow_accounts archives them
         # and re-points any liabilities that still link to those ids.
 

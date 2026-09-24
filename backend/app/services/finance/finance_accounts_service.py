@@ -37,6 +37,8 @@ def _to_schema(row: FinanceAccountRow) -> FinanceAccount:
         source=FinanceAccountSource(row.source),
         external_id=row.external_id,
         dla_direction=row.dla_direction,
+        exclude_from_totals=row.exclude_from_totals,
+        mirrors_account_id=row.mirrors_account_id,
         is_active=row.is_active,
         created_at=row.created_at,
         updated_at=row.updated_at,

@@ -57,18 +57,30 @@ class LunchFlowClient:
             return body["data"]
         return []
 
-    async def fetch_balance(self, account_id: str) -> float:
+    async def fetch_balance_detail(self, account_id: str) -> dict[str, float | None]:
         body = await self._get(f"/accounts/{account_id}/balance")
+        current: float | None = None
+        available: float | None = None
         balance = body.get("balance")
         if isinstance(balance, dict):
-            amount = balance.get("amount")
-            if amount is not None:
-                return float(amount)
+            if balance.get("amount") is not None:
+                current = float(balance["amount"])
+            if balance.get("available") is not None:
+                available = float(balance["available"])
+            if balance.get("current") is not None and current is None:
+                current = float(balance["current"])
         if body.get("amount") is not None:
-            return float(body["amount"])
+            current = float(body["amount"])
+        if body.get("current") is not None:
+            current = float(body["current"])
         if body.get("available") is not None:
-            return float(body["available"])
-        return 0.0
+            available = float(body["available"])
+        fallback = current if current is not None else (available if available is not None else 0.0)
+        return {"current": current, "available": available, "fallback": fallback}
+
+    async def fetch_balance(self, account_id: str) -> float:
+        detail = await self.fetch_balance_detail(account_id)
+        return float(detail.get("fallback") or 0.0)
 
     async def fetch_transactions(
         self, account_id: str, *, since: str | None = None

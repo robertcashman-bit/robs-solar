@@ -8,6 +8,11 @@ from typing import Any
 from app.integrations.base import BaseFinanceProvider, IntegrationNotConfiguredError
 from app.integrations.lunchflow_client import LunchFlowClient, LunchFlowError
 from app.schemas.finance import FinanceAccountType, FinanceScope, LunchFlowConfig
+from app.services.finance.lunchflow_scope import (
+    credit_card_balance_gbp,
+    infer_lunchflow_scope,
+    parse_business_connection_ids,
+)
 
 
 def _map_account_type(account_type: str, name: str = "") -> FinanceAccountType:
@@ -116,7 +121,7 @@ def _normalize_transaction(
         "external_id": external_id or None,
         "description": description,
         "currency": currency,
-        "scope": "personal",
+        "scope": str(item.get("scope") or "personal"),
     }
 
 
@@ -125,6 +130,9 @@ class LunchFlowProvider(BaseFinanceProvider):
 
     def __init__(self, config: LunchFlowConfig) -> None:
         self._client = LunchFlowClient(config)
+        self._business_connection_ids = parse_business_connection_ids(
+            config.business_connection_ids
+        )
 
     def _ensure_configured(self) -> None:
         if not self._client.configured:
@@ -144,17 +152,25 @@ class LunchFlowProvider(BaseFinanceProvider):
             account_id = str(record.get("id") or record.get("accountId") or "")
             if not account_id:
                 continue
+            current: float | None = None
+            available: float | None = None
+            fallback = 0.0
             try:
-                balance = await self._client.fetch_balance(account_id)
+                detail = await self._client.fetch_balance_detail(account_id)
+                current = detail.get("current")
+                available = detail.get("available")
+                fallback = float(detail.get("fallback") or 0.0)
             except LunchFlowError:
                 raw_balance = record.get("balance")
                 if isinstance(raw_balance, dict):
-                    balance = float(raw_balance.get("amount") or 0)
+                    fallback = float(raw_balance.get("amount") or 0)
+                    if raw_balance.get("available") is not None:
+                        available = float(raw_balance["available"])
                 else:
                     try:
-                        balance = float(raw_balance or 0)
+                        fallback = float(raw_balance or 0)
                     except (TypeError, ValueError):
-                        balance = 0.0
+                        fallback = 0.0
             display_name = str(
                 record.get("name")
                 or record.get("displayName")
@@ -175,15 +191,33 @@ class LunchFlowProvider(BaseFinanceProvider):
             credit_limit = _optional_amount(
                 record.get("creditLimit") or record.get("credit_limit") or record.get("limit")
             )
+            scope = infer_lunchflow_scope(
+                record,
+                display_name=display_name,
+                provider_name=provider_name,
+                business_connection_ids=self._business_connection_ids,
+            )
+            balance = credit_card_balance_gbp(
+                account_type=mapped,
+                credit_limit_gbp=credit_limit,
+                current=current,
+                available=available,
+                fallback=fallback,
+            )
             normalized.append(
                 {
-                    "scope": FinanceScope.PERSONAL.value,
+                    "scope": scope.value,
                     "account_type": mapped.value,
                     "name": display_name,
                     "provider": provider_name,
                     "balance_gbp": round(balance, 2),
                     "credit_limit_gbp": credit_limit,
                     "external_id": account_id,
+                    "connection_id": str(
+                        record.get("connectionId") or record.get("connection_id") or ""
+                    ),
+                    "balance_current": current,
+                    "balance_available": available,
                     "notes": "Synced via Lunch Flow Open Banking",
                 }
             )
@@ -197,15 +231,41 @@ class LunchFlowProvider(BaseFinanceProvider):
             raise IntegrationNotConfiguredError(str(exc)) from exc
         cutoff = since or (datetime.now(timezone.utc) - timedelta(days=730)).date().isoformat()
         collected: list[dict[str, Any]] = []
+        account_scopes: dict[str, str] = {}
+        for record in accounts:
+            account_id = str(record.get("id") or record.get("accountId") or "")
+            if not account_id:
+                continue
+            provider_name = str(
+                record.get("institution_name")
+                or record.get("institutionName")
+                or record.get("institution")
+                or record.get("provider")
+                or "Lunch Flow"
+            )
+            display_name = str(
+                record.get("name")
+                or record.get("displayName")
+                or record.get("institutionName")
+                or ""
+            )
+            account_scopes[account_id] = infer_lunchflow_scope(
+                record,
+                display_name=display_name,
+                provider_name=provider_name,
+                business_connection_ids=self._business_connection_ids,
+            ).value
         for record in accounts:
             account_id = str(record.get("id") or record.get("accountId") or "")
             if not account_id:
                 continue
             transactions = await self._client.fetch_transactions(account_id, since=cutoff)
             account_name = str(record.get("name") or record.get("displayName") or "")
+            scope = account_scopes.get(account_id, FinanceScope.PERSONAL.value)
             for item in transactions:
                 item = dict(item)
                 item.setdefault("account_id", account_id)
+                item["scope"] = scope
                 normalized_tx = _normalize_transaction(item, cutoff, account_name=account_name)
                 if normalized_tx:
                     collected.append(normalized_tx)
